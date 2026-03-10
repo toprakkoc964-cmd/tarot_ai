@@ -5,6 +5,7 @@ import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
 import '../../core/tarot_functions_client.dart';
 import 'auth_service.dart';
+import 'legal_pages.dart';
 import 'onboarding_payload.dart';
 
 class OnboardingPage extends StatefulWidget {
@@ -185,11 +186,37 @@ class _OnboardingPageState extends State<OnboardingPage> {
               value: _privacy,
               onChanged: (value) => setState(() => _privacy = value ?? false),
               title: Text(AppTexts.t('onboarding.consent.privacy')),
+              subtitle: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PrivacyPolicyPage(),
+                      ),
+                    );
+                  },
+                  child: Text(AppTexts.t('legal.view_privacy')),
+                ),
+              ),
             ),
             CheckboxListTile(
               value: _terms,
               onChanged: (value) => setState(() => _terms = value ?? false),
               title: Text(AppTexts.t('onboarding.consent.terms')),
+              subtitle: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const TermsOfServicePage(),
+                      ),
+                    );
+                  },
+                  child: Text(AppTexts.t('legal.view_terms')),
+                ),
+              ),
             ),
             CheckboxListTile(
               value: _aiConsent,

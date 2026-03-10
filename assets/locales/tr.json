@@ -81,5 +81,10 @@
     "error.apple_not_supported":  "Bu cihazda Apple girisi desteklenmiyor.",
     "auth.login.social_title":  "VEYA SUNUNLA DEVAM ET",
     "auth.login.apple_button":  "Apple",
-    "auth.login.google_button":  "Google"
+    "auth.login.google_button":  "Google",
+    "legal.terms.title":  "Kullanim Kosullari",
+    "legal.privacy.title":  "Gizlilik Politikasi",
+    "legal.last_updated":  "Son guncelleme: 10 Mart 2026",
+    "legal.view_terms":  "Kullanim Kosullarini Gor",
+    "legal.view_privacy":  "Gizlilik Politikasini Gor"
 }

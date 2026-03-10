@@ -81,5 +81,10 @@
     "error.apple_not_supported":  "Apple Sign-In is not supported on this device.",
     "auth.login.social_title":  "OR CONTINUE WITH",
     "auth.login.apple_button":  "Apple",
-    "auth.login.google_button":  "Google"
+    "auth.login.google_button":  "Google",
+    "legal.terms.title":  "Terms of Service",
+    "legal.privacy.title":  "Privacy Policy",
+    "legal.last_updated":  "Last updated: March 10, 2026",
+    "legal.view_terms":  "View Terms of Service",
+    "legal.view_privacy":  "View Privacy Policy"
 }

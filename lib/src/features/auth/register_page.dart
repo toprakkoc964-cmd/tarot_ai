@@ -6,6 +6,7 @@ import '../../core/auth_error_mapper.dart';
 import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
 import 'auth_service.dart';
+import 'legal_pages.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
@@ -81,6 +82,18 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openTerms() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TermsOfServicePage()),
+    );
+  }
+
+  Future<void> _openPrivacy() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+    );
   }
 
   @override
@@ -317,25 +330,30 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _termsText(Color gold) {
-    return RichText(
-      text: TextSpan(
-        style: GoogleFonts.spaceGrotesk(
-          color: const Color(0xFF94A3B8),
-          fontSize: 16,
+    final baseStyle = GoogleFonts.spaceGrotesk(
+      color: const Color(0xFF94A3B8),
+      fontSize: 16,
+    );
+
+    return Wrap(
+      children: [
+        Text(AppTexts.t('auth.register.terms_prefix'), style: baseStyle),
+        GestureDetector(
+          onTap: _openTerms,
+          child: Text(
+            AppTexts.t('auth.register.terms_link'),
+            style: baseStyle.copyWith(color: gold),
+          ),
         ),
-        children: [
-          TextSpan(text: AppTexts.t('auth.register.terms_prefix')),
-          TextSpan(
-            text: AppTexts.t('auth.register.terms_link'),
-            style: TextStyle(color: gold),
+        Text(AppTexts.t('auth.register.terms_and'), style: baseStyle),
+        GestureDetector(
+          onTap: _openPrivacy,
+          child: Text(
+            AppTexts.t('auth.register.privacy_link'),
+            style: baseStyle.copyWith(color: gold),
           ),
-          TextSpan(text: AppTexts.t('auth.register.terms_and')),
-          TextSpan(
-            text: AppTexts.t('auth.register.privacy_link'),
-            style: TextStyle(color: gold),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
