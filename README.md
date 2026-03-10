@@ -12,6 +12,27 @@ Flutter + Firebase project scaffold for Tarot AI V1.
 3. In `flutter_app/` run `flutter pub get`.
 4. Set Firebase options and deploy rules/functions.
 
+## Auth Provider Setup (Madde 1)
+Firebase Console'da `Authentication > Sign-in method` altinda su provider'lari ac:
+- `Email/Password`
+- `Google`
+- `Apple`
+
+### Android
+- `Project settings > Your apps > Android` altinda SHA-1 ve SHA-256 fingerprint ekle.
+- `google-services.json` dosyasini `flutter_app/android/app/google-services.json` altina koy.
+
+### iOS (Apple Sign-In)
+- Apple Developer hesabinda `Sign in with Apple` capability acik olmali.
+- Firebase iOS app ayarlarinda dogru `Bundle ID` kullan.
+- Xcode tarafinda `Runner` target icin `Sign In with Apple` capability ekli olmali.
+
+### Flutter tarafi
+- `AuthService` artik su metotlari destekliyor:
+  - `signInWithGoogle()`
+  - `signInWithApple()`
+- Login ekraninda Apple/Google butonlari backend auth akisina baglandi.
+
 ## Env Variables (Functions)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default `gpt-4o-mini`)

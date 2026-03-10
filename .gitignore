@@ -19,4 +19,8 @@ firebase-debug.log
 
 # OS
 .DS_Store
+.vscode/
+
+# Firebase iOS config (environment-specific)
+flutter_app/ios/Runner/GoogleService-Info.plist
 Thumbs.db

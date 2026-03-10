@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
@@ -71,6 +72,28 @@ class _LoginPageState extends State<LoginPage> {
       );
     } catch (e) {
       _showError(mapAuthError(e));
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _loading = true);
+    try {
+      await widget.authService.signInWithGoogle();
+    } catch (e) {
+      _showError(mapAuthError(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    setState(() => _loading = true);
+    try {
+      await widget.authService.signInWithApple();
+    } catch (e) {
+      _showError(mapAuthError(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -258,6 +281,36 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 30),
+                    Text(
+                      AppTexts.t('auth.login.social_title'),
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.spaceGrotesk(
+                        color: const Color(0xFF94A3B8),
+                        fontSize: 12,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                          OutlinedButton.icon(
+                            onPressed: _loading ? null : _signInWithApple,
+                            icon: const Icon(Icons.apple),
+                            label: Text(AppTexts.t('auth.login.apple_button')),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                        OutlinedButton.icon(
+                          onPressed: _loading ? null : _signInWithGoogle,
+                          icon: const Icon(Icons.g_mobiledata, size: 22),
+                          label: Text(AppTexts.t('auth.login.google_button')),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

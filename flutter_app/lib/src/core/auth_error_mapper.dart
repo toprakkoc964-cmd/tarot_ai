@@ -20,6 +20,10 @@ String mapAuthError(Object error) {
       return AppTexts.t('error.password_short');
     case 'network-request-failed':
       return AppTexts.t('error.network');
+    case 'social-auth-cancelled':
+      return AppTexts.t('error.social_cancelled');
+    case 'apple-signin-not-supported':
+      return AppTexts.t('error.apple_not_supported');
     default:
       return error.message ?? AppTexts.t('error.default');
   }
