@@ -2,19 +2,21 @@ workflows:
   ios_build:
     name: iOS Build (Tarot AI)
     max_build_duration: 120
-    instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
+    working_directory: flutter_app
     scripts:
       - name: Flutter pub get
         script: |
-          cd flutter_app
           flutter pub get
+      - name: CocoaPods install
+        script: |
+          cd ios
+          pod install
       - name: Flutter build ipa
         script: |
-          cd flutter_app
           flutter build ipa --release
     artifacts:
-      - flutter_app/build/ios/ipa/*.ipa
-      - flutter_app/build/ios/archive/*.xcarchive
+      - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
