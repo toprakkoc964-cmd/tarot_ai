@@ -1,0 +1,13 @@
+version: 1.0
+metadata:
+  name: Default
+env-variables:
+  - name: AC_PROJECT_PATH
+    value: ios/Runner.xcworkspace
+    is-secret: false
+  - name: AC_SCHEME
+    value: Runner
+    is-secret: false
+  - name: AC_CONFIGURATION
+    value: Release
+    is-secret: false
