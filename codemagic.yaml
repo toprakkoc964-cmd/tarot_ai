@@ -5,6 +5,9 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tarotai
     working_directory: flutter_app
     scripts:
       - name: Flutter pub get
@@ -12,11 +15,11 @@ workflows:
           flutter pub get
       - name: CocoaPods install
         script: |
-          cd ios
-          pod install
+          cd ios && pod install --repo-update
       - name: Flutter build ipa
         script: |
           flutter build ipa --release
     artifacts:
       - build/ios/ipa/*.ipa
       - build/ios/archive/*.xcarchive
+      - /tmp/xcodebuild_logs/*.log
