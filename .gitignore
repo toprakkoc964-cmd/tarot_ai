@@ -1,13 +1,17 @@
-﻿# Node
+# Flutter / Dart
+.dart_tool/
+build/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub/
 functions/node_modules/
 functions/lib/
 
-# Flutter
-flutter_app/.dart_tool/
-flutter_app/build/
-flutter_app/.packages
-flutter_app/.flutter-plugins
-flutter_app/.flutter-plugins-dependencies
+# Generated iOS/macOS Flutter files
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+macos/Flutter/ephemeral/
 
 # Firebase local
 .firebase/
@@ -19,8 +23,4 @@ firebase-debug.log
 
 # OS
 .DS_Store
-.vscode/
-
-# Firebase iOS config (environment-specific)
-flutter_app/ios/Runner/GoogleService-Info.plist
 Thumbs.db
