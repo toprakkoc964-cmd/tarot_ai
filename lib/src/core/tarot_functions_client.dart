@@ -21,6 +21,26 @@ class TarotFunctionsClient {
     return ReadingResult.fromJson(response.data as Map<Object?, Object?>);
   }
 
+  Future<String> generateBirthFrequencyComment({
+    required String birthDate,
+    required String day,
+    String? lang,
+  }) async {
+    final callable = _functions.httpsCallable('generateBirthFrequencyComment');
+    final response = await callable.call({
+      'birthDate': birthDate,
+      'day': day,
+      if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
+    });
+
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final comment = (data['comment'] as String?)?.trim() ?? '';
+    if (comment.isEmpty) {
+      throw StateError('empty_birth_frequency_comment');
+    }
+    return comment;
+  }
+
   Future<Map<String, dynamic>> validateIosPurchase({
     required String productId,
     required String transactionId,

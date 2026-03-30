@@ -1,15 +1,20 @@
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
-const messaging = getMessaging();
+function db() {
+  return getFirestore();
+}
+
+function messaging() {
+  return getMessaging();
+}
 
 export async function sendAudioReadyNotification(input: {
   uid: string;
   readingId: string;
   lang: string;
 }) {
-  const tokensSnap = await db.collection('users').doc(input.uid).collection('fcm_tokens').get();
+  const tokensSnap = await db().collection('users').doc(input.uid).collection('fcm_tokens').get();
   const tokens = tokensSnap.docs.map((d) => d.id).filter((t) => t.length > 8);
   if (tokens.length === 0) return;
 
@@ -19,7 +24,7 @@ export async function sendAudioReadyNotification(input: {
       ? 'Emilia mesajını seslendirdi. Dinlemek için uygulamayı aç.'
       : 'Emilia has narrated your reading. Open the app to listen.';
 
-  await messaging.sendEachForMulticast({
+  await messaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
     data: {
@@ -35,7 +40,7 @@ export async function sendDailyNudge(input: {
   zodiac: string;
   deepLink: string;
 }) {
-  const tokensSnap = await db.collection('users').doc(input.uid).collection('fcm_tokens').get();
+  const tokensSnap = await db().collection('users').doc(input.uid).collection('fcm_tokens').get();
   const tokens = tokensSnap.docs.map((d) => d.id).filter((t) => t.length > 8);
   if (tokens.length === 0) return;
 
@@ -45,7 +50,7 @@ export async function sendDailyNudge(input: {
       ? `${input.zodiac} enerjin icin bugunluk acilim hazir.`
       : `A quick spread is ready for your ${input.zodiac} energy today.`;
 
-  await messaging.sendEachForMulticast({
+  await messaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
     data: {

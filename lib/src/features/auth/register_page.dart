@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -7,6 +9,7 @@ import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
+import 'user_profile_contract.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
@@ -40,7 +43,9 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
-    if (_nameController.text.trim().isEmpty) {
+    final normalizedName =
+        UserProfileContract.normalizeName(_nameController.text);
+    if (normalizedName.isEmpty) {
       _showError(AppTexts.t('error.name_required'));
       return;
     }
@@ -67,9 +72,38 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _loading = true);
     try {
+      final name = normalizedName;
+      final email = _emailController.text.trim();
       await widget.authService.register(
-        email: _emailController.text.trim(),
+        email: email,
         password: _passwordController.text,
+      );
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'user-missing-after-register',
+          message: 'Kullanici olusturuldu ama oturum acik degil.',
+        );
+      }
+
+      final userDocRef = FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(user.uid);
+      final existing = await userDocRef.get();
+      final includeCreatedAt = !existing.exists;
+
+      await userDocRef.set(
+        UserProfileWrite(
+          uid: user.uid,
+          email: user.email?.trim().isNotEmpty == true
+              ? user.email!.trim()
+              : email,
+          name: name,
+          isProfileComplete: false,
+          includeCreatedAt: includeCreatedAt,
+        ).toMap(),
+        SetOptions(merge: true),
       );
     } catch (e) {
       _showError(mapAuthError(e));
@@ -164,7 +198,8 @@ class _RegisterPageState extends State<RegisterPage> {
                             LanguagePickerButton(
                               iconColor: const Color(0xFFFF00FF),
                               onSelected: (lang) async {
-                                await LocalizationService.instance.setLanguage(lang);
+                                await LocalizationService.instance
+                                    .setLanguage(lang);
                                 if (mounted) setState(() {});
                               },
                             ),
@@ -177,8 +212,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                     shape: BoxShape.circle,
                                     border: Border.all(color: gold, width: 2),
                                     image: const DecorationImage(
-                                      image: NetworkImage(
-                                          'https://lh3.googleusercontent.com/aida-public/AB6AXuCFEkC-QTKNNQTZbs9zbCcy7zRq51p7EVjMtU204W_tbGIhUkTqOlpksSV1XuYql69Y2uvK1ycoOcIV9jaJRZ4aPZsvYwTSu3uOfGVFtP25tF5DewS4NPlKWS-MzRkmP4OraYk7R6dDg8YDonYdPIC4S5FzADAJF_RXZzmBggefceSR6HH2M4ziLOsYs7qdV-GPvHZaYRnIVOAdHhWypkjI1-ueTjzaEbKEAUKIu-pK3_VL9UVPM1lasUZalWEllQ6LElSnPDCiHMte'),
+                                      image:
+                                          AssetImage('images/chatgpt_logo.png'),
                                       fit: BoxFit.cover,
                                     ),
                                   ),
@@ -219,7 +254,9 @@ class _RegisterPageState extends State<RegisterPage> {
                     _label(AppTexts.t('auth.register.name_label'), gold),
                     TextField(
                       controller: _nameController,
-                      decoration: inputStyle(AppTexts.t('auth.register.name_hint')),
+                      maxLength: UserProfileContract.maxNameLength,
+                      decoration:
+                          inputStyle(AppTexts.t('auth.register.name_hint')),
                     ),
                     const SizedBox(height: 16),
                     _label(AppTexts.t('auth.register.email_label'), gold),
@@ -369,4 +406,3 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 }
-

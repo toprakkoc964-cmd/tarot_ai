@@ -78,6 +78,20 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
   await userRef.set(payload, { merge: true });
 });
 
+export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
+  if (!user?.uid) return;
+
+  const userRef = db.collection('users').doc(user.uid);
+  try {
+    await db.recursiveDelete(userRef);
+  } catch (error) {
+    functionsV1.logger.error('Failed to cleanup user document on auth delete', {
+      uid: user.uid,
+      error
+    });
+  }
+});
+
 export const generateTarotReading = onCall({ enforceAppCheck: false }, async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -117,7 +131,7 @@ export const generateTarotReading = onCall({ enforceAppCheck: false }, async (re
 
       const user = userSnap.data() as UserDoc;
       const profile = user.profile;
-      if (!user.isProfileComplete || !profile?.name || !profile.birthDate || !profile.occupation) {
+      if (!user.isProfileComplete || !profile?.name || !profile.birthDate) {
         throw new Error('PROFILE_INCOMPLETE');
       }
 
@@ -224,6 +238,61 @@ export const generateTarotReading = onCall({ enforceAppCheck: false }, async (re
 
       throw innerError;
     }
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
+export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const uid = request.auth.uid;
+    const incomingBirthDate = String(request.data?.birthDate ?? '').trim();
+    const incomingDay = String(request.data?.day ?? '').trim();
+    const incomingLang = String(request.data?.lang ?? '').trim();
+
+    const userRef = db.collection('users').doc(uid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'USER_NOT_FOUND');
+    }
+
+    const user = userSnap.data() as UserDoc;
+    const profileBirthDate = String(user.profile?.birthDate ?? '').trim();
+    const birthDate = incomingBirthDate || profileBirthDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+      throw new HttpsError('invalid-argument', 'INVALID_BIRTH_DATE');
+    }
+
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(incomingDay)
+      ? incomingDay
+      : new Date().toISOString().slice(0, 10);
+    const lang = resolveLanguage(incomingLang || user.settings?.lang);
+
+    const systemPrompt = [
+      'You are a mystical but practical astrology guide.',
+      'Write exactly one short daily birth-frequency comment.',
+      'It must feel personal, warm, and actionable.',
+      'Do not use markdown, lists, or emojis.',
+      'Keep it under 65 words.'
+    ].join(' ');
+
+    const userPrompt = [
+      `Language: ${lang}`,
+      `Birth date: ${birthDate}`,
+      `Target day: ${day}`,
+      'Generate one concise daily comment for this user.'
+    ].join('\n');
+
+    const comment = (await createReadingText({ systemPrompt, userPrompt })).trim();
+    if (!comment) {
+      throw new Error('EMPTY_BIRTH_FREQUENCY_COMMENT');
+    }
+
+    return { comment, day, birthDate };
   } catch (err) {
     throw mapError(err);
   }
@@ -357,13 +426,13 @@ export const saveOnboardingProfile = onCall({ enforceAppCheck: false }, async (r
     const uid = request.auth.uid;
     const name = String(request.data?.name ?? '').trim();
     const birthDate = String(request.data?.birthDate ?? '').trim();
-    const occupation = String(request.data?.occupation ?? '').trim();
+    const occupation = request.data?.occupation ? String(request.data.occupation).trim() : null;
 
     const privacyAccepted = Boolean(request.data?.privacyAccepted);
     const termsAccepted = Boolean(request.data?.termsAccepted);
     const aiProcessingAccepted = Boolean(request.data?.aiProcessingAccepted);
 
-    if (!name || !birthDate || !occupation) {
+    if (!name || !birthDate) {
       throw new HttpsError('invalid-argument', 'PROFILE_FIELDS_REQUIRED');
     }
     if (!privacyAccepted || !termsAccepted || !aiProcessingAccepted) {
@@ -378,7 +447,7 @@ export const saveOnboardingProfile = onCall({ enforceAppCheck: false }, async (r
           birthDate,
           birthTime: request.data?.birthTime ? String(request.data.birthTime) : null,
           birthCity: request.data?.birthCity ? String(request.data.birthCity) : null,
-          occupation
+          ...(occupation ? { occupation } : {})
         },
         consents: {
           privacyAcceptedAt: FieldValue.serverTimestamp(),

@@ -1,12 +1,24 @@
 import OpenAI from 'openai';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let client: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (client) return client;
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is missing');
+  }
+
+  client = new OpenAI({ apiKey });
+  return client;
+}
 
 export async function createReadingText(input: {
   systemPrompt: string;
   userPrompt: string;
 }): Promise<string> {
-  const resp = await client.responses.create({
+  const resp = await getClient().responses.create({
     model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
     input: [
       { role: 'system', content: input.systemPrompt },

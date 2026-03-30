@@ -31,17 +31,18 @@ class TarotAiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: AppTexts.t('app.title'),
       theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: const Color(0xFF1A1022),
-        canvasColor: const Color(0xFF1A1022),
+        scaffoldBackgroundColor: const Color(0xFF17081C),
+        canvasColor: const Color(0xFF17081C),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF690DAB),
           secondary: Color(0xFFD4AF37),
-          surface: Color(0xFF1A1022),
+          surface: Color(0xFF17081C),
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1A1022),
+          backgroundColor: Color(0xFF17081C),
           surfaceTintColor: Colors.transparent,
         ),
       ),

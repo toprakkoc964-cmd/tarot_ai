@@ -20,7 +20,7 @@ service cloud.firestore {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid);
       allow update: if isOwner(uid) && walletUnchanged();
-      allow delete: if false;
+      allow delete: if isOwner(uid);
 
       match /readings/{readingId} {
         allow read: if isOwner(uid);

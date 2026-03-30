@@ -167,8 +167,7 @@ class _LoginPageState extends State<LoginPage> {
                                 shape: BoxShape.circle,
                                 border: Border.all(color: gold, width: 1.5),
                                 image: const DecorationImage(
-                                  image: NetworkImage(
-                                      'https://lh3.googleusercontent.com/aida-public/AB6AXuCFEkC-QTKNNQTZbs9zbCcy7zRq51p7EVjMtU204W_tbGIhUkTqOlpksSV1XuYql69Y2uvK1ycoOcIV9jaJRZ4aPZsvYwTSu3uOfGVFtP25tF5DewS4NPlKWS-MzRkmP4OraYk7R6dDg8YDonYdPIC4S5FzADAJF_RXZzmBggefceSR6HH2M4ziLOsYs7qdV-GPvHZaYRnIVOAdHhWypkjI1-ueTjzaEbKEAUKIu-pK3_VL9UVPM1lasUZalWEllQ6LElSnPDCiHMte'),
+                                  image: AssetImage('images/chatgpt_logo.png'),
                                   fit: BoxFit.cover,
                                 ),
                               ),
@@ -201,14 +200,10 @@ class _LoginPageState extends State<LoginPage> {
                       ],
                     ),
                     const SizedBox(height: 54),
-                    Text(
-                      AppTexts.t('auth.login.brand_title'),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.cinzel(
-                          color: Colors.white,
-                          fontSize: 44,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.7),
+                    Image.asset(
+                      'images/chatgpt_logo.png',
+                      height: 78,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -222,7 +217,8 @@ class _LoginPageState extends State<LoginPage> {
                     TextField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: inputStyle(AppTexts.t('auth.login.email_hint')),
+                      decoration:
+                          inputStyle(AppTexts.t('auth.login.email_hint')),
                       style: GoogleFonts.spaceGrotesk(
                           color: const Color(0xFFE2E8F0), fontSize: 17),
                     ),
@@ -295,7 +291,8 @@ class _LoginPageState extends State<LoginPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                        if (!kIsWeb &&
+                            defaultTargetPlatform == TargetPlatform.iOS) ...[
                           OutlinedButton.icon(
                             onPressed: _loading ? null : _signInWithApple,
                             icon: const Icon(Icons.apple),
@@ -311,8 +308,10 @@ class _LoginPageState extends State<LoginPage> {
                       ],
                     ),
                     const SizedBox(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 4,
                       children: [
                         Text(
                           AppTexts.t('auth.login.switch_prefix'),
@@ -357,4 +356,3 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
-

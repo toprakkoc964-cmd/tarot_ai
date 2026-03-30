@@ -1,11 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:flutter/foundation.dart';
+
+import 'user_profile_contract.dart';
 
 class AuthService {
   AuthService({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseAuth _auth;
+  final ValueNotifier<bool> accountDeletionInProgress = ValueNotifier(false);
 
   Stream<User?> authChanges() => _auth.authStateChanges();
 
@@ -46,7 +50,15 @@ class AuthService {
       idToken: googleAuth.idToken,
     );
 
-    await _auth.signInWithCredential(credential);
+    final result = await _auth.signInWithCredential(credential);
+    final user = result.user;
+    final normalizedName =
+        UserProfileContract.normalizeName(user?.displayName ?? '');
+    if (user != null &&
+        normalizedName.isNotEmpty &&
+        normalizedName != (user.displayName ?? '').trim()) {
+      await user.updateDisplayName(normalizedName);
+    }
   }
 
   Future<void> signInWithApple() async {
@@ -59,7 +71,10 @@ class AuthService {
     }
 
     final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
+      scopes: [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName
+      ],
     );
 
     final oauth = OAuthProvider('apple.com').credential(

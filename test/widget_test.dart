@@ -2,8 +2,10 @@
 import 'package:tarot_ai/main.dart';
 
 void main() {
-  testWidgets('App boots', (WidgetTester tester) async {
-    await tester.pumpWidget(const TarotAiApp());
-    expect(find.text('Tarot AI'), findsNothing);
+  testWidgets('App boots without Firebase in widget test', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const TarotAiApp(bootstrapError: 'test'));
+    expect(find.byType(FirebaseSetupRequiredPage), findsOneWidget);
   });
 }
