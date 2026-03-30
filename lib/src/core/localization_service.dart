@@ -246,7 +246,7 @@ class LocalizationService {
     'home.tab.archive': 'Arsiv',
     'home.tab.credit': 'Kredi',
     'home.tab.profile': 'Profil',
-    'home.notifications.title': 'Bildirimler',
+    'home.notifications.title': 'Kozmik Bildirimler',
     'home.notifications.empty': 'Henuz bildirimin yok.',
     'home.archive.title': 'Kozmik Arsiv',
     'home.archive.tab.cards': 'Kartlar',
