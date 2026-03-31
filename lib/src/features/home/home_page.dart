@@ -709,12 +709,18 @@ class _TarotCardState extends State<_TarotCard>
 // ═════════════════════════════════════════════════════════════════
 // IDENTITY MODULE
 // ═════════════════════════════════════════════════════════════════
-class _IdentityModule extends StatelessWidget {
+class _IdentityModule extends StatefulWidget {
   const _IdentityModule({required this.uid});
 
   final String uid;
-  static final Map<String, Future<String>> _dailyCommentFutureCache =
-      <String, Future<String>>{};
+
+  @override
+  State<_IdentityModule> createState() => _IdentityModuleState();
+}
+
+class _IdentityModuleState extends State<_IdentityModule> {
+  String _commentKey = '';
+  Future<String>? _commentFuture;
 
   DateTime? _parseBirthDate(dynamic raw) {
     if (raw is! String || raw.trim().isEmpty) return null;
@@ -751,10 +757,13 @@ class _IdentityModule extends StatelessWidget {
 
   Future<String> _dailyCommentFuture(String? storedBirthDate) {
     final key = (storedBirthDate ?? '').trim();
-    return _dailyCommentFutureCache.putIfAbsent(
-      key,
-      () => FrequencyService.instance.getDailyComment(userBirthDate: key),
-    );
+    if (_commentFuture == null || key != _commentKey) {
+      _commentKey = key;
+      _commentFuture = FrequencyService.instance.getDailyComment(
+        userBirthDate: key,
+      );
+    }
+    return _commentFuture!;
   }
 
   @override
@@ -762,7 +771,7 @@ class _IdentityModule extends StatelessWidget {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection(UserProfileContract.usersCollection)
-          .doc(uid)
+          .doc(widget.uid)
           .snapshots(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
@@ -844,27 +853,12 @@ class _IdentityModule extends StatelessWidget {
                           ? dynamicComment
                           : 'Bugunluk yorum su an alinamiyor. Lutfen tekrar dene.';
                     }
-                    return RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text:
-                                AppTexts.t('home.birth_frequency.reading.lead'),
-                            style: GoogleFonts.manrope(
-                              fontSize: 14,
-                              color: const Color(0xFFFFA4DF),
-                              height: 1.6,
-                            ),
-                          ),
-                          TextSpan(
-                            text: bodyText,
-                            style: GoogleFonts.manrope(
-                              fontSize: 14,
-                              color: _kOnSurface.withValues(alpha: 0.8),
-                              height: 1.6,
-                            ),
-                          ),
-                        ],
+                    return Text(
+                      bodyText,
+                      style: GoogleFonts.manrope(
+                        fontSize: 14,
+                        color: _kOnSurface.withValues(alpha: 0.8),
+                        height: 1.6,
                       ),
                     );
                   },

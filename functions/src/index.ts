@@ -5,6 +5,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as functionsV1 from 'firebase-functions/v1';
+import * as logger from 'firebase-functions/logger';
 import { mapError } from './lib/errors';
 import { buildSystemPrompt } from './lib/context-builder';
 import { createReadingText } from './lib/openai';
@@ -294,6 +295,19 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false }, 
 
     return { comment, day, birthDate };
   } catch (err) {
+    const errorCode = err instanceof HttpsError
+      ? err.code
+      : err instanceof Error
+        ? err.name
+        : 'unknown';
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error('generateBirthFrequencyComment failed', {
+      uid: request.auth?.uid ?? null,
+      birthDate: String(request.data?.birthDate ?? '').trim() || null,
+      day: String(request.data?.day ?? '').trim() || null,
+      errorCode,
+      errorMessage
+    });
     throw mapError(err);
   }
 });

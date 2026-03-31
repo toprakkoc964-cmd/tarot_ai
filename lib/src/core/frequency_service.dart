@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import 'tarot_functions_client.dart';
 
@@ -57,7 +58,14 @@ class FrequencyService {
       await prefs.setString(keyLastFetchDate, today);
       return comment;
     } catch (error, stackTrace) {
-      debugPrint('[FrequencyService] getDailyComment error: $error');
+      String debugError = '$error';
+      if (error is FirebaseFunctionsException) {
+        final code = error.code;
+        final message = error.message ?? '';
+        debugError =
+            'FirebaseFunctionsException(code: $code, message: $message)';
+      }
+      debugPrint('[FrequencyService] getDailyComment error: $debugError');
       debugPrint('$stackTrace');
       if (cachedComment.isNotEmpty) return cachedComment;
       return 'Bugunluk yorum su an alinamiyor. Lutfen tekrar dene.';

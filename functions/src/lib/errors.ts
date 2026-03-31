@@ -4,6 +4,15 @@ export function mapError(err: unknown): HttpsError {
   if (err instanceof HttpsError) return err;
 
   if (err instanceof Error) {
+    if (err.message === 'OPENAI_API_KEY_MISSING') {
+      return new HttpsError('failed-precondition', 'OPENAI_API_KEY_MISSING');
+    }
+    if (err.message.startsWith('OPENAI_REQUEST_FAILED')) {
+      return new HttpsError('unavailable', err.message);
+    }
+    if (err.message === 'EMPTY_BIRTH_FREQUENCY_COMMENT') {
+      return new HttpsError('internal', 'EMPTY_BIRTH_FREQUENCY_COMMENT');
+    }
     if (err.message === 'PROFILE_INCOMPLETE') {
       return new HttpsError('failed-precondition', 'PROFILE_INCOMPLETE');
     }
