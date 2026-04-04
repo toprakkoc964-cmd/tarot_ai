@@ -93,7 +93,7 @@ export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) =
   }
 });
 
-export const generateTarotReading = onCall({ enforceAppCheck: false }, async (request) => {
+export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -244,7 +244,7 @@ export const generateTarotReading = onCall({ enforceAppCheck: false }, async (re
   }
 });
 
-export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false }, async (request) => {
+export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');

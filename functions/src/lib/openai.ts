@@ -1,16 +1,16 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-let client: OpenAI | null = null;
+let client: GoogleGenerativeAI | null = null;
 
-function getClient(): OpenAI {
+function getClient(): GoogleGenerativeAI {
   if (client) return client;
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY_MISSING');
+    throw new Error('GEMINI_API_KEY_MISSING');
   }
 
-  client = new OpenAI({ apiKey });
+  client = new GoogleGenerativeAI(apiKey);
   return client;
 }
 
@@ -19,18 +19,17 @@ export async function createReadingText(input: {
   userPrompt: string;
 }): Promise<string> {
   try {
-    const resp = await getClient().responses.create({
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
-      input: [
-        { role: 'system', content: input.systemPrompt },
-        { role: 'user', content: input.userPrompt }
-      ],
-      temperature: Number(process.env.OPENAI_TEMPERATURE ?? '0.8')
+    const modelName = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const model = getClient().getGenerativeModel({
+      model: modelName,
+      systemInstruction: input.systemPrompt,
     });
 
-    return resp.output_text || 'The cards suggest reflection and steady action.';
+    const result = await model.generateContent(input.userPrompt);
+    const text = result.response.text().trim();
+    return text || 'The cards suggest reflection and steady action.';
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`OPENAI_REQUEST_FAILED:${message}`);
+    throw new Error(`GEMINI_REQUEST_FAILED:${message}`);
   }
 }
