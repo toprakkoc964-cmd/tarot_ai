@@ -85,11 +85,17 @@ class _ProfilePageState extends State<ProfilePage> {
           (data[UserProfileContract.email] as String?)?.trim() ?? '';
       final storedBirthDate =
           _parseStoredBirthDate(data[UserProfileContract.birthDate] as String?);
+      final settings = data['settings'] as Map<String, dynamic>?;
+      final storedNotificationsEnabled =
+          settings?['notificationsEnabled'] as bool?;
 
       setState(() {
         if (storedName.isNotEmpty) _name = storedName;
         if (storedEmail.isNotEmpty) _email = storedEmail;
         if (storedBirthDate != null) _birthDate = storedBirthDate;
+        if (storedNotificationsEnabled != null) {
+          _notificationsEnabled = storedNotificationsEnabled;
+        }
       });
     } catch (_) {
       // Keep UI defaults if read fails.
@@ -106,6 +112,14 @@ class _ProfilePageState extends State<ProfilePage> {
       },
       SetOptions(merge: true),
     );
+  }
+
+  Future<void> _updateNotificationPreference(bool value) async {
+    await _updateProfileFields({
+      'settings': {
+        'notificationsEnabled': value,
+      },
+    });
   }
 
   String _formatBirthDate(DateTime dt) {
@@ -125,6 +139,14 @@ class _ProfilePageState extends State<ProfilePage> {
       'Aralik',
     ];
     return '${dt.day} ${months[dt.month]} ${dt.year}';
+  }
+
+  double _heroNameFontSize(String value) {
+    final length = value.trim().length;
+    if (length <= 12) return 50;
+    if (length <= 18) return 42;
+    if (length <= 26) return 34;
+    return 28;
   }
 
   void _showSnack(String message) {
@@ -550,18 +572,42 @@ class _ProfilePageState extends State<ProfilePage> {
                   icon: Icons.notifications_rounded,
                   title: 'Bildirimler',
                   subtitle: 'Gunluk kart yorumlari ve hatirlatmalar',
-                  onTap: () => setState(
-                    () => _notificationsEnabled = !_notificationsEnabled,
-                  ),
+                  onTap: () async {
+                    final nextValue = !_notificationsEnabled;
+                    setState(() => _notificationsEnabled = nextValue);
+                    try {
+                      await _updateNotificationPreference(nextValue);
+                      if (!mounted) return;
+                      _showSnack(
+                        nextValue
+                            ? 'Bildirimler acildi'
+                            : 'Bildirimler kapatildi',
+                      );
+                    } catch (_) {
+                      if (!mounted) return;
+                      setState(() => _notificationsEnabled = !nextValue);
+                      _showSnack('Bildirim ayari kaydedilemedi');
+                    }
+                  },
                   trailing: CupertinoSwitch(
                     value: _notificationsEnabled,
                     activeTrackColor: _kPrimary,
                     inactiveTrackColor: const Color(0xFF26112E),
-                    onChanged: (value) {
+                    onChanged: (value) async {
                       setState(() => _notificationsEnabled = value);
-                      _showSnack(
-                        value ? 'Bildirimler acildi' : 'Bildirimler kapatildi',
-                      );
+                      try {
+                        await _updateNotificationPreference(value);
+                        if (!mounted) return;
+                        _showSnack(
+                          value
+                              ? 'Bildirimler acildi'
+                              : 'Bildirimler kapatildi',
+                        );
+                      } catch (_) {
+                        if (!mounted) return;
+                        setState(() => _notificationsEnabled = !value);
+                        _showSnack('Bildirim ayari kaydedilemedi');
+                      }
                     },
                   ),
                   isLast: true,
@@ -639,28 +685,40 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildHero() {
+    final displayName = _name.trim().isEmpty ? 'Toprak Koc' : _name.trim();
+    final heroFontSize = _heroNameFontSize(displayName);
+
     return Column(
       children: [
-        Text(
-          _name,
-          style: GoogleFonts.newsreader(
-            fontSize: 56,
-            fontWeight: FontWeight.w600,
-            color: _kOnSurface,
-            shadows: [
-              Shadow(
-                color: _kPrimary.withValues(alpha: 0.25),
-                blurRadius: 15,
-              ),
-            ],
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            displayName,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.newsreader(
+              fontSize: heroFontSize,
+              height: 0.96,
+              fontWeight: FontWeight.w600,
+              color: _kOnSurface,
+              letterSpacing: -1.0,
+              shadows: [
+                Shadow(
+                  color: _kPrimary.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 14),
         Text(
           'Hesabini ve uygulama tercihlerini buradan yonetebilirsin',
           textAlign: TextAlign.center,
           style: GoogleFonts.manrope(
-            fontSize: 13.5,
+            fontSize: 14,
             color: _kOnSurface.withValues(alpha: 0.72),
             height: 1.45,
           ),
@@ -1211,36 +1269,20 @@ class _ProfileTopBar extends StatelessWidget {
               bottom: BorderSide(color: _kSecondary.withValues(alpha: 0.1)),
             ),
           ),
-          child: Row(
-            children: [
-              const Icon(Icons.auto_awesome, color: _kPrimary, size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Oracle Profile',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.newsreader(
-                    fontSize: 34,
-                    fontStyle: FontStyle.italic,
-                    color: _kTertiary,
-                    shadows: [
-                      Shadow(
-                        color: _kTertiary.withValues(alpha: 0.4),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
+          child: Text(
+            AppTexts.t('home.profile.title'),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.newsreader(
+              fontSize: 34,
+              fontStyle: FontStyle.italic,
+              color: _kPrimary,
+              shadows: [
+                Shadow(
+                  color: _kPrimary.withValues(alpha: 0.45),
+                  blurRadius: 10,
                 ),
-              ),
-              IconButton(
-                onPressed: () {},
-                splashRadius: 24,
-                icon: Icon(
-                  Icons.settings_rounded,
-                  color: _kSecondary.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

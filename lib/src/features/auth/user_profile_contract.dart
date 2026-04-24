@@ -20,6 +20,11 @@ class UserProfileContract {
   static const String isProfileComplete = 'isProfileComplete';
   static const String createdAt = 'createdAt';
   static const String updatedAt = 'updatedAt';
+  static const String wallet = 'wallet';
+  static const String walletCredits = 'credits';
+  static const String walletLastFreeDrawAt = 'lastFreeDrawAt';
+  static const String fcmTokens = 'fcmTokens';
+  static const String fcmTokenUpdatedAt = 'fcmTokenUpdatedAt';
 
   static const int maxNameLength = 25;
 

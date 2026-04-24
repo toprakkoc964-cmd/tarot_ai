@@ -3,136 +3,226 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../readings/tarot_card_view.dart';
+
 const _kBg = Color(0xFF17081C);
 const _kPrimary = Color(0xFFFF5ED6);
+const _kPrimaryContainer = Color(0xFFFF00D4);
 const _kSecondary = Color(0xFFCDBDFF);
 const _kTertiary = Color(0xFFFFE792);
 const _kOnSurface = Color(0xFFFADCFF);
+const _kGlass = Color(0x66361A41);
 
 class KozmikBilgePage extends StatelessWidget {
-  const KozmikBilgePage({super.key});
+  const KozmikBilgePage({
+    super.key,
+    required this.cardTitle,
+    required this.cardImageUrl,
+  });
+
+  final String cardTitle;
+  final String cardImageUrl;
 
   @override
   Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
+
     return Scaffold(
       backgroundColor: _kBg,
       body: Stack(
         children: [
-          const _BackgroundGlows(),
+          const _ChatBackground(),
           ListView(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 86,
-              bottom: 220,
-              left: 24,
-              right: 24,
-            ),
+            padding: EdgeInsets.fromLTRB(24, topPadding + 92, 24, 250),
             children: [
-              _buildTarotCard(),
-              const SizedBox(height: 28),
-              _buildChatBubble(),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Text(
-                  'ARIS • SIMDI',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 10,
-                    letterSpacing: 1.6,
-                    color: _kSecondary.withValues(alpha: 0.45),
-                  ),
-                ),
+              _HeroTarotCard(
+                cardTitle: cardTitle,
+                cardImageUrl: cardImageUrl,
+              ),
+              SizedBox(height: 28),
+              _ArisMessageBubble(cardTitle: cardTitle),
+              SizedBox(height: 8),
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: _MessageMeta(),
               ),
             ],
           ),
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _TopBar(),
-          ),
-          const Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _LockedBottomArea(),
-          ),
+          const _ChatTopBar(),
+          const _LockedInteractionArea(),
         ],
       ),
     );
   }
+}
 
-  Widget _buildTarotCard() {
-    return Center(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 138,
-            height: 208,
+class _ChatTopBar extends StatelessWidget {
+  const _ChatTopBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            padding: EdgeInsets.fromLTRB(16, topPadding + 10, 16, 12),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: _kPrimary.withValues(alpha: 0.2),
+              color: _kBg.withValues(alpha: 0.82),
               boxShadow: [
                 BoxShadow(
-                  color: _kPrimary.withValues(alpha: 0.3),
-                  blurRadius: 34,
-                  spreadRadius: 2,
+                  color: _kPrimary.withValues(alpha: 0.10),
+                  blurRadius: 20,
                 ),
               ],
             ),
-          ),
-          Container(
-            width: 130,
-            height: 200,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _kPrimary.withValues(alpha: 0.42)),
-              image: const DecorationImage(
-                image: NetworkImage(
-                  'https://lh3.googleusercontent.com/aida-public/AB6AXuDutE47XiGTycmvPbZSf2JqRq3st4Itr6wUVLxRIVreig6S9B25YnrSY4Uwn0u9-o4hsGX0s_b4q81KpGE7uAt_lXFRxO9GvcZAZAtP9D64AhQGtIsFLSHstlkkL7NT5GnVlBxO7dvqVSGkOHFA8KOQWyPtc0b9EkXVfpByiluTgbMeTiTCoJQvc2-pZX_Z72jH85z9f6I-B_x6NzsYZueYRo34bBvKrFQt3jqnPkMFoIoKCoNg6gsbArhIun_QmLvtQ91LH7cT2pfj',
-                ),
-                fit: BoxFit.cover,
-                colorFilter: ColorFilter.mode(Colors.black45, BlendMode.darken),
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
+            child: Row(
               children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(15),
+                IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: _kPrimary,
+                    size: 24,
                   ),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                    child: Container(
-                      width: double.infinity,
-                      color: Colors.black.withValues(alpha: 0.6),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        'Yildiz',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.newsreader(
-                          fontSize: 16,
-                          fontStyle: FontStyle.italic,
-                          color: _kTertiary,
-                        ),
-                      ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Kozmik Bilge Aris',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.newsreader(
+                      fontSize: 22,
+                      fontStyle: FontStyle.italic,
+                      color: _kPrimary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF361A41).withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: _kPrimary.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: Text(
+                    '250 Jeton',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: _kPrimary,
                     ),
                   ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroTarotCard extends StatelessWidget {
+  const _HeroTarotCard({
+    required this.cardTitle,
+    required this.cardImageUrl,
+  });
+
+  final String cardTitle;
+  final String cardImageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 156,
+            height: 220,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _kPrimary.withValues(alpha: 0.22),
+                  blurRadius: 42,
+                  spreadRadius: 8,
+                ),
+              ],
+            ),
+          ),
+          Transform.rotate(
+            angle: 0.04,
+            child: SizedBox(
+              width: 112,
+              height: 176,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: TarotCardView(
+                      imageUrl: cardImageUrl,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(13),
+                      ),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: Container(
+                          width: double.infinity,
+                          color: Colors.black.withValues(alpha: 0.52),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            cardTitle,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.newsreader(
+                              fontSize: 16,
+                              fontStyle: FontStyle.italic,
+                              color: _kTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildChatBubble() {
+class _ArisMessageBubble extends StatelessWidget {
+  const _ArisMessageBubble({
+    required this.cardTitle,
+  });
+
+  final String cardTitle;
+
+  @override
+  Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: FractionallySizedBox(
-        widthFactor: 0.95,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
         child: ClipRRect(
           borderRadius: const BorderRadius.only(
             topLeft: Radius.zero,
@@ -143,9 +233,9 @@ class KozmikBilgePage extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: const Color(0xFF361A41).withValues(alpha: 0.4),
+                color: _kGlass,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.zero,
                   topRight: Radius.circular(24),
@@ -153,8 +243,15 @@ class KozmikBilgePage extends StatelessWidget {
                   bottomRight: Radius.circular(24),
                 ),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06),
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,19 +259,22 @@ class KozmikBilgePage extends StatelessWidget {
                   RichText(
                     text: TextSpan(
                       style: GoogleFonts.manrope(
-                        fontSize: 16,
+                        fontSize: 18,
                         height: 1.6,
-                        fontWeight: FontWeight.w300,
+                        fontWeight: FontWeight.w400,
                         color: _kOnSurface,
                       ),
                       children: [
-                        const TextSpan(text: 'Toprak, Kova burcunun enerjisi ve '),
+                        const TextSpan(
+                          text:
+                              'Toprak, Kova burcunun enerjisi ve ',
+                        ),
                         TextSpan(
-                          text: 'Yildiz',
+                          text: cardTitle,
                           style: GoogleFonts.manrope(
+                            color: _kPrimary,
                             fontStyle: FontStyle.italic,
                             fontWeight: FontWeight.w600,
-                            color: _kPrimary,
                           ),
                         ),
                         const TextSpan(
@@ -188,37 +288,38 @@ class KozmikBilgePage extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
+                      color: Colors.black.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: Colors.white.withValues(alpha: 0.05),
                       ),
                     ),
                     child: Row(
                       children: [
-                        const _WaveBars(),
+                        const _Waveform(),
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
-                            vertical: 8,
+                            vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: _kPrimary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
+                            color: _kPrimary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'SESLI REHBERLIK (50 JETON)',
+                                'Sesli Rehberlik (50 Jeton)',
                                 style: GoogleFonts.spaceGrotesk(
                                   fontSize: 10,
-                                  color: _kPrimary,
                                   fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.6,
+                                  letterSpacing: 0.5,
+                                  color: _kPrimary,
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               const Icon(
                                 Icons.play_arrow_rounded,
                                 color: _kPrimary,
@@ -240,49 +341,130 @@ class KozmikBilgePage extends StatelessWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar();
+class _MessageMeta extends StatelessWidget {
+  const _MessageMeta();
 
   @override
   Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          color: _kBg.withValues(alpha: 0.8),
-          padding: EdgeInsets.fromLTRB(16, topPad + 8, 16, 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Text(
+      'Aris • Simdi',
+      style: GoogleFonts.spaceGrotesk(
+        fontSize: 10,
+        letterSpacing: 1.3,
+        color: _kSecondary.withValues(alpha: 0.42),
+      ),
+    );
+  }
+}
+
+class _LockedInteractionArea extends StatelessWidget {
+  const _LockedInteractionArea();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: IgnorePointer(
+        ignoring: false,
+        child: SizedBox(
+          height: 260,
+          child: Stack(
             children: [
-              IconButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.arrow_back_rounded, color: _kPrimary),
-              ),
-              Expanded(
-                child: Text(
-                  'Kozmik Bilge Aris',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.newsreader(
-                    fontSize: 24,
-                    color: _kPrimary,
-                    fontStyle: FontStyle.italic,
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        _kBg,
+                        _kBg.withValues(alpha: 0.92),
+                        _kBg.withValues(alpha: 0.0),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF361A41).withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(9999),
-                  border: Border.all(color: _kPrimary.withValues(alpha: 0.2)),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 112,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_kPrimary, _kPrimaryContainer],
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _kPrimary.withValues(alpha: 0.40),
+                        blurRadius: 30,
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                    ),
+                    child: Text(
+                      'SOHBETI DERINLESTIR (50 JETON)',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(
-                  '250 JETON',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 10,
-                    letterSpacing: 1,
-                    color: _kPrimary,
+              ),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 36,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF361A41).withValues(alpha: 0.30),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.10),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Bilgeye bir soru fisilda...',
+                            style: GoogleFonts.manrope(
+                              fontSize: 14,
+                              fontStyle: FontStyle.italic,
+                              color: _kSecondary.withValues(alpha: 0.60),
+                            ),
+                          ),
+                          Icon(
+                            Icons.lock_rounded,
+                            color: _kSecondary.withValues(alpha: 0.36),
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -294,105 +476,59 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _LockedBottomArea extends StatelessWidget {
-  const _LockedBottomArea();
+class _ChatBackground extends StatelessWidget {
+  const _ChatBackground();
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: false,
-      child: Container(
-        height: 255,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              _kBg,
-              _kBg.withValues(alpha: 0.92),
-              _kBg.withValues(alpha: 0),
-            ],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: DecoratedBox(
+            Container(
+              decoration: const BoxDecoration(
+                color: _kBg,
+                gradient: RadialGradient(
+                  center: Alignment(0.2, -0.3),
+                  radius: 1.1,
+                  colors: [Color(0xFF26112E), _kBg],
+                ),
+              ),
+            ),
+            Positioned(
+              top: 180,
+              left: -80,
+              child: Container(
+                width: 280,
+                height: 280,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_kPrimary, Color(0xFFFF00D4)],
-                  ),
-                  borderRadius: BorderRadius.circular(9999),
+                  shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: _kPrimary.withValues(alpha: 0.45),
-                      blurRadius: 26,
+                      color: _kPrimary.withValues(alpha: 0.14),
+                      blurRadius: 110,
                     ),
                   ],
                 ),
-                child: ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9999),
+              ),
+            ),
+            Positioned(
+              bottom: 160,
+              right: -90,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _kSecondary.withValues(alpha: 0.12),
+                      blurRadius: 110,
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                  ),
-                  child: Text(
-                    'SOHBETI DERINLESTIR (50 JETON)',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 13,
-                      letterSpacing: 1.3,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF361A41).withValues(alpha: 0.32),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Bilgeye bir soru fisilda...',
-                          style: GoogleFonts.manrope(
-                            fontSize: 14,
-                            fontStyle: FontStyle.italic,
-                            color: _kSecondary.withValues(alpha: 0.65),
-                          ),
-                        ),
-                        Icon(
-                          Icons.lock_rounded,
-                          color: _kSecondary.withValues(alpha: 0.4),
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
           ],
         ),
       ),
@@ -400,65 +536,19 @@ class _LockedBottomArea extends StatelessWidget {
   }
 }
 
-class _BackgroundGlows extends StatelessWidget {
-  const _BackgroundGlows();
+class _Waveform extends StatelessWidget {
+  const _Waveform();
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned(
-          top: 160,
-          left: -80,
-          child: Container(
-            width: 300,
-            height: 300,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _kPrimary.withValues(alpha: 0.1),
-                  blurRadius: 100,
-                ),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: 200,
-          right: -80,
-          child: Container(
-            width: 300,
-            height: 300,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: _kSecondary.withValues(alpha: 0.1),
-                  blurRadius: 100,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WaveBars extends StatelessWidget {
-  const _WaveBars();
-
-  @override
-  Widget build(BuildContext context) {
-    const heights = [12.0, 20.0, 32.0, 16.0, 24.0, 10.0, 20.0];
+    const heights = [12.0, 20.0, 30.0, 16.0, 24.0, 10.0, 18.0];
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: heights
           .map(
-            (h) => Container(
+            (height) => Container(
               width: 3,
-              height: h,
+              height: height,
               margin: const EdgeInsets.only(right: 4),
               decoration: BoxDecoration(
                 color: _kPrimary,

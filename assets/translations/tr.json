@@ -1,0 +1,14 @@
+{
+  "daily_tarot": {
+    "title": "Günün Kozmik Mesajı 🌟",
+    "body": "Doğum haritandaki enerji bugün senin için şekillendi. Yorumun hazır!"
+  },
+  "tarot_reminder": {
+    "title": "Kartın Seni Bekliyor 🔮",
+    "body": "Günün potansiyelini henüz keşfetmedin, tarot kartını çekmeye ne dersin?"
+  },
+  "arcana_chat": {
+    "title": "Arcana Fısıldıyor...",
+    "body": "Bugün çektiğin {{cardName}} kartı hakkında derin bir sohbete hazır mısın?"
+  }
+}

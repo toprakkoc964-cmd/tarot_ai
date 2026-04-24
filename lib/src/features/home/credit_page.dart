@@ -1,10 +1,15 @@
 import 'dart:ui';
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
+import '../auth/user_profile_contract.dart';
+import 'credit_page_models.dart';
+import 'credit_remote_config_service.dart';
 
 const _kBg = Color(0xFF17081C);
 const _kPrimary = Color(0xFFFF5ED6);
@@ -18,9 +23,11 @@ class CreditPage extends StatefulWidget {
   const CreditPage({
     super.key,
     required this.bottomInset,
+    required this.uid,
   });
 
   final double bottomInset;
+  final String uid;
 
   static double topBarHeight(BuildContext context) {
     return MediaQuery.of(context).padding.top + 84;
@@ -31,37 +38,26 @@ class CreditPage extends StatefulWidget {
 }
 
 class _CreditPageState extends State<CreditPage> {
-  final List<Map<String, dynamic>> _perks = const [
-    {
-      'icon': Icons.mic_external_on,
-      'titleKey': 'home.credit.perk.voice.title',
-      'descKey': 'home.credit.perk.voice.desc',
-      'color': _kPrimary,
-    },
-    {
-      'icon': Icons.stars_rounded,
-      'titleKey': 'home.credit.perk.personalized.title',
-      'descKey': 'home.credit.perk.personalized.desc',
-      'color': _kSecondary,
-    },
-    {
-      'icon': Icons.auto_fix_high,
-      'titleKey': 'home.credit.perk.clarity.title',
-      'descKey': 'home.credit.perk.clarity.desc',
-      'color': _kTertiary,
-    },
-  ];
-
   int _selectedPackageIndex = 1;
   final ScrollController _perksScrollController = ScrollController();
   Timer? _autoScrollTimer;
+  late Future<CreditPageData> _pageDataFuture;
 
   @override
   void initState() {
     super.initState();
+    _pageDataFuture = CreditRemoteConfigService.instance.fetchPageData();
+    AppLocale.notifier.addListener(_reloadRemoteDataForLocale);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startAutoScroll();
+    });
+  }
+
+  void _reloadRemoteDataForLocale() {
+    if (!mounted) return;
+    setState(() {
+      _pageDataFuture = CreditRemoteConfigService.instance.fetchPageData();
     });
   }
 
@@ -84,6 +80,7 @@ class _CreditPageState extends State<CreditPage> {
   void dispose() {
     _autoScrollTimer?.cancel();
     _perksScrollController.dispose();
+    AppLocale.notifier.removeListener(_reloadRemoteDataForLocale);
     super.dispose();
   }
 
@@ -92,78 +89,87 @@ class _CreditPageState extends State<CreditPage> {
     return Stack(
       children: [
         const _CreditBackground(),
-        ListView(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            CreditPage.topBarHeight(context) + 8,
-            20,
-            widget.bottomInset + 24,
-          ),
-          children: [
-            _buildPerksSection(),
-            const SizedBox(height: 24),
-            _buildPackageCard(
-              index: 0,
-              coins: AppTexts.t('home.credit.package.50.coins'),
-              title: AppTexts.t('home.credit.package.50.title'),
-              price: AppTexts.t('home.credit.package.50.price'),
-              icon: Icons.star_rounded,
-              iconColor: _kSecondary,
-              features: [
-                AppTexts.t('home.credit.package.50.feature1'),
-                AppTexts.t('home.credit.package.50.feature2'),
-                AppTexts.t('home.credit.package.50.feature3'),
+        FutureBuilder<CreditPageData>(
+          future: _pageDataFuture,
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState != ConnectionState.done &&
+                !snapshot.hasData;
+            final data = snapshot.data;
+
+            return ListView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                CreditPage.topBarHeight(context) + 8,
+                20,
+                widget.bottomInset + 24,
+              ),
+              children: [
+                if (loading)
+                  const _CreditPageSkeleton()
+                else if (data != null) ...[
+                  _buildPerksSection(data),
+                  const SizedBox(height: 24),
+                  ...List.generate(data.packages.length, (index) {
+                    final item = data.packages[index];
+                    final iconColor = CreditRemoteConfigService.accentColorFor(
+                      item.accentKey,
+                    );
+
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == data.packages.length - 1 ? 0 : 14,
+                      ),
+                      child: _buildPackageCard(
+                        index: index,
+                        selectedIndex: _selectedPackageIndex,
+                        coins: item.coins,
+                        title: item.title,
+                        price: item.price,
+                        icon: CreditRemoteConfigService.iconFor(item.iconKey),
+                        iconColor: iconColor,
+                        features: item.features,
+                        badge: item.badge,
+                        isPopular: item.isPopular,
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 24),
+                  _buildCheckoutSection(data),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.only(top: 80),
+                    child: Center(
+                      child: Text(
+                        AppTexts.t('error.default'),
+                        style: GoogleFonts.manrope(
+                          color: _kOnSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
-            ),
-            const SizedBox(height: 14),
-            _buildPackageCard(
-              index: 1,
-              coins: AppTexts.t('home.credit.package.250.coins'),
-              title: AppTexts.t('home.credit.package.250.title'),
-              price: AppTexts.t('home.credit.package.250.price'),
-              icon: Icons.dark_mode_rounded,
-              iconColor: _kPrimary,
-              isPopular: true,
-              features: [
-                AppTexts.t('home.credit.package.250.feature1'),
-                AppTexts.t('home.credit.package.250.feature2'),
-                AppTexts.t('home.credit.package.250.feature3'),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _buildPackageCard(
-              index: 2,
-              coins: AppTexts.t('home.credit.package.1000.coins'),
-              title: AppTexts.t('home.credit.package.1000.title'),
-              price: AppTexts.t('home.credit.package.1000.price'),
-              icon: Icons.light_mode_rounded,
-              iconColor: _kTertiary,
-              features: [
-                AppTexts.t('home.credit.package.1000.feature1'),
-                AppTexts.t('home.credit.package.1000.feature2'),
-                AppTexts.t('home.credit.package.1000.feature3'),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _buildCheckoutSection(),
-          ],
+            );
+          },
         ),
-        const Positioned(
+        Positioned(
           top: 0,
           left: 0,
           right: 0,
-          child: _CreditTopBar(),
+          child: _CreditTopBar(
+            future: _pageDataFuture,
+            uid: widget.uid,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildPerksSection() {
+  Widget _buildPerksSection(CreditPageData data) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          AppTexts.t('home.credit.perks.title'),
+          data.advantagesTitle,
           style: GoogleFonts.newsreader(
             fontSize: 24,
             fontStyle: FontStyle.italic,
@@ -179,13 +185,19 @@ class _CreditPageState extends State<CreditPage> {
               child: ListView.separated(
                 controller: _perksScrollController,
                 scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
                 clipBehavior: Clip.none,
                 padding: EdgeInsets.zero,
-                itemCount: 600,
+                itemCount: data.advantagesCards.isEmpty
+                    ? 0
+                    : data.advantagesCards.length * 200,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
-                  final perk = _perks[index % _perks.length];
-                  final color = perk['color'] as Color;
+                  final perk =
+                      data.advantagesCards[index % data.advantagesCards.length];
+                  final color = CreditRemoteConfigService.accentColorFor(
+                    perk.accentKey,
+                  );
                   return SizedBox(
                     width: cardWidth,
                     child: Container(
@@ -208,16 +220,16 @@ class _CreditPageState extends State<CreditPage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(
-                              perk['icon'] as IconData,
+                              CreditRemoteConfigService.iconFor(perk.iconKey),
                               color: color,
                               size: 22,
                             ),
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            AppTexts.t(perk['titleKey'] as String),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            perk.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.fade,
                             style: GoogleFonts.newsreader(
                               fontSize: 15,
                               fontStyle: FontStyle.italic,
@@ -226,7 +238,7 @@ class _CreditPageState extends State<CreditPage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            AppTexts.t(perk['descKey'] as String),
+                            perk.description,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.manrope(
@@ -250,15 +262,17 @@ class _CreditPageState extends State<CreditPage> {
 
   Widget _buildPackageCard({
     required int index,
+    required int selectedIndex,
     required String coins,
     required String title,
     required String price,
     required IconData icon,
     required Color iconColor,
     required List<String> features,
+    String? badge,
     bool isPopular = false,
   }) {
-    final selected = _selectedPackageIndex == index;
+    final selected = selectedIndex == index;
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -312,7 +326,7 @@ class _CreditPageState extends State<CreditPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isPopular)
+                      if (isPopular && (badge?.trim().isNotEmpty ?? false))
                         Container(
                           margin: const EdgeInsets.only(bottom: 6),
                           padding: const EdgeInsets.symmetric(
@@ -327,8 +341,7 @@ class _CreditPageState extends State<CreditPage> {
                             ),
                           ),
                           child: Text(
-                            AppTexts.t('home.credit.package.250.badge')
-                                .toUpperCase(),
+                            badge!.toUpperCase(),
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 8.5,
                               fontWeight: FontWeight.w700,
@@ -412,7 +425,7 @@ class _CreditPageState extends State<CreditPage> {
     );
   }
 
-  Widget _buildCheckoutSection() {
+  Widget _buildCheckoutSection(CreditPageData data) {
     return Column(
       children: [
         DecoratedBox(
@@ -441,7 +454,7 @@ class _CreditPageState extends State<CreditPage> {
             ),
             child: Center(
               child: Text(
-                AppTexts.t('home.credit.cta.recharge').toUpperCase(),
+                data.rechargeCta.toUpperCase(),
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -457,7 +470,7 @@ class _CreditPageState extends State<CreditPage> {
         TextButton(
           onPressed: () {},
           child: Text(
-            AppTexts.t('home.credit.restore').toUpperCase(),
+            data.restoreLabel.toUpperCase(),
             style: GoogleFonts.spaceGrotesk(
               fontSize: 10,
               letterSpacing: 2.4,
@@ -471,7 +484,7 @@ class _CreditPageState extends State<CreditPage> {
             TextButton(
               onPressed: () {},
               child: Text(
-                AppTexts.t('home.credit.terms').toUpperCase(),
+                data.termsLabel.toUpperCase(),
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 10,
                   letterSpacing: 1.8,
@@ -486,7 +499,7 @@ class _CreditPageState extends State<CreditPage> {
             TextButton(
               onPressed: () {},
               child: Text(
-                AppTexts.t('home.credit.privacy').toUpperCase(),
+                data.privacyLabel.toUpperCase(),
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 10,
                   letterSpacing: 1.8,
@@ -497,13 +510,32 @@ class _CreditPageState extends State<CreditPage> {
           ],
         ),
         const SizedBox(height: 10),
-        Text(
-          AppTexts.t('home.credit.legal_disclaimer'),
-          textAlign: TextAlign.center,
-          style: GoogleFonts.manrope(
-            fontSize: 11,
-            height: 1.4,
-            color: Colors.white70,
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.28),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: Colors.white.withValues(alpha: 0.58),
+                size: 20,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                data.legalDisclaimer,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.manrope(
+                  fontSize: 12,
+                  height: 1.55,
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -512,7 +544,13 @@ class _CreditPageState extends State<CreditPage> {
 }
 
 class _CreditTopBar extends StatelessWidget {
-  const _CreditTopBar();
+  const _CreditTopBar({
+    required this.future,
+    required this.uid,
+  });
+
+  final Future<CreditPageData> future;
+  final String uid;
 
   @override
   Widget build(BuildContext context) {
@@ -523,81 +561,109 @@ class _CreditTopBar extends StatelessWidget {
         child: Container(
           color: _kBg.withValues(alpha: 0.6),
           padding: EdgeInsets.fromLTRB(20, topPadding + 10, 20, 12),
-          child: Row(
-            children: [
-              const Icon(Icons.star, color: _kPrimary, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  AppTexts.t('home.credit.title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.newsreader(
-                    fontSize: 22,
-                    fontStyle: FontStyle.italic,
-                    color: _kPrimary,
-                    shadows: [
-                      Shadow(
-                        color: _kPrimary.withValues(alpha: 0.55),
-                        blurRadius: 10,
+          child: FutureBuilder<CreditPageData>(
+            future: future,
+            builder: (context, snapshot) {
+              final title =
+                  snapshot.data?.title ?? AppTexts.t('home.credit.title');
+              return Row(
+                children: [
+                  const Icon(Icons.star, color: _kPrimary, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.newsreader(
+                        fontSize: 22,
+                        fontStyle: FontStyle.italic,
+                        color: _kPrimary,
+                        shadows: [
+                          Shadow(
+                            color: _kPrimary.withValues(alpha: 0.55),
+                            blurRadius: 10,
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF361A41).withValues(alpha: 0.82),
-                  borderRadius: BorderRadius.circular(9999),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          AppTexts.t('home.credit.balance_label').toUpperCase(),
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 8,
-                            letterSpacing: 1.2,
-                            color: _kSecondary.withValues(alpha: 0.72),
+                  const SizedBox(width: 8),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection(UserProfileContract.usersCollection)
+                        .doc(uid)
+                        .snapshots(),
+                    builder: (context, walletSnapshot) {
+                      final data = walletSnapshot.data?.data();
+                      final wallet = Map<String, dynamic>.from(
+                        data?[UserProfileContract.wallet] as Map? ?? const {},
+                      );
+                      final credits =
+                          (wallet[UserProfileContract.walletCredits] as num?)
+                              ?.toInt();
+                      final creditsText = credits?.toString() ?? '--';
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF361A41).withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(9999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
                           ),
                         ),
-                        Text(
-                          AppTexts.t('home.credit.balance_value'),
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _kOnSurface,
-                          ),
+                        child: Row(
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  AppTexts.t('home.credit.balance_label')
+                                      .toUpperCase(),
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 8,
+                                    letterSpacing: 1.2,
+                                    color: _kSecondary.withValues(alpha: 0.72),
+                                  ),
+                                ),
+                                Text(
+                                  '$creditsText ${AppTexts.t('home.top.token_unit')}',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: _kOnSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [_kTertiary, Color(0xFFEFC900)],
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.generating_tokens_rounded,
+                                color: Color(0xFF655400),
+                                size: 16,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [_kTertiary, Color(0xFFEFC900)],
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.generating_tokens_rounded,
-                        color: Color(0xFF655400),
-                        size: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                      );
+                    },
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -657,5 +723,156 @@ class _CreditBackground extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _CreditPageSkeleton extends StatelessWidget {
+  const _CreditPageSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SkeletonLine(width: 210, height: 28),
+        SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(child: _SkeletonCard(height: 172, radius: 28)),
+            SizedBox(width: 12),
+            Expanded(child: _SkeletonCard(height: 172, radius: 28)),
+          ],
+        ),
+        SizedBox(height: 24),
+        _SkeletonCard(height: 116, radius: 34),
+        SizedBox(height: 14),
+        _SkeletonCard(height: 220, radius: 34),
+        SizedBox(height: 24),
+        _SkeletonCard(height: 64, radius: 999),
+        SizedBox(height: 18),
+        Center(child: _SkeletonLine(width: 180, height: 12)),
+        SizedBox(height: 14),
+        Center(child: _SkeletonLine(width: 220, height: 12)),
+        SizedBox(height: 12),
+        _SkeletonCard(height: 126, radius: 18),
+      ],
+    );
+  }
+}
+
+class _SkeletonCard extends StatelessWidget {
+  const _SkeletonCard({
+    required this.height,
+    required this.radius,
+  });
+
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ShimmerBlock(
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: _kGlassBg,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.06),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonLine extends StatelessWidget {
+  const _SkeletonLine({
+    required this.width,
+    required this.height,
+  });
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ShimmerBlock(
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: _kGlassBg,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShimmerBlock extends StatefulWidget {
+  const _ShimmerBlock({
+    required this.child,
+  });
+
+  final Widget child;
+
+  @override
+  State<_ShimmerBlock> createState() => _ShimmerBlockState();
+}
+
+class _ShimmerBlockState extends State<_ShimmerBlock>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            final width = bounds.width <= 0 ? 1.0 : bounds.width;
+            final shimmerX = (-1.2 + (_controller.value * 2.4)) * width;
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.00),
+                Colors.white.withValues(alpha: 0.06),
+                Colors.white.withValues(alpha: 0.18),
+                Colors.white.withValues(alpha: 0.06),
+                Colors.white.withValues(alpha: 0.00),
+              ],
+              stops: const [0.10, 0.35, 0.50, 0.65, 0.90],
+              transform: _SlidingGradientTransform(shimmerX),
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.srcATop,
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _SlidingGradientTransform extends GradientTransform {
+  const _SlidingGradientTransform(this.slideX);
+
+  final double slideX;
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.translationValues(slideX, 0, 0);
   }
 }

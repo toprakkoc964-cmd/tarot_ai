@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
@@ -15,7 +15,7 @@ import { validateAppleReceipt } from './lib/purchase';
 import { requireIdempotencyKey } from './lib/idempotency';
 import { AIPersonaDoc, UserDoc } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
-import { sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
+import { getUserFcmTokens, sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
 
 initializeApp();
@@ -27,11 +27,24 @@ const consentVersion = process.env.CONSENT_VERSION ?? 'v1';
 const initialFreeCredits = Number(process.env.INITIAL_FREE_CREDITS ?? '1');
 const supportedLanguages = new Set(['tr', 'en', 'de', 'es', 'fr', 'it', 'pt']);
 const defaultPersonaId = process.env.DEFAULT_PERSONA_ID ?? 'emilia';
+const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
 
 function resolveLanguage(lang: unknown): string {
   if (typeof lang !== 'string') return 'en';
   const normalized = lang.trim().toLowerCase();
   return supportedLanguages.has(normalized) ? normalized : 'en';
+}
+
+function resolveUserBirthDate(user: UserDoc): string | null {
+  const profileBirthDate = typeof user.profile?.birthDate === 'string'
+    ? user.profile.birthDate.trim()
+    : '';
+  if (profileBirthDate) return profileBirthDate;
+
+  const rootBirthDate = typeof user.birthDate === 'string'
+    ? user.birthDate.trim()
+    : '';
+  return rootBirthDate || null;
 }
 
 async function getPersonaOrDefault(personaId: string): Promise<AIPersonaDoc> {
@@ -262,8 +275,7 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
     }
 
     const user = userSnap.data() as UserDoc;
-    const profileBirthDate = String(user.profile?.birthDate ?? '').trim();
-    const birthDate = incomingBirthDate || profileBirthDate;
+    const birthDate = incomingBirthDate || resolveUserBirthDate(user) || '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
       throw new HttpsError('invalid-argument', 'INVALID_BIRTH_DATE');
     }
@@ -278,14 +290,17 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
       'Write exactly one short daily birth-frequency comment.',
       'It must feel personal, warm, and actionable.',
       'Do not use markdown, lists, or emojis.',
-      'Keep it under 65 words.'
+      'Use 1 or 2 short sentences only.',
+      'Keep it under 28 words.',
+      'Avoid repetition, disclaimers, and generic filler.'
     ].join(' ');
 
     const userPrompt = [
       `Language: ${lang}`,
       `Birth date: ${birthDate}`,
       `Target day: ${day}`,
-      'Generate one concise daily comment for this user.'
+      'Generate one concise daily comment for this user.',
+      'Mention only the most relevant feeling or advice for today.'
     ].join('\n');
 
     const comment = (await createReadingText({ systemPrompt, userPrompt })).trim();
@@ -308,6 +323,52 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
       errorCode,
       errorMessage
     });
+    throw mapError(err);
+  }
+});
+
+export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const uid = request.auth.uid;
+    const userRef = db.collection('users').doc(uid);
+    let remainingCredits = 0;
+
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+
+      const user = userSnap.data() as UserDoc;
+      const currentCredits = Number(user.wallet.credits ?? 0);
+      if (currentCredits < homeCardDrawCost) {
+        throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
+      }
+
+      remainingCredits = currentCredits - homeCardDrawCost;
+      tx.update(userRef, {
+        'wallet.credits': remainingCredits,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+
+      tx.set(userRef.collection('credit_ledger').doc(), {
+        type: 'debit',
+        amount: -homeCardDrawCost,
+        reason: 'home_card_draw',
+        createdAt: FieldValue.serverTimestamp()
+      });
+    });
+
+    return {
+      ok: true,
+      drawCost: homeCardDrawCost,
+      remainingCredits
+    };
+  } catch (err) {
     throw mapError(err);
   }
 });
@@ -623,14 +684,130 @@ export const sendDailyCardNudges = onSchedule(
     for (const userDoc of usersSnap.docs) {
       const user = userDoc.data() as UserDoc;
       if (user.settings?.notificationsEnabled === false) continue;
-      if (!user.profile?.birthDate) continue;
+      const birthDate = resolveUserBirthDate(user);
+      if (!birthDate) continue;
 
       await sendDailyNudge({
         uid: userDoc.id,
         lang: resolveLanguage(user.settings?.lang),
-        zodiac: zodiacFromBirthDate(user.profile.birthDate),
+        zodiac: zodiacFromBirthDate(birthDate),
         deepLink: process.env.DAILY_NUDGE_DEEP_LINK ?? 'https://tarotai.app/daily'
       });
     }
+  }
+);
+
+export const sendTestDailyNudge = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const uid = request.auth.uid;
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'USER_NOT_FOUND');
+    }
+
+    const user = userSnap.data() as UserDoc;
+    const birthDate = resolveUserBirthDate(user);
+    if (!birthDate) {
+      throw new HttpsError('failed-precondition', 'BIRTH_DATE_REQUIRED');
+    }
+
+    const tokenCount = (await getUserFcmTokens(uid)).length;
+    if (tokenCount === 0) {
+      throw new HttpsError('failed-precondition', 'FCM_TOKEN_MISSING');
+    }
+
+    const zodiac = zodiacFromBirthDate(birthDate);
+    const sendResult = await sendDailyNudge({
+      uid,
+      lang: resolveLanguage(user.settings?.lang),
+      zodiac,
+      deepLink: process.env.DAILY_NUDGE_DEEP_LINK ?? 'https://tarotai.app/daily'
+    });
+
+    logger.info('sendTestDailyNudge result', {
+      uid,
+      zodiac,
+      sendResult
+    });
+
+    return {
+      ok: true,
+      tokenCount,
+      sendResult,
+      zodiac,
+      sentAt: new Date().toISOString()
+    };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
+export const backfillMissingUserWallets = onSchedule(
+  {
+    schedule: 'every 60 minutes',
+    timeZone: process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul'
+  },
+  async () => {
+    let scanned = 0;
+    let updated = 0;
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+    while (true) {
+      let query = db
+        .collection('users')
+        .orderBy(FieldPath.documentId())
+        .limit(400);
+      if (cursor) {
+        query = query.startAfter(cursor);
+      }
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      let writesInBatch = 0;
+
+      for (const doc of snap.docs) {
+        scanned += 1;
+        const data = doc.data() as Partial<UserDoc> & { wallet?: Record<string, unknown> };
+        const walletRaw = data.wallet;
+        const updates: Record<string, unknown> = {};
+
+        if (!walletRaw || typeof walletRaw !== 'object') {
+          updates.wallet = {
+            credits: initialFreeCredits,
+            isFirstFreeUsed: false
+          };
+        } else {
+          if (typeof walletRaw.credits !== 'number') {
+            updates['wallet.credits'] = initialFreeCredits;
+          }
+          if (typeof walletRaw.isFirstFreeUsed !== 'boolean') {
+            updates['wallet.isFirstFreeUsed'] = false;
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          updates.updatedAt = FieldValue.serverTimestamp();
+          batch.set(doc.ref, updates, { merge: true });
+          writesInBatch += 1;
+          updated += 1;
+        }
+      }
+
+      if (writesInBatch > 0) {
+        await batch.commit();
+      }
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+
+    logger.info('backfillMissingUserWallets completed', {
+      scanned,
+      updated
+    });
   }
 );

@@ -74,10 +74,16 @@ class LocalizationService {
     'home.top.token_unit': 'TOKENS',
     'home.daily_draw.available': 'You have 1 free card draw today',
     'home.daily_draw.used': 'Your daily card draw is used',
+    'home.daily_draw.paid_available': 'Each card draw costs 5 tokens',
+    'home.daily_draw.insufficient': 'You need 5 tokens to draw a card',
     'home.daily_guide_label': 'DAILY GUIDE',
     'home.cta.draw_now': 'DRAW NOW (FREE)',
     'home.cta.drawing': 'DRAWING...',
     'home.cta.draw_locked': 'COME BACK TOMORROW',
+    'home.cta.draw_with_credits': 'DRAW WITH 5 TOKENS',
+    'home.cta.insufficient_credits': 'NEED 5 TOKENS',
+    'home.cta.insufficient_credits_message':
+        'You need at least 5 tokens to draw a card.',
     'home.card.star.title': 'Star Card',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Hope & Inspiration',
@@ -96,10 +102,17 @@ class LocalizationService {
         'You are strong in communication today. ',
     'home.birth_frequency.reading.body':
         'Mental clarity opens space for you, trust your intuition.',
+    'home.birth_frequency.loading_comment':
+        'Your daily insight is being prepared...',
+    'home.birth_frequency.unavailable_retry':
+        "Today's insight is unavailable right now. Please try again.",
+    'home.birth_frequency.unavailable_missing_birth':
+        'A daily insight could not be created because your birth date is missing.',
     'home.tab.ritual': 'Ritual',
     'home.tab.archive': 'Archive',
     'home.tab.credit': 'Credit',
     'home.tab.profile': 'Profile',
+    'home.profile.title': 'Cosmic Profile',
     'home.notifications.title': 'Notifications',
     'home.notifications.empty': 'You have no notifications yet.',
     'home.archive.title': 'Cosmic Archive',
@@ -221,10 +234,16 @@ class LocalizationService {
     'home.top.token_unit': 'JETON',
     'home.daily_draw.available': 'Bugun 1 Kart Cekim Hakkin Var',
     'home.daily_draw.used': 'Gunluk kart hakkin kullanildi',
+    'home.daily_draw.paid_available': 'Her kart cekimi 5 jeton',
+    'home.daily_draw.insufficient': 'Kart cekmek icin 5 jeton gerekli',
     'home.daily_guide_label': 'GUNUN REHBERI',
     'home.cta.draw_now': 'HEMEN CEK (UCRETSIZ)',
     'home.cta.drawing': 'CEKILIYOR...',
     'home.cta.draw_locked': 'YARIN TEKRAR GEL',
+    'home.cta.draw_with_credits': '5 JETONLA CEK',
+    'home.cta.insufficient_credits': '5 JETON GEREKLI',
+    'home.cta.insufficient_credits_message':
+        'Kart cekmek icin en az 5 jeton gerekli.',
     'home.card.star.title': 'Yildiz Karti',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Umut & Ilham',
@@ -242,10 +261,16 @@ class LocalizationService {
     'home.birth_frequency.reading.lead': 'Bugun iletisimde guclusun. ',
     'home.birth_frequency.reading.body':
         'Zihinsel berraklik sana alan aciyor, sezgilerine guvenmekten cekinme.',
+    'home.birth_frequency.loading_comment': 'Gunluk yorumun hazirlaniyor...',
+    'home.birth_frequency.unavailable_retry':
+        'Bugunluk yorum su an alinamiyor. Lutfen tekrar dene.',
+    'home.birth_frequency.unavailable_missing_birth':
+        'Dogum tarihin kayitli olmadigi icin bugunluk yorum olusturulamadi.',
     'home.tab.ritual': 'Rituel',
     'home.tab.archive': 'Arsiv',
     'home.tab.credit': 'Kredi',
     'home.tab.profile': 'Profil',
+    'home.profile.title': 'Kozmik Profil',
     'home.notifications.title': 'Kozmik Bildirimler',
     'home.notifications.empty': 'Henuz bildirimin yok.',
     'home.archive.title': 'Kozmik Arsiv',

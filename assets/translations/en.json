@@ -1,0 +1,14 @@
+{
+  "daily_tarot": {
+    "title": "Today's Cosmic Message 🌟",
+    "body": "The energy in your birth chart has aligned for you today. Your reading is ready!"
+  },
+  "tarot_reminder": {
+    "title": "Your Card Awaits 🔮",
+    "body": "You haven't explored today's potential yet. Ready to draw your card?"
+  },
+  "arcana_chat": {
+    "title": "Arcana Whispers...",
+    "body": "Are you ready for a deep conversation about the {{cardName}} card you drew today?"
+  }
+}

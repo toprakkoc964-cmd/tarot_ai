@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'archive_page.dart';
 import 'chat_page.dart';
@@ -11,8 +14,15 @@ import 'credit_page.dart';
 import 'profile_page.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import '../../core/app_locale.dart';
+import '../../core/notification_service.dart';
 import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
+import '../../core/tarot_functions_client.dart';
+import '../../core/widgets/cosmic_permission_dialog.dart';
+import '../readings/tarot_card_view.dart';
+import '../readings/tarot_service.dart';
+import '../../../services/notification_service.dart' as local_notifications;
 
 // ─── Design Tokens ───────────────────────────────────────────────
 const _kBg = Color(0xFF17081C);
@@ -25,6 +35,7 @@ const _kSurfaceContainerHigh = Color(0xFF2E1537);
 const _kOnPrimary = Color(0xFF430036);
 const _kGlassBg = Color(0x66361A41); // rgba(54,26,65,0.4)
 const _kGlassBorder = Color(0x26CDBDFF); // rgba(205,189,255,0.15)
+const _kPaidDrawCost = 5;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -41,13 +52,56 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const _permissionPromptSeenKey = 'notification_decision_made';
   int _navIndex = 0;
   bool _flashNotification = false;
   int? _flashNavIndex;
 
+  @override
+  void initState() {
+    super.initState();
+    _scheduleNotificationQueues();
+  }
+
+  Future<void> _scheduleNotificationQueues() async {
+    await local_notifications.NotificationService.instance
+        .scheduleMorningNotifications();
+    await local_notifications.NotificationService.instance
+        .scheduleMiddayReminders();
+  }
+
+  Future<void> _maybePromptNotificationPermission() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyPrompted = prefs.getBool(_permissionPromptSeenKey) ?? false;
+    if (alreadyPrompted || !mounted) return;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return CosmicPermissionDialog(
+          onDecline: () async {
+            Navigator.of(dialogContext).pop();
+            await prefs.setBool(_permissionPromptSeenKey, true);
+          },
+          onAllow: () async {
+            Navigator.of(dialogContext).pop();
+            await prefs.setBool(_permissionPromptSeenKey, true);
+            await local_notifications.NotificationService.instance
+                .requestPermissions();
+            await NotificationService.instance.requestNotificationPermissions();
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _onNotificationTap() async {
     setState(() => _flashNotification = true);
     await Future<void>.delayed(const Duration(milliseconds: 140));
+    if (!mounted) return;
+    await NotificationService.instance.reloadInbox();
     if (!mounted) return;
 
     await Navigator.of(context).push(
@@ -89,7 +143,11 @@ class _HomePageState extends State<HomePage> {
           if (!isArchivePage && !isCreditPage && !isProfilePage)
             const _NebulaBackground(),
           if (isArchivePage) ArchivePage(bottomInset: bottomBarHeight),
-          if (isCreditPage) CreditPage(bottomInset: bottomBarHeight),
+          if (isCreditPage)
+            CreditPage(
+              bottomInset: bottomBarHeight,
+              uid: widget.uid,
+            ),
           if (isProfilePage)
             ProfilePage(
               bottomInset: bottomBarHeight,
@@ -109,7 +167,10 @@ class _HomePageState extends State<HomePage> {
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
                       // ── Hero Section ──
-                      const _HeroSection(),
+                      _HeroSection(
+                        uid: widget.uid,
+                        authService: widget.authService,
+                      ),
                       const SizedBox(height: 24),
 
                       // ── Identity Module ──
@@ -130,6 +191,7 @@ class _HomePageState extends State<HomePage> {
               right: 0,
               child: _TopBar(
                 authService: widget.authService,
+                uid: widget.uid,
                 flashNotification: _flashNotification,
                 onNotificationTap: () {
                   _onNotificationTap();
@@ -214,10 +276,12 @@ class _NebulaBackground extends StatelessWidget {
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.authService,
+    required this.uid,
     required this.flashNotification,
     required this.onNotificationTap,
   });
   final AuthService authService;
+  final String uid;
   final bool flashNotification;
   final VoidCallback onNotificationTap;
 
@@ -242,39 +306,57 @@ class _TopBar extends StatelessWidget {
           child: Row(
             children: [
               // Jeton bölümü (sol)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _kSurfaceContainerHigh.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(9999),
-                  border: Border.all(
-                    color: _kPrimary.withValues(alpha: 0.22),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _kPrimary.withValues(alpha: 0.18),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.payments_rounded, color: _kPrimary, size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      '250 ${AppTexts.t('home.top.token_unit')}',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 11,
-                        letterSpacing: 1.1,
-                        color: _kTertiary,
-                        fontWeight: FontWeight.w500,
+              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection(UserProfileContract.usersCollection)
+                    .doc(uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final data = snapshot.data?.data();
+                  final wallet = Map<String, dynamic>.from(
+                    data?[UserProfileContract.wallet] as Map? ?? const {},
+                  );
+                  final credits =
+                      (wallet[UserProfileContract.walletCredits] as num?)
+                          ?.toInt();
+                  final creditsText = credits?.toString() ?? '--';
+
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _kSurfaceContainerHigh.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(9999),
+                      border: Border.all(
+                        color: _kPrimary.withValues(alpha: 0.22),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _kPrimary.withValues(alpha: 0.18),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.payments_rounded,
+                            color: _kPrimary, size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$creditsText ${AppTexts.t('home.top.token_unit')}',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 11,
+                            letterSpacing: 1.1,
+                            color: _kTertiary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const Spacer(),
 
@@ -312,225 +394,815 @@ class _TopBar extends StatelessWidget {
 // HERO SECTION — TAROT REVEAL
 // ═════════════════════════════════════════════════════════════════
 class _HeroSection extends StatefulWidget {
-  const _HeroSection();
+  const _HeroSection({
+    required this.uid,
+    required this.authService,
+  });
+
+  final String uid;
+  final AuthService authService;
 
   @override
   State<_HeroSection> createState() => _HeroSectionState();
 }
 
 class _HeroSectionState extends State<_HeroSection>
-    with SingleTickerProviderStateMixin {
-  static const _cards = [
-    (
-      'home.card.star.title',
-      'home.card.star.name',
-      'XVII',
-      'home.card.star.subtitle',
-      Icons.auto_awesome
-    ),
-    (
-      'home.card.sun.title',
-      'home.card.sun.name',
-      'XIX',
-      'home.card.sun.subtitle',
-      Icons.wb_sunny_rounded
-    ),
-    (
-      'home.card.moon.title',
-      'home.card.moon.name',
-      'XVIII',
-      'home.card.moon.subtitle',
-      Icons.nightlight_round
-    ),
-    (
-      'home.card.world.title',
-      'home.card.world.name',
-      'XXI',
-      'home.card.world.subtitle',
-      Icons.public_rounded
-    ),
+    with TickerProviderStateMixin {
+  static const _loopItemCount = 100000;
+  static const _initialLoopPage = _loopItemCount ~/ 2;
+  static const List<String> _cardNames = <String>[
+    'the_fool',
+    'the_magician',
+    'the_high_priestess',
+    'the_empress',
+    'the_emperor',
+    'the_hierophant',
+    'the_lovers',
+    'the_chariot',
+    'strength',
+    'the_hermit',
+    'the_wheel_of_fortune',
+    'justice',
+    'the_hanged_man',
+    'death',
+    'temperance',
+    'the_devil',
+    'the_tower',
+    'the_star',
+    'the_moon',
+    'the_sun',
+    'judgement',
+    'the_world',
   ];
 
-  late final AnimationController _drawController = AnimationController(
+  late final AnimationController _flipController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 950),
   );
-  int _cardIndex = 0;
-  bool _isDrawing = false;
-  bool _hasDailyDrawRight = true;
+  late final AnimationController _ritualAuraController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4200),
+  )..repeat();
+  late final PageController _pageController = PageController(
+    viewportFraction: 0.5,
+    initialPage: _initialLoopPage,
+  );
+  Timer? _carouselTimer;
+  int _currentLoopPage = _initialLoopPage;
+  int? _selectedCardIndex;
+  bool _ritualMode = false;
+  bool _ritualIntroActive = false;
+  bool _ritualIntroExpanded = false;
+  bool _ritualCarouselVisible = false;
+  bool _selectionLocked = false;
+  bool _isLoadingCard = false;
+  bool _isDrawRequestInFlight = false;
+  final _functionsClient = TarotFunctionsClient();
+  final _tarotService = TarotService();
+  late final DocumentReference<Map<String, dynamic>> _userDoc =
+      FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(widget.uid);
+  DrawnTarotCard? _drawnCard;
 
-  Future<void> _drawCard() async {
-    if (_isDrawing || !_hasDailyDrawRight) return;
-    setState(() => _isDrawing = true);
-    await _drawController.forward(from: 0);
-    if (!mounted) return;
-    setState(() {
-      _cardIndex = (_cardIndex + 1) % _cards.length;
-      _isDrawing = false;
-      _hasDailyDrawRight = false;
+  String _drawBadgeText({
+    required bool isLoading,
+    required int credits,
+  }) {
+    if (isLoading) return AppTexts.t('common.loading');
+    if (credits >= _kPaidDrawCost) {
+      return AppTexts.t('home.daily_draw.paid_available');
+    }
+    return AppTexts.t('home.daily_draw.insufficient');
+  }
+
+  String _ctaText({
+    required bool isLoading,
+    required int credits,
+  }) {
+    if (_selectionLocked || _isLoadingCard || _isDrawRequestInFlight) {
+      return 'Kart aciliyor...';
+    }
+    if (_ritualMode) {
+      return 'Kartini sec';
+    }
+    if (isLoading) return AppTexts.t('common.loading');
+    if (credits >= _kPaidDrawCost) {
+      return AppTexts.t('home.cta.draw_with_credits');
+    }
+    return AppTexts.t('home.cta.insufficient_credits');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_cardNames.length != 22) {
+      throw StateError('Hero section card list must contain 22 cards.');
+    }
+  }
+
+  Future<bool> _consumeDrawRight() async {
+    try {
+      await _functionsClient.consumeHomeCardDraw();
+      return true;
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code == 'failed-precondition') return false;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _startCarousel() {
+    _carouselTimer?.cancel();
+    _carouselTimer = Timer.periodic(const Duration(milliseconds: 1400), (_) {
+      if (!mounted || _selectionLocked || !_pageController.hasClients) return;
+      final nextPage = _currentLoopPage + 1;
+      _currentLoopPage = nextPage;
+      _pageController.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeInOut,
+      );
     });
   }
 
-  Future<void> _openCosmicChat() async {
-    if (_isDrawing) return;
-    if (_hasDailyDrawRight) {
-      await _drawCard();
-      if (!mounted) return;
+  void _stopCarousel() {
+    _carouselTimer?.cancel();
+  }
+
+  int _cardIndexForLoopPage(int loopPage) {
+    final fallbackIndex = math.Random().nextInt(_cardNames.length);
+    final normalized = loopPage % _cardNames.length;
+    if (normalized < 0 || normalized >= _cardNames.length) {
+      return fallbackIndex;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const KozmikBilgePage(),
-      ),
-    );
+    return normalized;
+  }
+
+  String _displayNameForIndex(int index) {
+    final safeIndex = (index >= 0 && index < _cardNames.length)
+        ? index
+        : math.Random().nextInt(_cardNames.length);
+    return TarotService.majorArcana[safeIndex].displayName;
+  }
+
+  Future<void> _resetSelection() async {
+    _flipController.reset();
+    if (!mounted) return;
+    setState(() {
+      _ritualMode = false;
+      _ritualIntroActive = false;
+      _ritualIntroExpanded = false;
+      _ritualCarouselVisible = false;
+      _selectionLocked = false;
+      _selectedCardIndex = null;
+      _drawnCard = null;
+      _isLoadingCard = false;
+    });
+  }
+
+  Future<void> _startRitual({required bool canDraw}) async {
+    if (_ritualMode || _isDrawRequestInFlight || _selectionLocked) return;
+    if (!canDraw) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppTexts.t('home.cta.insufficient_credits_message')),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isDrawRequestInFlight = true);
+    try {
+      final consumed = await _consumeDrawRight();
+      if (!consumed) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppTexts.t('home.cta.insufficient_credits_message')),
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _ritualMode = true;
+        _ritualIntroActive = true;
+        _ritualIntroExpanded = false;
+        _ritualCarouselVisible = false;
+        _selectionLocked = false;
+        _selectedCardIndex = null;
+        _drawnCard = null;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      if (!mounted) return;
+      setState(() {
+        _ritualIntroExpanded = true;
+      });
+
+      await Future<void>.delayed(const Duration(milliseconds: 420));
+      if (!mounted) return;
+      setState(() {
+        _ritualCarouselVisible = true;
+      });
+      _startCarousel();
+
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (!mounted) return;
+      setState(() {
+        _ritualIntroActive = false;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isDrawRequestInFlight = false);
+      }
+    }
+  }
+
+  Future<void> _handleCardTap({
+    required int loopPage,
+  }) async {
+    if (_selectionLocked || _isDrawRequestInFlight || _isLoadingCard) return;
+    if (!_ritualMode) return;
+
+    final homePageState = context.findAncestorStateOfType<_HomePageState>();
+    try {
+      _stopCarousel();
+      final selectedCardIndex = _cardIndexForLoopPage(loopPage);
+      final imageFuture = _tarotService.getCardByIndex(selectedCardIndex);
+
+      if (_pageController.hasClients) {
+        await _pageController.animateToPage(
+          loopPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectionLocked = true;
+        _selectedCardIndex = selectedCardIndex;
+        _isLoadingCard = true;
+      });
+
+      await _flipController.forward(from: 0);
+      final selectedCard = await imageFuture;
+      if (!mounted) return;
+      setState(() {
+        _drawnCard = selectedCard;
+        _isLoadingCard = false;
+      });
+
+      final languageCode = _resolveDeviceLanguageCode();
+      final drawnCardName = selectedCard.card.displayName;
+      await local_notifications.NotificationService.instance.onDailyCardDrawn(
+        drawnCardName,
+        languageCode,
+      );
+      await homePageState?._maybePromptNotificationPermission();
+      if (!mounted) return;
+
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => KozmikBilgePage(
+            cardTitle: selectedCard.card.displayName,
+            cardImageUrl: selectedCard.imageUrl,
+          ),
+        ),
+      );
+      await _resetSelection();
+    } catch (error) {
+      debugPrint('Tarot ritual draw failed: $error');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gorsel yuklenemedi'),
+        ),
+      );
+      await _resetSelection();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDrawRequestInFlight = false;
+          _isLoadingCard = false;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
-    _drawController.dispose();
+    _carouselTimer?.cancel();
+    _pageController.dispose();
+    _flipController.dispose();
+    _ritualAuraController.dispose();
     super.dispose();
+  }
+
+  String _resolveDeviceLanguageCode() {
+    final current = AppLocale.current.trim().toLowerCase();
+    if (current == 'tr' || current == 'en') return current;
+    final localeCode =
+        Localizations.localeOf(context).languageCode.trim().toLowerCase();
+    return localeCode == 'tr' ? 'tr' : 'en';
   }
 
   @override
   Widget build(BuildContext context) {
-    final (titleKey, cardNameKey, roman, subtitleKey, icon) =
-        _cards[_cardIndex];
-    final title = AppTexts.t(titleKey);
-    final cardName = AppTexts.t(cardNameKey);
-    final subtitle = AppTexts.t(subtitleKey);
-    final drawBadgeText = _hasDailyDrawRight
-        ? AppTexts.t('home.daily_draw.available')
-        : AppTexts.t('home.daily_draw.used');
-    final ctaText = _isDrawing
-        ? AppTexts.t('home.cta.drawing')
-        : (_hasDailyDrawRight
-            ? AppTexts.t('home.cta.draw_now')
-            : AppTexts.t('home.cta.draw_locked'));
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _userDoc.snapshots(),
+      builder: (context, snapshot) {
+        final isLoading = !snapshot.hasData;
+        final data = snapshot.data?.data();
+        final wallet = Map<String, dynamic>.from(
+          data?[UserProfileContract.wallet] as Map? ?? const {},
+        );
+        final credits =
+            (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
+        final canDraw = !isLoading &&
+            !_isLoadingCard &&
+            !_isDrawRequestInFlight &&
+            credits >= _kPaidDrawCost;
+        final drawBadgeText = _drawBadgeText(
+          isLoading: isLoading,
+          credits: credits,
+        );
+        final ctaText = _ctaText(
+          isLoading: isLoading,
+          credits: credits,
+        );
+        final selectedIndex = _selectedCardIndex ??
+            _cardIndexForLoopPage(
+              _currentLoopPage,
+            );
+        final headline = _selectionLocked
+            ? _displayNameForIndex(selectedIndex)
+            : 'Gunun Rehberi';
+        final subtitle = _ritualMode && _ritualCarouselVisible
+            ? 'Dolasimdaki kartlardan birini sec ve bugunun rehberligini aciga cikar.'
+            : '';
+        final canTapCarousel = _ritualMode &&
+            _ritualCarouselVisible &&
+            !_selectionLocked &&
+            !_isLoadingCard;
+        final ritualStageHeight = _ritualMode ? 470.0 : 316.0;
 
-    return _GlassCard(
-      borderRadius: 32,
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+        return _GlassCard(
+          borderRadius: 32,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    // Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _kPrimary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(9999),
+                        border: Border.all(
+                          color: _kPrimary.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        drawBadgeText,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 10,
+                          letterSpacing: 2,
+                          color: _kPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Guide label
+                    Text(
+                      AppTexts.t('home.daily_guide_label'),
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 11,
+                        letterSpacing: 3,
+                        color: _kSecondary.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Headline
+                    Text(
+                      headline,
+                      style: GoogleFonts.newsreader(
+                        fontSize: 34,
+                        fontStyle: FontStyle.italic,
+                        color: _kOnSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 520),
+                      curve: Curves.easeOutCubic,
+                      height: ritualStageHeight,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (_ritualMode)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: _RitualOrbitBand(
+                                animation: _ritualAuraController,
+                              ),
+                            ),
+                          if (_ritualMode)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: _RitualOrbitBand(
+                                animation: _ritualAuraController,
+                                reverse: true,
+                              ),
+                            ),
+                          if (!_ritualMode)
+                            const _IdleGuideCard()
+                          else
+                            Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned.fill(
+                                  top: 54,
+                                  bottom: 54,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 320),
+                                    curve: Curves.easeOutCubic,
+                                    opacity: _ritualCarouselVisible ? 1 : 0,
+                                    child: IgnorePointer(
+                                      ignoring: !canTapCarousel,
+                                      child: Opacity(
+                                        opacity: _selectionLocked ? 0.16 : 1,
+                                        child: PageView.builder(
+                                          controller: _pageController,
+                                          itemCount: _loopItemCount,
+                                          padEnds: false,
+                                          onPageChanged: (value) {
+                                            _currentLoopPage = value;
+                                          },
+                                          itemBuilder: (context, loopIndex) {
+                                            final cardIndex =
+                                                _cardIndexForLoopPage(
+                                              loopIndex,
+                                            );
+                                            return GestureDetector(
+                                              onTap: () => _handleCardTap(
+                                                loopPage: loopIndex,
+                                              ),
+                                              behavior: HitTestBehavior.opaque,
+                                              child: AnimatedBuilder(
+                                                animation: _pageController,
+                                                builder: (context, _) {
+                                                  final page = _pageController
+                                                          .hasClients
+                                                      ? (_pageController.page ??
+                                                          _pageController
+                                                              .initialPage
+                                                              .toDouble())
+                                                      : _initialLoopPage
+                                                          .toDouble();
+                                                  final distance =
+                                                      (page - loopIndex).abs();
+                                                  final scale = (1 -
+                                                          (distance * 0.025)
+                                                              .clamp(
+                                                            0.0,
+                                                            0.06,
+                                                          ))
+                                                      .toDouble();
+                                                  final opacity = (1 -
+                                                          (distance * 0.08)
+                                                              .clamp(
+                                                            0.0,
+                                                            0.14,
+                                                          ))
+                                                      .toDouble();
+                                                  return Transform.scale(
+                                                    scale: scale,
+                                                    child: Opacity(
+                                                      opacity: opacity,
+                                                      child: _GuideCardBack(
+                                                        cardName:
+                                                            _displayNameForIndex(
+                                                          cardIndex,
+                                                        ),
+                                                        width: double.infinity,
+                                                        height: 352,
+                                                        margin: EdgeInsets.zero,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 260),
+                                  curve: Curves.easeOutCubic,
+                                  opacity: _ritualIntroActive ? 1 : 0,
+                                  child: IgnorePointer(
+                                    ignoring: true,
+                                    child: AnimatedScale(
+                                      duration:
+                                          const Duration(milliseconds: 520),
+                                      curve: Curves.easeOutCubic,
+                                      scale: _ritualIntroExpanded ? 1.38 : 1,
+                                      child: AnimatedSlide(
+                                        duration:
+                                            const Duration(milliseconds: 520),
+                                        curve: Curves.easeOutCubic,
+                                        offset: _ritualIntroExpanded
+                                            ? const Offset(0, -0.08)
+                                            : Offset.zero,
+                                        child: const _IdleGuideCard(
+                                          compactGlow: false,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          if (_selectionLocked && _selectedCardIndex != null)
+                            _SelectedGuideCard(
+                              title: _displayNameForIndex(_selectedCardIndex!),
+                              imageUrl: _drawnCard?.imageUrl,
+                              isLoading: _isLoadingCard,
+                              flipAnimation: _flipController,
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Subtitle
+                    Visibility(
+                      visible: subtitle.isNotEmpty,
+                      maintainSize: false,
+                      maintainAnimation: false,
+                      maintainState: false,
+                      child: Text(
+                        '"$subtitle"',
+                        style: GoogleFonts.manrope(
+                          fontSize: 14,
+                          fontStyle: FontStyle.italic,
+                          color: _kSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // CTA Button
+                    Visibility(
+                      visible: !_ritualMode,
+                      maintainSize: false,
+                      maintainAnimation: false,
+                      maintainState: false,
+                      child: _HeroCtaButton(
+                        canDraw: canDraw,
+                        ctaText: ctaText,
+                        onPressed: () => _startRitual(canDraw: canDraw),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HeroCtaButton extends StatelessWidget {
+  const _HeroCtaButton({
+    required this.canDraw,
+    required this.ctaText,
+    required this.onPressed,
+  });
+
+  final bool canDraw;
+  final String ctaText;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [_kPrimary, _kPrimaryContainer],
+          ),
+          borderRadius: BorderRadius.circular(9999),
+          boxShadow: [
+            BoxShadow(
+              color: _kPrimaryContainer.withValues(alpha: 0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ElevatedButton(
+          onPressed: canDraw ? onPressed : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            disabledBackgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            disabledForegroundColor: _kOnPrimary.withValues(alpha: 0.6),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9999),
+            ),
+          ),
+          child: Text(
+            ctaText,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+              color: _kOnPrimary.withValues(alpha: canDraw ? 1 : 0.65),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RitualOrbitBand extends StatelessWidget {
+  const _RitualOrbitBand({
+    required this.animation,
+    this.reverse = false,
+  });
+
+  final Animation<double> animation;
+  final bool reverse;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) {
+          final phase = (reverse ? -1 : 1) * animation.value * math.pi * 2;
+          final drift = math.sin(phase) * 34;
+          final glow = 0.4 + (math.cos(phase).abs() * 0.32);
+
+          return Transform.rotate(
+            angle: reverse ? math.pi : 0,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                // Badge
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  width: 244,
+                  height: 1,
                   decoration: BoxDecoration(
-                    color: _kPrimary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(9999),
-                    border: Border.all(color: _kPrimary.withValues(alpha: 0.2)),
-                  ),
-                  child: Text(
-                    drawBadgeText,
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      color: _kPrimary,
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        _kPrimaryContainer.withValues(alpha: 0.18),
+                        _kPrimary.withValues(alpha: 0.58),
+                        _kPrimaryContainer.withValues(alpha: 0.18),
+                        Colors.transparent,
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-
-                // Guide label
-                Text(
-                  AppTexts.t('home.daily_guide_label'),
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 11,
-                    letterSpacing: 3,
-                    color: _kSecondary.withValues(alpha: 0.6),
+                Transform.translate(
+                  offset: Offset(drift, 0),
+                  child: Container(
+                    width: 76,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: _kPrimary.withValues(alpha: glow),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _kPrimaryContainer.withValues(alpha: glow),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
+                Transform.translate(
+                  offset: Offset(-drift * 0.85, 0),
+                  child: Icon(
+                    Icons.auto_awesome_rounded,
+                    color: _kPrimaryContainer.withValues(alpha: 0.72),
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
-                // Headline
+class _GuideCardBack extends StatelessWidget {
+  const _GuideCardBack({
+    required this.cardName,
+    this.width = 144,
+    this.height = 220,
+    this.margin = const EdgeInsets.symmetric(horizontal: 8),
+  });
+
+  final String cardName;
+  final double width;
+  final double height;
+  final EdgeInsetsGeometry margin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      margin: margin,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_kSurfaceContainerHigh, _kBg],
+        ),
+        border: Border.all(color: _kGlassBorder),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimary.withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _kTertiary.withValues(alpha: 0.18),
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  color: _kTertiary,
+                  size: 38,
+                ),
+                const SizedBox(height: 12),
                 Text(
-                  title,
+                  'Tarot AI',
                   style: GoogleFonts.newsreader(
-                    fontSize: 38,
+                    fontSize: 20,
                     fontStyle: FontStyle.italic,
                     color: _kOnSurface,
                   ),
                 ),
-                const SizedBox(height: 24),
-
-                // Holographic Tarot Card
-                AnimatedBuilder(
-                  animation: _drawController,
-                  builder: (context, child) {
-                    final t = _drawController.value;
-                    final lift = -20 * math.sin(t * math.pi);
-                    final scale = 1 + (0.08 * math.sin(t * math.pi));
-                    final spin = 0.025 * math.sin(t * math.pi * 2);
-                    return Transform.translate(
-                      offset: Offset(0, lift),
-                      child: Transform.rotate(
-                        angle: spin,
-                        child: Transform.scale(
-                          scale: scale,
-                          child: child,
-                        ),
-                      ),
-                    );
-                  },
-                  child: _TarotCard(
-                    title: cardName,
-                    roman: roman,
-                    icon: icon,
-                    drawProgress: _drawController,
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Subtitle
-                Text(
-                  '"$subtitle"',
-                  style: GoogleFonts.manrope(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                    color: _kSecondary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // CTA Button
-                SizedBox(
-                  width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_kPrimary, _kPrimaryContainer],
-                      ),
-                      borderRadius: BorderRadius.circular(9999),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _kPrimaryContainer.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: ElevatedButton(
-                      onPressed: _openCosmicChat,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9999),
-                        ),
-                      ),
-                      child: Text(
-                        ctaText,
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                          color: _kOnPrimary,
-                        ),
-                      ),
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    cardName,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 10,
+                      letterSpacing: 1.4,
+                      color: _kSecondary.withValues(alpha: 0.75),
                     ),
                   ),
                 ),
@@ -543,165 +1215,167 @@ class _HeroSectionState extends State<_HeroSection>
   }
 }
 
-// ═════════════════════════════════════════════════════════════════
-// HOLOGRAPHIC TAROT CARD
-// ═════════════════════════════════════════════════════════════════
-class _TarotCard extends StatefulWidget {
-  const _TarotCard({
+class _IdleGuideCard extends StatelessWidget {
+  const _IdleGuideCard({
+    this.compactGlow = true,
+  });
+
+  final bool compactGlow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: compactGlow ? 156 : 192,
+          height: compactGlow ? 236 : 288,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: _kPrimary.withValues(alpha: compactGlow ? 0.18 : 0.28),
+                blurRadius: compactGlow ? 42 : 56,
+                spreadRadius: compactGlow ? 4 : 8,
+              ),
+            ],
+          ),
+        ),
+        _GuideCardBack(
+          cardName: 'Gunun Rehberi',
+          width: 192,
+          height: 288,
+          margin: EdgeInsets.zero,
+        ),
+      ],
+    );
+  }
+}
+
+class _SelectedGuideCard extends StatelessWidget {
+  const _SelectedGuideCard({
     required this.title,
-    required this.roman,
-    required this.icon,
-    required this.drawProgress,
+    required this.imageUrl,
+    required this.isLoading,
+    required this.flipAnimation,
   });
 
   final String title;
-  final String roman;
-  final IconData icon;
-  final Animation<double> drawProgress;
-
-  @override
-  State<_TarotCard> createState() => _TarotCardState();
-}
-
-class _TarotCardState extends State<_TarotCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 3400),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  final String? imageUrl;
+  final bool isLoading;
+  final Animation<double> flipAnimation;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final phase = _controller.value * math.pi * 2;
-        final lift = math.sin(phase) * 4.5;
-        final drawT = widget.drawProgress.value;
-        final glowPulse =
-            0.22 + ((math.sin(phase) + 1) / 2) * 0.16 + (drawT * 0.2);
+      animation: flipAnimation,
+      builder: (context, child) {
+        final angle = flipAnimation.value * math.pi;
+        final isFront = angle >= math.pi / 2;
 
-        return Transform.translate(
-          offset: Offset(0, lift),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Glow behind
-              Container(
-                width: 192 * 0.75,
-                height: 288 * 0.75,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  color: _kPrimary.withValues(alpha: glowPulse),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _kPrimary.withValues(alpha: glowPulse),
-                      blurRadius: 40,
-                      spreadRadius: 4,
-                    ),
-                  ],
-                ),
-              ),
-              // Card
-              Container(
-                width: 192,
-                height: 288,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [_kSurfaceContainerHigh, _kBg],
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.0012)
+            ..rotateY(angle),
+          child: isFront
+              ? Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..rotateY(math.pi),
+                  child: _SelectedGuideCardFace(
+                    title: title,
+                    imageUrl: imageUrl,
+                    isLoading: isLoading,
                   ),
-                  border: Border.all(color: _kGlassBorder),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                )
+              : Transform.scale(
+                  scale: 1 + (flipAnimation.value * 0.14),
+                  child: _GuideCardBack(cardName: title),
                 ),
-                child: Stack(
-                  children: [
-                    // Gold foil border inside
-                    Positioned.fill(
-                      child: Container(
-                        margin: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _kTertiary.withValues(alpha: 0.2),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Content
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            widget.icon,
-                            size: 56,
-                            color: _kTertiary,
-                          ),
-                          const SizedBox(height: 16),
-                          // Divider
-                          Container(
-                            width: 120,
-                            height: 1,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  _kTertiary.withValues(alpha: 0.4),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            widget.title,
-                            style: GoogleFonts.newsreader(
-                              fontSize: 20,
-                              fontStyle: FontStyle.italic,
-                              color: _kOnSurface.withValues(alpha: 0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Roman numeral
-                    Positioned(
-                      bottom: 16,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Text(
-                          widget.roman,
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 10,
-                            letterSpacing: 3,
-                            color: _kTertiary.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         );
       },
+    );
+  }
+}
+
+class _SelectedGuideCardFace extends StatelessWidget {
+  const _SelectedGuideCardFace({
+    required this.title,
+    required this.imageUrl,
+    required this.isLoading,
+  });
+
+  final String title;
+  final String? imageUrl;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 210,
+      height: 320,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: (imageUrl?.trim().isNotEmpty ?? false)
+                ? TarotCardView(
+                    imageUrl: imageUrl!,
+                    borderRadius: BorderRadius.circular(18),
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      color: _kSurfaceContainerHigh,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _kPrimary.withValues(alpha: 0.26),
+                          blurRadius: 32,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: isLoading
+                          ? const CircularProgressIndicator(
+                              color: _kTertiary,
+                            )
+                          : const Icon(
+                              Icons.auto_awesome,
+                              color: _kTertiary,
+                              size: 42,
+                            ),
+                    ),
+                  ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 14,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  color: Colors.black.withValues(alpha: 0.3),
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.newsreader(
+                      fontSize: 18,
+                      fontStyle: FontStyle.italic,
+                      color: _kOnSurface,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -755,12 +1429,31 @@ class _IdentityModuleState extends State<_IdentityModule> {
     return 'Balik Burcu';
   }
 
+  String _zodiacEn(DateTime date) {
+    final m = date.month;
+    final d = date.day;
+    if ((m == 3 && d >= 21) || (m == 4 && d <= 19)) return 'Aries';
+    if ((m == 4 && d >= 20) || (m == 5 && d <= 20)) return 'Taurus';
+    if ((m == 5 && d >= 21) || (m == 6 && d <= 20)) return 'Gemini';
+    if ((m == 6 && d >= 21) || (m == 7 && d <= 22)) return 'Cancer';
+    if ((m == 7 && d >= 23) || (m == 8 && d <= 22)) return 'Leo';
+    if ((m == 8 && d >= 23) || (m == 9 && d <= 22)) return 'Virgo';
+    if ((m == 9 && d >= 23) || (m == 10 && d <= 22)) return 'Libra';
+    if ((m == 10 && d >= 23) || (m == 11 && d <= 21)) return 'Scorpio';
+    if ((m == 11 && d >= 22) || (m == 12 && d <= 21)) return 'Sagittarius';
+    if ((m == 12 && d >= 22) || (m == 1 && d <= 19)) return 'Capricorn';
+    if ((m == 1 && d >= 20) || (m == 2 && d <= 18)) return 'Aquarius';
+    return 'Pisces';
+  }
+
   Future<String> _dailyCommentFuture(String? storedBirthDate) {
     final key = (storedBirthDate ?? '').trim();
-    if (_commentFuture == null || key != _commentKey) {
-      _commentKey = key;
+    final localeAwareKey = '$key|${AppLocale.current}';
+    if (_commentFuture == null || localeAwareKey != _commentKey) {
+      _commentKey = localeAwareKey;
       _commentFuture = FrequencyService.instance.getDailyComment(
         userBirthDate: key,
+        lang: AppLocale.current,
       );
     }
     return _commentFuture!;
@@ -779,8 +1472,11 @@ class _IdentityModuleState extends State<_IdentityModule> {
         final birthDate = _parseBirthDate(storedBirthDate);
         final birthDateText =
             birthDate != null ? _formatBirthDate(birthDate) : '—';
+        final currentLang = AppLocale.current == 'en' ? 'en' : 'tr';
         final zodiacText = birthDate != null
-            ? _zodiacTr(birthDate)
+            ? (currentLang == 'en'
+                ? _zodiacEn(birthDate)
+                : _zodiacTr(birthDate))
             : AppTexts.t('home.birth_frequency.sign');
 
         return _GlassCard(
@@ -845,13 +1541,16 @@ class _IdentityModuleState extends State<_IdentityModule> {
                     String bodyText;
                     if (commentSnapshot.connectionState ==
                         ConnectionState.waiting) {
-                      bodyText = 'Gunluk yorum hazirlaniyor...';
+                      bodyText =
+                          AppTexts.t('home.birth_frequency.loading_comment');
                     } else {
                       final dynamicComment =
                           (commentSnapshot.data ?? '').trim();
                       bodyText = dynamicComment.isNotEmpty
                           ? dynamicComment
-                          : 'Bugunluk yorum su an alinamiyor. Lutfen tekrar dene.';
+                          : AppTexts.t(
+                              'home.birth_frequency.unavailable_retry',
+                            );
                     }
                     return Text(
                       bodyText,
@@ -1003,13 +1702,103 @@ class _NotificationsPage extends StatelessWidget {
           ),
         ),
       ),
-      body: Center(
-        child: Text(
-          AppTexts.t('home.notifications.empty'),
-          style: GoogleFonts.manrope(
-            fontSize: 15,
-            color: _kSecondary.withValues(alpha: 0.8),
-          ),
+      body: ValueListenableBuilder<List<AppNotificationItem>>(
+        valueListenable: NotificationService.instance.inbox,
+        builder: (context, notifications, _) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              if (notifications.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 32),
+                  child: Center(
+                    child: Text(
+                      AppTexts.t('home.notifications.empty'),
+                      style: GoogleFonts.manrope(
+                        fontSize: 15,
+                        color: _kSecondary.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ),
+                ),
+              for (final item in notifications) ...[
+                _NotificationListCard(item: item),
+                const SizedBox(height: 12),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _NotificationListCard extends StatelessWidget {
+  const _NotificationListCard({required this.item});
+
+  final AppNotificationItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final timestamp = '${item.receivedAt.day.toString().padLeft(2, '0')}.'
+        '${item.receivedAt.month.toString().padLeft(2, '0')}.'
+        '${item.receivedAt.year}  '
+        '${item.receivedAt.hour.toString().padLeft(2, '0')}:'
+        '${item.receivedAt.minute.toString().padLeft(2, '0')}';
+
+    return _GlassCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _kPrimary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    color: _kTertiary,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    item.title,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      color: _kOnSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              item.body,
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                height: 1.45,
+                color: _kSecondary.withValues(alpha: 0.95),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${item.source.toUpperCase()}  •  $timestamp',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 11,
+                letterSpacing: 1.1,
+                color: _kSecondary.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

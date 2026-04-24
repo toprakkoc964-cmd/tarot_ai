@@ -9,16 +9,22 @@ import '../../core/tarot_functions_client.dart';
 import '../auth/auth_service.dart';
 import '../purchases/restore_purchase_item.dart';
 import 'reading_models.dart';
+import 'tarot_card_view.dart';
+import 'tarot_service.dart';
 
 class ReadingHomePage extends StatefulWidget {
   const ReadingHomePage({
     super.key,
     required this.authService,
     required this.uid,
+    this.initialCardName,
+    this.initialCardImageUrl,
   });
 
   final AuthService authService;
   final String uid;
+  final String? initialCardName;
+  final String? initialCardImageUrl;
 
   @override
   State<ReadingHomePage> createState() => _ReadingHomePageState();
@@ -30,9 +36,24 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
     text: 'The Fool,The Star,Justice',
   );
   final _client = TarotFunctionsClient();
+  final _tarotService = TarotService();
 
   bool _loading = false;
+  bool _drawingCard = false;
   ReadingResult? _lastResult;
+  DrawnTarotCard? _drawnCard;
+  String? _selectedCardName;
+  String? _selectedCardImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCardName = widget.initialCardName;
+    _selectedCardImageUrl = widget.initialCardImageUrl;
+    if ((_selectedCardName?.trim().isNotEmpty ?? false)) {
+      _cardsController.text = _selectedCardName!;
+    }
+  }
 
   @override
   void dispose() {
@@ -86,6 +107,24 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
       );
     } catch (e) {
       _showError('${AppTexts.t('toast.restore_pending')}: $e');
+    }
+  }
+
+  Future<void> _drawRandomCard() async {
+    setState(() => _drawingCard = true);
+    try {
+      final card = await _tarotService.drawRandomCard();
+      if (!mounted) return;
+      setState(() {
+        _drawnCard = card;
+        _selectedCardName = card.card.displayName;
+        _selectedCardImageUrl = card.imageUrl;
+        _cardsController.text = card.card.displayName;
+      });
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _drawingCard = false);
     }
   }
 
@@ -144,6 +183,41 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
                   labelText: AppTexts.t('reading.cards'),
                 ),
               ),
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: _drawingCard ? null : _drawRandomCard,
+                child: _drawingCard
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Draw Random Major Arcana'),
+              ),
+              if (_drawnCard != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Drawn Card: ${_drawnCard!.card.displayName}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 360,
+                  child: TarotCardView(imageUrl: _drawnCard!.imageUrl),
+                ),
+              ] else if ((_selectedCardName?.trim().isNotEmpty ?? false) &&
+                  (_selectedCardImageUrl?.trim().isNotEmpty ?? false)) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Selected Card: $_selectedCardName',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 360,
+                  child: TarotCardView(imageUrl: _selectedCardImageUrl!),
+                ),
+              ],
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _loading ? null : _generateReading,
@@ -219,4 +293,3 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
     );
   }
 }
-

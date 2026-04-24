@@ -1,6 +1,6 @@
 name: tarot_ai
 publish_to: none
-version: 0.1.1+3
+version: 0.1.2+4
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -13,19 +13,33 @@ dependencies:
   cloud_firestore: ^5.5.1
   cloud_functions: ^5.1.5
   firebase_app_check: ^0.3.1+7
+  firebase_messaging: ^15.2.10
+  firebase_remote_config: ^5.4.7
+  firebase_storage: ^12.4.10
   google_sign_in: ^6.2.2
   sign_in_with_apple: ^6.1.4
   google_fonts: ^6.2.1
   shared_preferences: ^2.5.3
   intl: ^0.20.2
+  flutter_local_notifications: ^21.0.0
+  cached_network_image: ^3.4.1
+  timezone: ^0.11.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  ios: true
+  android: true
+  image_path: "assets/Tarot_logo.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
   assets:
     - assets/locales/
+    - assets/translations/
     - images/

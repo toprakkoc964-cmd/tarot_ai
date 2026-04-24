@@ -41,6 +41,12 @@ class TarotFunctionsClient {
     return comment;
   }
 
+  Future<Map<String, dynamic>> consumeHomeCardDraw() async {
+    final callable = _functions.httpsCallable('consumeHomeCardDraw');
+    final response = await callable.call();
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<Map<String, dynamic>> validateIosPurchase({
     required String productId,
     required String transactionId,
@@ -70,6 +76,12 @@ class TarotFunctionsClient {
     final response = await callable.call({
       'purchases': purchases.map((p) => p.toJson()).toList(),
     });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> sendTestDailyNudge() async {
+    final callable = _functions.httpsCallable('sendTestDailyNudge');
+    final response = await callable.call();
     return Map<String, dynamic>.from(response.data as Map);
   }
 }

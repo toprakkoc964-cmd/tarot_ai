@@ -21,6 +21,7 @@ export type UserWallet = {
 export type UserDoc = {
   uid: string;
   isProfileComplete: boolean;
+  birthDate?: string;
   profile?: UserProfile;
   consents?: UserConsents;
   wallet: UserWallet;
