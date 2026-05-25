@@ -159,6 +159,8 @@
     "palmScannerTitle": "El Falı Taraması",
     "palmScannerDescription": "Avucunu kılavuz çizgilerin içine yerleştir.",
     "palmAlignHand": "Elini kılavuz çizgilere hizala",
+    "palmPartialHand": "Avucunun tamamını kameraya göster",
+    "palmHoldSteady": "El algılanıyor. Birkaç saniye sabit tut",
     "palmDetected": "El algılandı. Tarama için hazırsın.",
     "palmTapToScan": "TARAMA İÇİN DOKUN",
     "palmScanningLoading": "Evrensel çizgilerin kodları çözülüyor...",

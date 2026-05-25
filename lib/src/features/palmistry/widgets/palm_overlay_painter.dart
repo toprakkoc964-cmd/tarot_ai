@@ -1,30 +1,37 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/palm_detection_result.dart';
 
 class PalmOverlayPainter extends CustomPainter {
   const PalmOverlayPainter({
-    required this.isHandDetected,
+    required this.detectionState,
+    required this.readinessProgress,
   });
 
-  final bool isHandDetected;
+  final PalmDetectionState detectionState;
+  final double readinessProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final activeColor = isHandDetected
-        ? AppColors.primaryNeonPink
-        : AppColors.secondaryLavender;
+    final activeColor = switch (detectionState) {
+      PalmDetectionState.validHand => AppColors.primaryNeonPink,
+      PalmDetectionState.possibleHand => AppColors.primaryPink,
+      PalmDetectionState.partialHand => AppColors.tertiaryGold,
+      PalmDetectionState.noHand => AppColors.secondaryLavender,
+    };
+    final isReady = detectionState == PalmDetectionState.validHand;
     final center = Offset(size.width / 2, size.height * 0.43);
     final palmWidth = size.width * 0.42;
     final palmHeight = size.height * 0.34;
 
     final glowPaint = Paint()
-      ..color = activeColor.withValues(alpha: isHandDetected ? 0.24 : 0.14)
+      ..color = activeColor.withValues(alpha: isReady ? 0.24 : 0.14)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 9
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
     final linePaint = Paint()
-      ..color = activeColor.withValues(alpha: isHandDetected ? 0.88 : 0.58)
+      ..color = activeColor.withValues(alpha: isReady ? 0.88 : 0.62)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
@@ -33,6 +40,11 @@ class PalmOverlayPainter extends CustomPainter {
       ..color = AppColors.tertiaryGold.withValues(alpha: 0.26)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round;
+    final bracketPaint = Paint()
+      ..color = activeColor.withValues(alpha: 0.72)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
 
     final palmRect = Rect.fromCenter(
@@ -128,10 +140,73 @@ class PalmOverlayPainter extends CustomPainter {
       false,
       guidePaint,
     );
+
+    _drawTargetBrackets(canvas, size, palmRect.inflate(palmWidth * 0.24),
+        bracketPaint, activeColor);
+    _drawReadinessTicks(canvas, size, activeColor);
+  }
+
+  void _drawTargetBrackets(
+    Canvas canvas,
+    Size size,
+    Rect target,
+    Paint paint,
+    Color color,
+  ) {
+    final bracket = size.shortestSide * 0.055;
+    final glow = Paint()
+      ..color = color.withValues(alpha: 0.18)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+
+    void drawCorner(Offset origin, double xDirection, double yDirection) {
+      final horizontal = Offset(origin.dx + bracket * xDirection, origin.dy);
+      final vertical = Offset(origin.dx, origin.dy + bracket * yDirection);
+      canvas.drawLine(origin, horizontal, glow);
+      canvas.drawLine(origin, vertical, glow);
+      canvas.drawLine(origin, horizontal, paint);
+      canvas.drawLine(origin, vertical, paint);
+    }
+
+    drawCorner(target.topLeft, 1, 1);
+    drawCorner(target.topRight, -1, 1);
+    drawCorner(target.bottomLeft, 1, -1);
+    drawCorner(target.bottomRight, -1, -1);
+  }
+
+  void _drawReadinessTicks(Canvas canvas, Size size, Color color) {
+    final tickCount = 3;
+    final activeTicks = (readinessProgress * tickCount).round();
+    final tickWidth = size.width * 0.08;
+    final tickGap = size.width * 0.025;
+    final totalWidth = tickWidth * tickCount + tickGap * (tickCount - 1);
+    final startX = (size.width - totalWidth) / 2;
+    final y = size.height * 0.88;
+    final inactivePaint = Paint()
+      ..color = AppColors.secondaryLavender.withValues(alpha: 0.18)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final activePaint = Paint()
+      ..color = color.withValues(alpha: 0.86)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+
+    for (var i = 0; i < tickCount; i++) {
+      final x = startX + i * (tickWidth + tickGap);
+      canvas.drawLine(Offset(x, y), Offset(x + tickWidth, y), inactivePaint);
+      if (i < activeTicks) {
+        canvas.drawLine(Offset(x, y), Offset(x + tickWidth, y), activePaint);
+      }
+    }
   }
 
   @override
   bool shouldRepaint(covariant PalmOverlayPainter oldDelegate) {
-    return oldDelegate.isHandDetected != isHandDetected;
+    return oldDelegate.detectionState != detectionState ||
+        oldDelegate.readinessProgress != readinessProgress;
   }
 }

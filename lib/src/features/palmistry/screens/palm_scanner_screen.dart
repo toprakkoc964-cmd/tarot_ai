@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../../core/app_texts.dart';
 import '../../../core/di/service_locator.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_compression_helper.dart';
+import '../../../core/utils/palm_detection_result.dart';
 import '../../../core/utils/palm_frame_analyzer.dart';
 import '../services/i_palmistry_service.dart';
 import '../widgets/cosmic_scan_button.dart';
@@ -30,7 +32,12 @@ class PalmScannerScreen extends StatefulWidget {
 
 class _PalmScannerScreenState extends State<PalmScannerScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  static const Duration _frameAnalysisInterval = Duration(milliseconds: 650);
+  static const int _stablePalmTarget = 3;
+  static const int _detectionHistoryLimit = 5;
+
   final PalmFrameAnalyzer _frameAnalyzer = PalmFrameAnalyzer();
+  final List<PalmDetectionResult> _detectionHistory = <PalmDetectionResult>[];
   late final AnimationController _scanAnimation;
 
   CameraController? _controller;
@@ -44,6 +51,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   bool _isProcessingFrame = false;
   bool _isHandDetected = false;
   bool _isScanning = false;
+  int _stablePalmScore = 0;
+  PalmDetectionResult _detectionResult = const PalmDetectionResult.noHand();
   String? _errorTitle;
   String? _errorMessage;
 
@@ -82,6 +91,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       _isPermissionPermanentlyDenied = false;
       _errorTitle = null;
       _errorMessage = null;
+      _resetDetectionState();
     });
 
     try {
@@ -189,13 +199,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     if (_isScanning || _isProcessingFrame || !mounted) return;
 
     final now = DateTime.now();
-    if (now.difference(_lastFrameAnalysis) < const Duration(seconds: 1)) {
+    if (now.difference(_lastFrameAnalysis) < _frameAnalysisInterval) {
       return;
     }
     _lastFrameAnalysis = now;
     _isProcessingFrame = true;
 
-    final detected = await _frameAnalyzer.analyze(
+    final result = await _frameAnalyzer.analyze(
       image: image,
       camera: camera,
       deviceOrientation: controller.value.deviceOrientation,
@@ -206,13 +216,47 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       return;
     }
 
-    if (_isHandDetected != detected) {
-      setState(() => _isHandDetected = detected);
-      if (detected) {
-        await HapticFeedback.mediumImpact();
-      }
+    final wasReady = _isHandDetected;
+    setState(() => _applyDetectionResult(result));
+    if (!wasReady && _isHandDetected) {
+      await HapticFeedback.mediumImpact();
     }
     _isProcessingFrame = false;
+  }
+
+  void _resetDetectionState() {
+    _detectionHistory.clear();
+    _detectionResult = const PalmDetectionResult.noHand();
+    _stablePalmScore = 0;
+    _isHandDetected = false;
+  }
+
+  void _applyDetectionResult(PalmDetectionResult result) {
+    _detectionResult = result;
+    _detectionHistory.add(result);
+    if (_detectionHistory.length > _detectionHistoryLimit) {
+      _detectionHistory.removeAt(0);
+    }
+
+    switch (result.state) {
+      case PalmDetectionState.validHand:
+        _stablePalmScore = math.min(_stablePalmTarget, _stablePalmScore + 1);
+        break;
+      case PalmDetectionState.possibleHand:
+        // Keep the accumulated score so one softer frame does not flicker.
+        break;
+      case PalmDetectionState.partialHand:
+        _stablePalmScore = math.max(0, _stablePalmScore - 1);
+        break;
+      case PalmDetectionState.noHand:
+        _stablePalmScore = 0;
+        break;
+    }
+
+    final validFrameCount =
+        _detectionHistory.where((item) => item.isValid).length;
+    _isHandDetected =
+        _stablePalmScore >= _stablePalmTarget && validFrameCount >= 2;
   }
 
   Future<void> _startScan() async {
@@ -270,6 +314,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _errorTitle = AppTexts.t('palmScanErrorTitle');
         _errorMessage = AppTexts.t('palmScanErrorDescription');
         _frozenImage = null;
+        _resetDetectionState();
       });
       await _startImageStream();
     }
@@ -360,11 +405,12 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       );
     }
 
-    final helperText = _isScanning
-        ? AppTexts.t('palmScanningLoading')
-        : _isHandDetected
-            ? AppTexts.t('palmDetected')
-            : AppTexts.t('palmAlignHand');
+    final helperText = _helperText;
+    final statusColor = _statusColor;
+    final overlayState = _isHandDetected || _isScanning
+        ? PalmDetectionState.validHand
+        : _detectionResult.state;
+    final detectionProgress = _isScanning ? 1.0 : _detectionProgress;
 
     return Column(
       children: [
@@ -403,7 +449,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                     ),
                     CustomPaint(
                       painter: PalmOverlayPainter(
-                        isHandDetected: _isHandDetected || _isScanning,
+                        detectionState: overlayState,
+                        readinessProgress: detectionProgress,
                       ),
                     ),
                     if (_isScanning)
@@ -437,11 +484,16 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                 style: GoogleFonts.spaceGrotesk(
                   color: _isHandDetected || _isScanning
                       ? AppColors.primaryPink
-                      : AppColors.secondaryLavender,
+                      : statusColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.8,
                 ),
+              ),
+              const SizedBox(height: 12),
+              _DetectionProgress(
+                progress: detectionProgress,
+                state: overlayState,
               ),
               const SizedBox(height: 14),
               CosmicScanButton(
@@ -478,6 +530,85 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
           ),
         ],
       ],
+    );
+  }
+
+  String get _helperText {
+    if (_isScanning) return AppTexts.t('palmScanningLoading');
+    if (_isHandDetected) return AppTexts.t('palmDetected');
+
+    switch (_detectionResult.state) {
+      case PalmDetectionState.validHand:
+      case PalmDetectionState.possibleHand:
+        return AppTexts.t('palmHoldSteady');
+      case PalmDetectionState.partialHand:
+        return AppTexts.t('palmPartialHand');
+      case PalmDetectionState.noHand:
+        return AppTexts.t('palmAlignHand');
+    }
+  }
+
+  Color get _statusColor {
+    switch (_detectionResult.state) {
+      case PalmDetectionState.validHand:
+      case PalmDetectionState.possibleHand:
+        return AppColors.primaryPink;
+      case PalmDetectionState.partialHand:
+        return AppColors.tertiaryGold;
+      case PalmDetectionState.noHand:
+        return AppColors.secondaryLavender;
+    }
+  }
+
+  double get _detectionProgress {
+    return (_stablePalmScore / _stablePalmTarget).clamp(0, 1).toDouble();
+  }
+}
+
+class _DetectionProgress extends StatelessWidget {
+  const _DetectionProgress({
+    required this.progress,
+    required this.state,
+  });
+
+  final double progress;
+  final PalmDetectionState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeSteps = (progress * 3).round();
+    final color = switch (state) {
+      PalmDetectionState.validHand => AppColors.primaryNeonPink,
+      PalmDetectionState.possibleHand => AppColors.primaryPink,
+      PalmDetectionState.partialHand => AppColors.tertiaryGold,
+      PalmDetectionState.noHand => AppColors.secondaryLavender,
+    };
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(3, (index) {
+        final isActive = index < activeSteps;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: isActive ? 30 : 18,
+          height: 5,
+          decoration: BoxDecoration(
+            color: isActive
+                ? color.withValues(alpha: 0.9)
+                : AppColors.secondaryLavender.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(99),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : null,
+          ),
+        );
+      }),
     );
   }
 }

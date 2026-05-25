@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 
+import 'palm_detection_result.dart';
+
 class PalmFrameAnalyzer {
   PalmFrameAnalyzer()
       : _labeler = ImageLabeler(
-          options: ImageLabelerOptions(confidenceThreshold: 0.7),
+          options: ImageLabelerOptions(confidenceThreshold: 0.45),
         );
 
   static const Map<DeviceOrientation, int> _orientations = {
@@ -21,7 +23,7 @@ class PalmFrameAnalyzer {
 
   final ImageLabeler _labeler;
 
-  Future<bool> analyze({
+  Future<PalmDetectionResult> analyze({
     required CameraImage image,
     required CameraDescription camera,
     required DeviceOrientation deviceOrientation,
@@ -32,14 +34,14 @@ class PalmFrameAnalyzer {
         camera: camera,
         deviceOrientation: deviceOrientation,
       );
-      if (inputImage == null) return false;
+      if (inputImage == null) return const PalmDetectionResult.noHand();
 
       final labels = await _labeler.processImage(inputImage);
-      return labels.any(_isHandLabel);
+      return _classifyLabels(labels);
     } catch (e, st) {
       debugPrint('Palm frame analysis failed: $e');
       debugPrintStack(stackTrace: st);
-      return false;
+      return const PalmDetectionResult.noHand();
     }
   }
 
@@ -47,14 +49,111 @@ class PalmFrameAnalyzer {
     return _labeler.close();
   }
 
-  bool _isHandLabel(ImageLabel label) {
-    if (label.confidence < 0.7) return false;
-    final text = label.label.toLowerCase();
-    return text.contains('hand') ||
-        text.contains('palm') ||
-        text.contains('finger') ||
-        text.contains('arm');
+  PalmDetectionResult _classifyLabels(List<ImageLabel> labels) {
+    final visibleLabels = labels
+        .map((label) => '${label.label}:${label.confidence.toStringAsFixed(2)}')
+        .toList(growable: false);
+
+    double palmConfidence = 0;
+    double handConfidence = 0;
+    double fingerConfidence = 0;
+    double wristArmConfidence = 0;
+    double distractorConfidence = 0;
+
+    for (final label in labels) {
+      final text = label.label.toLowerCase();
+      final confidence = label.confidence;
+
+      if (_containsAny(text, const ['palm'])) {
+        palmConfidence = _max(palmConfidence, confidence);
+      }
+      if (_containsAny(text, const ['hand', 'gesture'])) {
+        handConfidence = _max(handConfidence, confidence);
+      }
+      if (_containsAny(text, const ['finger', 'thumb'])) {
+        fingerConfidence = _max(fingerConfidence, confidence);
+      }
+      if (_containsAny(text, const ['wrist', 'arm'])) {
+        wristArmConfidence = _max(wristArmConfidence, confidence);
+      }
+      if (_containsAny(text, const [
+        'phone',
+        'screen',
+        'computer',
+        'keyboard',
+        'laptop',
+        'book',
+        'paper',
+        'bottle',
+        'cup',
+        'food',
+        'plant',
+        'furniture',
+      ])) {
+        distractorConfidence = _max(distractorConfidence, confidence);
+      }
+    }
+
+    final primaryConfidence = _max(palmConfidence, handConfidence);
+    final supportingConfidence = _max(fingerConfidence, wristArmConfidence);
+    final bestConfidence = _max(primaryConfidence, supportingConfidence);
+
+    if (bestConfidence < 0.55) {
+      return PalmDetectionResult(
+        state: PalmDetectionState.noHand,
+        confidence: bestConfidence,
+        labels: visibleLabels,
+      );
+    }
+
+    final hasStrongPrimary = palmConfidence >= 0.72 || handConfidence >= 0.8;
+    final hasSupport = supportingConfidence >= 0.56;
+    final hasOnlyPartial =
+        primaryConfidence < 0.7 && supportingConfidence >= 0.62;
+    final blockedByDistractor =
+        distractorConfidence >= 0.82 && distractorConfidence > bestConfidence;
+
+    if (blockedByDistractor) {
+      return PalmDetectionResult(
+        state: hasOnlyPartial
+            ? PalmDetectionState.partialHand
+            : PalmDetectionState.noHand,
+        confidence: bestConfidence,
+        labels: visibleLabels,
+      );
+    }
+
+    if ((palmConfidence >= 0.8 || handConfidence >= 0.86) &&
+        (hasSupport || palmConfidence >= 0.88)) {
+      return PalmDetectionResult(
+        state: PalmDetectionState.validHand,
+        confidence: _max(primaryConfidence, supportingConfidence),
+        labels: visibleLabels,
+      );
+    }
+
+    if (hasStrongPrimary || (primaryConfidence >= 0.68 && hasSupport)) {
+      return PalmDetectionResult(
+        state: PalmDetectionState.possibleHand,
+        confidence: _max(primaryConfidence, supportingConfidence),
+        labels: visibleLabels,
+      );
+    }
+
+    return PalmDetectionResult(
+      state: hasOnlyPartial
+          ? PalmDetectionState.partialHand
+          : PalmDetectionState.noHand,
+      confidence: bestConfidence,
+      labels: visibleLabels,
+    );
   }
+
+  bool _containsAny(String text, List<String> needles) {
+    return needles.any(text.contains);
+  }
+
+  double _max(double a, double b) => a > b ? a : b;
 
   InputImage? _toInputImage({
     required CameraImage image,

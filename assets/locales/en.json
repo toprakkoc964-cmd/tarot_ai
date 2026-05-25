@@ -159,6 +159,8 @@
     "palmScannerTitle": "Palm Reading Scan",
     "palmScannerDescription": "Place your palm inside the guide lines.",
     "palmAlignHand": "Align your hand with the guide lines",
+    "palmPartialHand": "Show your full palm to the camera",
+    "palmHoldSteady": "Hand is being detected. Hold steady for a moment",
     "palmDetected": "Hand detected. You are ready to scan.",
     "palmTapToScan": "TAP TO SCAN",
     "palmScanningLoading": "Decoding the universal lines...",
