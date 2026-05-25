@@ -1,16 +1,17 @@
-import 'dart:async';
 import 'dart:ui';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'archive_page.dart';
 import 'chat_page.dart';
+import 'cosmic_page.dart';
 import 'credit_page.dart';
+import 'home_palette.dart';
 import 'profile_page.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
@@ -25,16 +26,16 @@ import '../readings/tarot_service.dart';
 import '../../../services/notification_service.dart' as local_notifications;
 
 // ─── Design Tokens ───────────────────────────────────────────────
-const _kBg = Color(0xFF17081C);
-const _kPrimary = Color(0xFFFF5ED6);
-const _kPrimaryContainer = Color(0xFFFF00D4);
-const _kSecondary = Color(0xFFCDBDFF);
-const _kTertiary = Color(0xFFFFE792);
-const _kOnSurface = Color(0xFFFADCFF);
-const _kSurfaceContainerHigh = Color(0xFF2E1537);
-const _kOnPrimary = Color(0xFF430036);
-const _kGlassBg = Color(0x66361A41); // rgba(54,26,65,0.4)
-const _kGlassBorder = Color(0x26CDBDFF); // rgba(205,189,255,0.15)
+const _kBg = HomePalette.background;
+const _kPrimary = HomePalette.primary;
+const _kPrimaryContainer = HomePalette.primaryContainer;
+const _kSecondary = HomePalette.secondary;
+const _kTertiary = HomePalette.tertiary;
+const _kOnSurface = HomePalette.onSurface;
+const _kSurfaceContainerHigh = HomePalette.surfaceContainerHigh;
+const _kOnPrimary = HomePalette.onPrimary;
+const _kGlassBg = HomePalette.glassBg;
+const _kGlassBorder = HomePalette.glassBorder;
 const _kPaidDrawCost = 5;
 
 class HomePage extends StatefulWidget {
@@ -101,6 +102,9 @@ class _HomePageState extends State<HomePage> {
     setState(() => _flashNotification = true);
     await Future<void>.delayed(const Duration(milliseconds: 140));
     if (!mounted) return;
+    await local_notifications.NotificationService.instance
+        .syncDeliveredScheduledNotificationsToInbox();
+    if (!mounted) return;
     await NotificationService.instance.reloadInbox();
     if (!mounted) return;
 
@@ -129,7 +133,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isArchivePage = _navIndex == 1;
+    final isCosmicPage = _navIndex == 1;
     final isCreditPage = _navIndex == 2;
     final isProfilePage = _navIndex == 3;
     final topBarHeight = _TopBar.estimatedHeight(context);
@@ -140,9 +144,13 @@ class _HomePageState extends State<HomePage> {
       body: Stack(
         children: [
           // ── Nebula background ──
-          if (!isArchivePage && !isCreditPage && !isProfilePage)
+          if (!isCosmicPage && !isCreditPage && !isProfilePage)
             const _NebulaBackground(),
-          if (isArchivePage) ArchivePage(bottomInset: bottomBarHeight),
+          if (isCosmicPage)
+            CosmicPage(
+              bottomInset: bottomBarHeight,
+              uid: widget.uid,
+            ),
           if (isCreditPage)
             CreditPage(
               bottomInset: bottomBarHeight,
@@ -156,7 +164,7 @@ class _HomePageState extends State<HomePage> {
             ),
 
           // ── Scrollable content ──
-          if (!isArchivePage && !isCreditPage && !isProfilePage)
+          if (!isCosmicPage && !isCreditPage && !isProfilePage)
             CustomScrollView(
               slivers: [
                 // Top padding for fixed header
@@ -184,7 +192,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           // ── Fixed Top Bars ──
-          if (!isArchivePage && !isCreditPage && !isProfilePage)
+          if (!isCosmicPage && !isCreditPage && !isProfilePage)
             Positioned(
               top: 0,
               left: 0,
@@ -410,6 +418,8 @@ class _HeroSectionState extends State<_HeroSection>
     with TickerProviderStateMixin {
   static const _loopItemCount = 100000;
   static const _initialLoopPage = _loopItemCount ~/ 2;
+  static const _deckCardWidth = 224.0;
+  static const _deckCardHeight = 348.0;
   static const List<String> _cardNames = <String>[
     'the_fool',
     'the_magician',
@@ -444,16 +454,18 @@ class _HeroSectionState extends State<_HeroSection>
     duration: const Duration(milliseconds: 4200),
   )..repeat();
   late final PageController _pageController = PageController(
-    viewportFraction: 0.5,
+    viewportFraction: 0.68,
     initialPage: _initialLoopPage,
   );
-  Timer? _carouselTimer;
+  final _random = math.Random();
+  final Map<int, Future<DrawnTarotCard>> _warmCardFutures = {};
   int _currentLoopPage = _initialLoopPage;
+  int _deckOffset = 0;
+  int? _lastIntroCardIndex;
   int? _selectedCardIndex;
-  bool _ritualMode = false;
-  bool _ritualIntroActive = false;
-  bool _ritualIntroExpanded = false;
-  bool _ritualCarouselVisible = false;
+  bool _isDrawing = false;
+  bool _isDeckVisible = false;
+  bool _introSpinComplete = false;
   bool _selectionLocked = false;
   bool _isLoadingCard = false;
   bool _isDrawRequestInFlight = false;
@@ -483,12 +495,9 @@ class _HeroSectionState extends State<_HeroSection>
     if (_selectionLocked || _isLoadingCard || _isDrawRequestInFlight) {
       return 'Kart aciliyor...';
     }
-    if (_ritualMode) {
-      return 'Kartini sec';
-    }
     if (isLoading) return AppTexts.t('common.loading');
     if (credits >= _kPaidDrawCost) {
-      return AppTexts.t('home.cta.draw_with_credits');
+      return '5 JETONLA CEK';
     }
     return AppTexts.t('home.cta.insufficient_credits');
   }
@@ -513,33 +522,6 @@ class _HeroSectionState extends State<_HeroSection>
     }
   }
 
-  void _startCarousel() {
-    _carouselTimer?.cancel();
-    _carouselTimer = Timer.periodic(const Duration(milliseconds: 1400), (_) {
-      if (!mounted || _selectionLocked || !_pageController.hasClients) return;
-      final nextPage = _currentLoopPage + 1;
-      _currentLoopPage = nextPage;
-      _pageController.animateToPage(
-        nextPage,
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  void _stopCarousel() {
-    _carouselTimer?.cancel();
-  }
-
-  int _cardIndexForLoopPage(int loopPage) {
-    final fallbackIndex = math.Random().nextInt(_cardNames.length);
-    final normalized = loopPage % _cardNames.length;
-    if (normalized < 0 || normalized >= _cardNames.length) {
-      return fallbackIndex;
-    }
-    return normalized;
-  }
-
   String _displayNameForIndex(int index) {
     final safeIndex = (index >= 0 && index < _cardNames.length)
         ? index
@@ -547,23 +529,81 @@ class _HeroSectionState extends State<_HeroSection>
     return TarotService.majorArcana[safeIndex].displayName;
   }
 
+  int _cardIndexForLoopPage(int loopPage) {
+    final normalized = (loopPage + _deckOffset) % _cardNames.length;
+    return normalized < 0 ? normalized + _cardNames.length : normalized;
+  }
+
+  Future<DrawnTarotCard> _cardFutureForIndex(int index) {
+    return _warmCardFutures.putIfAbsent(
+      index,
+      () => _tarotService.getCardByIndex(index),
+    );
+  }
+
+  void _warmNearbyCards(int centerLoopPage) {
+    for (var delta = -3; delta <= 3; delta++) {
+      final cardIndex = _cardIndexForLoopPage(centerLoopPage + delta);
+      _cardFutureForIndex(cardIndex).then((card) {
+        if (!mounted) return;
+        precacheImage(
+          CachedNetworkImageProvider(card.imageUrl),
+          context,
+        ).catchError((_) {});
+      }).catchError((_) {});
+    }
+  }
+
+  void _prepareDeckForRitual() {
+    _deckOffset = _random.nextInt(_cardNames.length);
+    _currentLoopPage = _initialLoopPage + _random.nextInt(6000) - 3000;
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(_currentLoopPage);
+    }
+  }
+
   Future<void> _resetSelection() async {
     _flipController.reset();
     if (!mounted) return;
     setState(() {
-      _ritualMode = false;
-      _ritualIntroActive = false;
-      _ritualIntroExpanded = false;
-      _ritualCarouselVisible = false;
+      _isDrawing = false;
+      _isDeckVisible = false;
+      _introSpinComplete = false;
       _selectionLocked = false;
       _selectedCardIndex = null;
       _drawnCard = null;
       _isLoadingCard = false;
     });
+    if (_pageController.hasClients) {
+      _currentLoopPage = _initialLoopPage;
+      _pageController.jumpToPage(_initialLoopPage);
+    }
+  }
+
+  Future<void> _runIntroSpin() async {
+    if (!mounted || !_pageController.hasClients) return;
+    var travelPages = 4 + _random.nextInt(3);
+    var targetPage = _currentLoopPage + travelPages;
+    while (_cardIndexForLoopPage(targetPage) == _lastIntroCardIndex) {
+      travelPages += 1;
+      targetPage = _currentLoopPage + travelPages;
+    }
+    await _pageController.animateToPage(
+      targetPage,
+      duration: Duration(milliseconds: 6800 + _random.nextInt(700)),
+      curve: Curves.easeInOutSine,
+    );
+    if (!mounted || !_isDrawing || _selectionLocked) return;
+    setState(() {
+      _currentLoopPage = targetPage;
+      _lastIntroCardIndex = _cardIndexForLoopPage(targetPage);
+      _introSpinComplete = true;
+    });
+    _warmNearbyCards(targetPage);
   }
 
   Future<void> _startRitual({required bool canDraw}) async {
-    if (_ritualMode || _isDrawRequestInFlight || _selectionLocked) return;
+    if (_isDrawing || _isDrawRequestInFlight || _selectionLocked) return;
     if (!canDraw) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -573,10 +613,31 @@ class _HeroSectionState extends State<_HeroSection>
       return;
     }
 
-    setState(() => _isDrawRequestInFlight = true);
+    setState(() {
+      _isDrawRequestInFlight = true;
+      _isDrawing = true;
+      _isDeckVisible = false;
+      _introSpinComplete = false;
+      _selectionLocked = false;
+      _selectedCardIndex = null;
+      _drawnCard = null;
+    });
+    _prepareDeckForRitual();
+
+    Future<void>.delayed(const Duration(milliseconds: 280), () {
+      if (!mounted || !_isDrawing || _selectionLocked) return;
+      setState(() => _isDeckVisible = true);
+      _warmNearbyCards(_currentLoopPage);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _runIntroSpin();
+      });
+    });
+
     try {
       final consumed = await _consumeDrawRight();
       if (!consumed) {
+        if (!mounted) return;
+        await _resetSelection();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -585,35 +646,6 @@ class _HeroSectionState extends State<_HeroSection>
         );
         return;
       }
-
-      if (!mounted) return;
-      setState(() {
-        _ritualMode = true;
-        _ritualIntroActive = true;
-        _ritualIntroExpanded = false;
-        _ritualCarouselVisible = false;
-        _selectionLocked = false;
-        _selectedCardIndex = null;
-        _drawnCard = null;
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      if (!mounted) return;
-      setState(() {
-        _ritualIntroExpanded = true;
-      });
-
-      await Future<void>.delayed(const Duration(milliseconds: 420));
-      if (!mounted) return;
-      setState(() {
-        _ritualCarouselVisible = true;
-      });
-      _startCarousel();
-
-      await Future<void>.delayed(const Duration(milliseconds: 260));
-      if (!mounted) return;
-      setState(() {
-        _ritualIntroActive = false;
-      });
     } finally {
       if (mounted) {
         setState(() => _isDrawRequestInFlight = false);
@@ -623,38 +655,42 @@ class _HeroSectionState extends State<_HeroSection>
 
   Future<void> _handleCardTap({
     required int loopPage,
+    required int cardIndex,
   }) async {
     if (_selectionLocked || _isDrawRequestInFlight || _isLoadingCard) return;
-    if (!_ritualMode) return;
+    if (!_isDeckVisible || !_introSpinComplete) return;
 
     final homePageState = context.findAncestorStateOfType<_HomePageState>();
     try {
-      _stopCarousel();
-      final selectedCardIndex = _cardIndexForLoopPage(loopPage);
-      final imageFuture = _tarotService.getCardByIndex(selectedCardIndex);
-
-      if (_pageController.hasClients) {
+      if (_pageController.hasClients && loopPage != _currentLoopPage) {
         await _pageController.animateToPage(
           loopPage,
-          duration: const Duration(milliseconds: 260),
+          duration: const Duration(milliseconds: 340),
           curve: Curves.easeOutCubic,
         );
       }
+      final imageFuture = _cardFutureForIndex(cardIndex);
 
       if (!mounted) return;
       setState(() {
         _selectionLocked = true;
-        _selectedCardIndex = selectedCardIndex;
+        _currentLoopPage = loopPage;
+        _selectedCardIndex = cardIndex;
         _isLoadingCard = true;
       });
 
-      await _flipController.forward(from: 0);
       final selectedCard = await imageFuture;
+      if (!mounted) return;
+      await precacheImage(
+        CachedNetworkImageProvider(selectedCard.imageUrl),
+        context,
+      );
       if (!mounted) return;
       setState(() {
         _drawnCard = selectedCard;
         _isLoadingCard = false;
       });
+      await _flipController.forward(from: 0);
 
       final languageCode = _resolveDeviceLanguageCode();
       final drawnCardName = selectedCard.card.displayName;
@@ -665,16 +701,21 @@ class _HeroSectionState extends State<_HeroSection>
       await homePageState?._maybePromptNotificationPermission();
       if (!mounted) return;
 
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 760));
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+      final chatResult = await Navigator.of(context).push<String>(
+        MaterialPageRoute<String>(
           builder: (_) => KozmikBilgePage(
+            uid: widget.uid,
             cardTitle: selectedCard.card.displayName,
             cardImageUrl: selectedCard.imageUrl,
           ),
         ),
       );
+      if (!mounted) return;
+      if (chatResult == 'credits') {
+        context.findAncestorStateOfType<_HomePageState>()?._onNavTap(2);
+      }
       await _resetSelection();
     } catch (error) {
       debugPrint('Tarot ritual draw failed: $error');
@@ -697,7 +738,6 @@ class _HeroSectionState extends State<_HeroSection>
 
   @override
   void dispose() {
-    _carouselTimer?.cancel();
     _pageController.dispose();
     _flipController.dispose();
     _ritualAuraController.dispose();
@@ -736,21 +776,20 @@ class _HeroSectionState extends State<_HeroSection>
           isLoading: isLoading,
           credits: credits,
         );
-        final selectedIndex = _selectedCardIndex ??
-            _cardIndexForLoopPage(
-              _currentLoopPage,
-            );
+        final selectedIndex =
+            _selectedCardIndex ?? _cardIndexForLoopPage(_currentLoopPage);
         final headline = _selectionLocked
             ? _displayNameForIndex(selectedIndex)
             : 'Gunun Rehberi';
-        final subtitle = _ritualMode && _ritualCarouselVisible
+        final subtitle = _isDrawing && _isDeckVisible
             ? 'Dolasimdaki kartlardan birini sec ve bugunun rehberligini aciga cikar.'
             : '';
-        final canTapCarousel = _ritualMode &&
-            _ritualCarouselVisible &&
+        final canTapCarousel = _isDrawing &&
+            _isDeckVisible &&
+            _introSpinComplete &&
             !_selectionLocked &&
             !_isLoadingCard;
-        final ritualStageHeight = _ritualMode ? 470.0 : 316.0;
+        final ritualStageHeight = _isDrawing ? 470.0 : 316.0;
 
         return _GlassCard(
           borderRadius: 32,
@@ -813,137 +852,87 @@ class _HeroSectionState extends State<_HeroSection>
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          if (_ritualMode)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: _RitualOrbitBand(
-                                animation: _ritualAuraController,
-                              ),
-                            ),
-                          if (_ritualMode)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: _RitualOrbitBand(
-                                animation: _ritualAuraController,
-                                reverse: true,
-                              ),
-                            ),
-                          if (!_ritualMode)
-                            const _IdleGuideCard()
-                          else
-                            Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Positioned.fill(
-                                  top: 54,
-                                  bottom: 54,
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(milliseconds: 320),
-                                    curve: Curves.easeOutCubic,
-                                    opacity: _ritualCarouselVisible ? 1 : 0,
-                                    child: IgnorePointer(
-                                      ignoring: !canTapCarousel,
-                                      child: Opacity(
-                                        opacity: _selectionLocked ? 0.16 : 1,
-                                        child: PageView.builder(
-                                          controller: _pageController,
-                                          itemCount: _loopItemCount,
-                                          padEnds: false,
-                                          onPageChanged: (value) {
-                                            _currentLoopPage = value;
-                                          },
-                                          itemBuilder: (context, loopIndex) {
-                                            final cardIndex =
-                                                _cardIndexForLoopPage(
-                                              loopIndex,
-                                            );
-                                            return GestureDetector(
-                                              onTap: () => _handleCardTap(
-                                                loopPage: loopIndex,
-                                              ),
-                                              behavior: HitTestBehavior.opaque,
-                                              child: AnimatedBuilder(
-                                                animation: _pageController,
-                                                builder: (context, _) {
-                                                  final page = _pageController
-                                                          .hasClients
-                                                      ? (_pageController.page ??
-                                                          _pageController
-                                                              .initialPage
-                                                              .toDouble())
-                                                      : _initialLoopPage
-                                                          .toDouble();
-                                                  final distance =
-                                                      (page - loopIndex).abs();
-                                                  final scale = (1 -
-                                                          (distance * 0.025)
-                                                              .clamp(
-                                                            0.0,
-                                                            0.06,
-                                                          ))
-                                                      .toDouble();
-                                                  final opacity = (1 -
-                                                          (distance * 0.08)
-                                                              .clamp(
-                                                            0.0,
-                                                            0.14,
-                                                          ))
-                                                      .toDouble();
-                                                  return Transform.scale(
-                                                    scale: scale,
-                                                    child: Opacity(
-                                                      opacity: opacity,
-                                                      child: _GuideCardBack(
-                                                        cardName:
-                                                            _displayNameForIndex(
-                                                          cardIndex,
-                                                        ),
-                                                        width: double.infinity,
-                                                        height: 352,
-                                                        margin: EdgeInsets.zero,
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 360),
+                                curve: Curves.easeOutCubic,
+                                opacity: _isDrawing ? 1 : 0,
+                                child: _RitualStarBands(
+                                  animation: _ritualAuraController,
                                 ),
-                                AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 260),
-                                  curve: Curves.easeOutCubic,
-                                  opacity: _ritualIntroActive ? 1 : 0,
-                                  child: IgnorePointer(
-                                    ignoring: true,
-                                    child: AnimatedScale(
+                              ),
+                            ),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 420),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              return FadeTransition(
+                                opacity: animation,
+                                child: ScaleTransition(
+                                  scale: Tween<double>(
+                                    begin: 0.96,
+                                    end: 1,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: _isDeckVisible
+                                ? IgnorePointer(
+                                    key: const ValueKey('drawing_deck'),
+                                    ignoring: !canTapCarousel,
+                                    child: AnimatedOpacity(
                                       duration:
-                                          const Duration(milliseconds: 520),
-                                      curve: Curves.easeOutCubic,
-                                      scale: _ritualIntroExpanded ? 1.38 : 1,
-                                      child: AnimatedSlide(
-                                        duration:
-                                            const Duration(milliseconds: 520),
-                                        curve: Curves.easeOutCubic,
-                                        offset: _ritualIntroExpanded
-                                            ? const Offset(0, -0.08)
-                                            : Offset.zero,
-                                        child: const _IdleGuideCard(
-                                          compactGlow: false,
-                                        ),
+                                          const Duration(milliseconds: 280),
+                                      opacity: _selectionLocked ? 0.16 : 1,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final carouselWidth =
+                                              constraints.maxWidth + 48;
+                                          return OverflowBox(
+                                            minWidth: carouselWidth,
+                                            maxWidth: carouselWidth,
+                                            child: SizedBox(
+                                              width: carouselWidth,
+                                              child: _FocusDeckCarousel(
+                                                controller: _pageController,
+                                                cardCount: _cardNames.length,
+                                                cardWidth: _deckCardWidth,
+                                                cardHeight: _deckCardHeight,
+                                                allowUserScroll:
+                                                    _introSpinComplete,
+                                                displayNameForIndex:
+                                                    _displayNameForIndex,
+                                                cardIndexForLoopPage:
+                                                    _cardIndexForLoopPage,
+                                                onPageChanged: (loopPage) {
+                                                  _currentLoopPage = loopPage;
+                                                  _warmNearbyCards(loopPage);
+                                                },
+                                                onCardTap:
+                                                    (loopPage, cardIndex) =>
+                                                        _handleCardTap(
+                                                  loopPage: loopPage,
+                                                  cardIndex: cardIndex,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ),
+                                  )
+                                : Center(
+                                    key: const ValueKey('hero_single_card'),
+                                    child: _IdleGuideCard(
+                                      compactGlow: !_isDrawing,
+                                      expanded: _isDrawing,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
+                          ),
                           if (_selectionLocked && _selectedCardIndex != null)
                             _SelectedGuideCard(
                               title: _displayNameForIndex(_selectedCardIndex!),
@@ -974,15 +963,17 @@ class _HeroSectionState extends State<_HeroSection>
                     const SizedBox(height: 16),
 
                     // CTA Button
-                    Visibility(
-                      visible: !_ritualMode,
-                      maintainSize: false,
-                      maintainAnimation: false,
-                      maintainState: false,
-                      child: _HeroCtaButton(
-                        canDraw: canDraw,
-                        ctaText: ctaText,
-                        onPressed: () => _startRitual(canDraw: canDraw),
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      opacity: _isDrawing ? 0 : 1,
+                      child: IgnorePointer(
+                        ignoring: _isDrawing,
+                        child: _HeroCtaButton(
+                          canDraw: canDraw,
+                          ctaText: ctaText,
+                          onPressed: () => _startRitual(canDraw: canDraw),
+                        ),
                       ),
                     ),
                   ],
@@ -1052,77 +1043,178 @@ class _HeroCtaButton extends StatelessWidget {
   }
 }
 
-class _RitualOrbitBand extends StatelessWidget {
-  const _RitualOrbitBand({
-    required this.animation,
-    this.reverse = false,
+class _FocusDeckCarousel extends StatelessWidget {
+  const _FocusDeckCarousel({
+    required this.controller,
+    required this.cardCount,
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.allowUserScroll,
+    required this.displayNameForIndex,
+    required this.cardIndexForLoopPage,
+    required this.onPageChanged,
+    required this.onCardTap,
   });
 
-  final Animation<double> animation;
-  final bool reverse;
+  final PageController controller;
+  final int cardCount;
+  final double cardWidth;
+  final double cardHeight;
+  final bool allowUserScroll;
+  final String Function(int index) displayNameForIndex;
+  final int Function(int loopPage) cardIndexForLoopPage;
+  final ValueChanged<int> onPageChanged;
+  final void Function(int loopPage, int cardIndex) onCardTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 42,
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, child) {
-          final phase = (reverse ? -1 : 1) * animation.value * math.pi * 2;
-          final drift = math.sin(phase) * 34;
-          final glow = 0.4 + (math.cos(phase).abs() * 0.32);
-
-          return Transform.rotate(
-            angle: reverse ? math.pi : 0,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 244,
-                  height: 1,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        _kPrimaryContainer.withValues(alpha: 0.18),
-                        _kPrimary.withValues(alpha: 0.58),
-                        _kPrimaryContainer.withValues(alpha: 0.18),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-                Transform.translate(
-                  offset: Offset(drift, 0),
-                  child: Container(
-                    width: 76,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: _kPrimary.withValues(alpha: glow),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _kPrimaryContainer.withValues(alpha: glow),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Transform.translate(
-                  offset: Offset(-drift * 0.85, 0),
-                  child: Icon(
-                    Icons.auto_awesome_rounded,
-                    color: _kPrimaryContainer.withValues(alpha: 0.72),
-                    size: 18,
-                  ),
-                ),
-              ],
-            ),
+      height: cardHeight + 24,
+      child: NotificationListener<ScrollEndNotification>(
+        onNotification: (notification) {
+          if (!allowUserScroll || !controller.hasClients) return false;
+          final nearestPage = controller.page?.round();
+          if (nearestPage == null) return false;
+          final currentPage = controller.page ?? nearestPage.toDouble();
+          if ((currentPage - nearestPage).abs() < 0.01) return false;
+          controller.animateToPage(
+            nearestPage,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
           );
+          return false;
         },
+        child: PageView.builder(
+          controller: controller,
+          itemCount: _HeroSectionState._loopItemCount,
+          clipBehavior: Clip.none,
+          pageSnapping: false,
+          physics: allowUserScroll
+              ? const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                )
+              : const NeverScrollableScrollPhysics(),
+          onPageChanged: onPageChanged,
+          itemBuilder: (context, loopPage) {
+            final cardIndex = cardIndexForLoopPage(loopPage);
+            return GestureDetector(
+              onTap: () => onCardTap(loopPage, cardIndex),
+              behavior: HitTestBehavior.opaque,
+              child: Center(
+                child: _GuideCardBack(
+                  cardName: displayNameForIndex(cardIndex),
+                  width: cardWidth,
+                  height: cardHeight,
+                  margin: EdgeInsets.zero,
+                ),
+              ),
+            );
+          },
+        ),
       ),
+    );
+  }
+}
+
+class _RitualStarBands extends StatelessWidget {
+  const _RitualStarBands({
+    required this.animation,
+  });
+
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _RitualStarBandPainter(animation: animation),
+    );
+  }
+}
+
+class _RitualStarBandPainter extends CustomPainter {
+  _RitualStarBandPainter({required this.animation}) : super(repaint: animation);
+
+  final Animation<double> animation;
+
+  static const _seeds = <_StarSeed>[
+    _StarSeed(0.06, 0.02, 0.72, 0.76, 0.92),
+    _StarSeed(0.19, 0.24, 0.88, 0.62, 0.74),
+    _StarSeed(0.33, 0.49, 1.02, 0.82, 1.08),
+    _StarSeed(0.47, 0.15, 0.78, 0.68, 0.84),
+    _StarSeed(0.61, 0.67, 0.94, 0.76, 1.0),
+    _StarSeed(0.74, 0.36, 0.86, 0.58, 0.72),
+    _StarSeed(0.88, 0.81, 1.08, 0.78, 1.06),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final seed in _seeds) {
+      _paintStar(canvas, size, seed, topBand: true);
+      _paintStar(canvas, size, seed.shifted(), topBand: false);
+    }
+  }
+
+  void _paintStar(
+    Canvas canvas,
+    Size size,
+    _StarSeed seed, {
+    required bool topBand,
+  }) {
+    final progress = (animation.value * seed.speed + seed.phase) % 1;
+    final x = topBand
+        ? -24 + ((size.width + 48) * progress)
+        : size.width + 24 - ((size.width + 48) * progress);
+    final y = topBand
+        ? 26 + (math.sin((progress + seed.x) * math.pi * 2) * 8)
+        : size.height - 26 + (math.sin((progress + seed.x) * math.pi * 2) * 8);
+    final pulse = 0.62 + (math.sin((progress + seed.phase) * math.pi) * 0.22);
+    final radius = 4 + (seed.scale * 5);
+
+    final paint = Paint()
+      ..color = _kPrimaryContainer.withValues(alpha: seed.opacity * pulse)
+      ..style = PaintingStyle.fill;
+    final glowPaint = Paint()
+      ..color = _kPrimary.withValues(alpha: seed.opacity * pulse * 0.28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    canvas.drawCircle(Offset(x, y), radius * 1.8, glowPaint);
+
+    final path = Path()
+      ..moveTo(x, y - radius)
+      ..lineTo(x + radius * 0.34, y - radius * 0.34)
+      ..lineTo(x + radius, y)
+      ..lineTo(x + radius * 0.34, y + radius * 0.34)
+      ..lineTo(x, y + radius)
+      ..lineTo(x - radius * 0.34, y + radius * 0.34)
+      ..lineTo(x - radius, y)
+      ..lineTo(x - radius * 0.34, y - radius * 0.34)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RitualStarBandPainter oldDelegate) {
+    return oldDelegate.animation != animation;
+  }
+}
+
+class _StarSeed {
+  const _StarSeed(this.x, this.phase, this.speed, this.opacity,
+      [this.scale = 1]);
+
+  final double x;
+  final double phase;
+  final double speed;
+  final double opacity;
+  final double scale;
+
+  _StarSeed shifted() {
+    return _StarSeed(
+      (x + 0.06) % 1,
+      (phase + 0.36) % 1,
+      speed * 0.88,
+      opacity * 0.92,
+      scale * 0.9,
     );
   }
 }
@@ -1218,34 +1310,51 @@ class _GuideCardBack extends StatelessWidget {
 class _IdleGuideCard extends StatelessWidget {
   const _IdleGuideCard({
     this.compactGlow = true,
+    this.expanded = false,
   });
 
   final bool compactGlow;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
+    final cardWidth = expanded ? 228.0 : 192.0;
+    final cardHeight = expanded ? 342.0 : 288.0;
+    final glowWidth = expanded ? 188.0 : (compactGlow ? 156.0 : 192.0);
+    final glowHeight = expanded ? 282.0 : (compactGlow ? 236.0 : 288.0);
+
     return Stack(
       alignment: Alignment.center,
       children: [
-        Container(
-          width: compactGlow ? 156 : 192,
-          height: compactGlow ? 236 : 288,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          width: glowWidth,
+          height: glowHeight,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: _kPrimary.withValues(alpha: compactGlow ? 0.18 : 0.28),
-                blurRadius: compactGlow ? 42 : 56,
-                spreadRadius: compactGlow ? 4 : 8,
+                color: _kPrimary.withValues(
+                  alpha: expanded ? 0.34 : (compactGlow ? 0.18 : 0.28),
+                ),
+                blurRadius: expanded ? 64 : (compactGlow ? 42 : 56),
+                spreadRadius: expanded ? 10 : (compactGlow ? 4 : 8),
               ),
             ],
           ),
         ),
-        _GuideCardBack(
-          cardName: 'Gunun Rehberi',
-          width: 192,
-          height: 288,
-          margin: EdgeInsets.zero,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          width: cardWidth,
+          height: cardHeight,
+          child: _GuideCardBack(
+            cardName: 'Gunun Rehberi',
+            width: cardWidth,
+            height: cardHeight,
+            margin: EdgeInsets.zero,
+          ),
         ),
       ],
     );
@@ -1594,7 +1703,7 @@ class _BottomNavBar extends StatelessWidget {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final items = [
       (Icons.blur_circular_rounded, AppTexts.t('home.tab.ritual')),
-      (Icons.description_outlined, AppTexts.t('home.tab.archive')),
+      (Icons.auto_awesome_rounded, AppTexts.t('home.tab.cosmic')),
       (Icons.payments_outlined, AppTexts.t('home.tab.credit')),
       (Icons.person_outline, AppTexts.t('home.tab.profile')),
     ];
@@ -1701,6 +1810,73 @@ class _NotificationsPage extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+        actions: [
+          ValueListenableBuilder<List<AppNotificationItem>>(
+            valueListenable: NotificationService.instance.inbox,
+            builder: (context, notifications, _) {
+              if (notifications.isEmpty) return const SizedBox.shrink();
+              final isTr = AppLocale.current == 'tr';
+              return Tooltip(
+                message: isTr ? 'Tum bildirimleri sil' : 'Clear notifications',
+                child: IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) {
+                        return AlertDialog(
+                          backgroundColor: _kSurfaceContainerHigh,
+                          title: Text(
+                            isTr
+                                ? 'Bildirimler silinsin mi?'
+                                : 'Clear notifications?',
+                            style: const TextStyle(color: _kOnSurface),
+                          ),
+                          content: Text(
+                            isTr
+                                ? 'Tum bildirim gecmisin bu ekrandan kaldirilacak.'
+                                : 'All notification history will be removed from this screen.',
+                            style: TextStyle(
+                              color: _kSecondary.withValues(alpha: 0.9),
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: Text(isTr ? 'Vazgec' : 'Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              child: Text(isTr ? 'Sil' : 'Delete'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                    if (confirmed != true) return;
+                    await NotificationService.instance.clearInbox();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isTr
+                                ? 'Bildirimler silindi'
+                                : 'Notifications cleared',
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                  },
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: ValueListenableBuilder<List<AppNotificationItem>>(
         valueListenable: NotificationService.instance.inbox,
@@ -1740,69 +1916,281 @@ class _NotificationListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final presentation = _NotificationPresentation.fromItem(item);
     final timestamp = '${item.receivedAt.day.toString().padLeft(2, '0')}.'
         '${item.receivedAt.month.toString().padLeft(2, '0')}.'
         '${item.receivedAt.year}  '
         '${item.receivedAt.hour.toString().padLeft(2, '0')}:'
         '${item.receivedAt.minute.toString().padLeft(2, '0')}';
+    final deleteLabel =
+        AppLocale.current == 'tr' ? 'Bildirimi sil' : 'Delete notification';
 
-    return _GlassCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _kPrimary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.notifications_active_rounded,
-                    color: _kTertiary,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item.title,
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 15,
-                      color: _kOnSurface,
-                      fontWeight: FontWeight.w700,
+    Future<void> deleteItem() async {
+      await NotificationService.instance.deleteNotification(item.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocale.current == 'tr'
+                  ? 'Bildirim silindi'
+                  : 'Notification deleted',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+
+    return Dismissible(
+      key: ValueKey(
+          'notification_${item.id}_${item.receivedAt.microsecondsSinceEpoch}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        decoration: BoxDecoration(
+          color: _kPrimary.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: _kPrimary.withValues(alpha: 0.28)),
+        ),
+        child: Tooltip(
+          message: deleteLabel,
+          child: const Icon(
+            Icons.delete_outline_rounded,
+            color: _kPrimary,
+          ),
+        ),
+      ),
+      onDismissed: (_) => deleteItem(),
+      child: _GlassCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _kPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.notifications_active_rounded,
+                      color: _kTertiary,
+                      size: 18,
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      presentation.title,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 15,
+                        color: _kOnSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Tooltip(
+                    message: deleteLabel,
+                    child: IconButton(
+                      onPressed: deleteItem,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      color: _kSecondary.withValues(alpha: 0.85),
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                presentation.body,
+                style: GoogleFonts.manrope(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: _kSecondary.withValues(alpha: 0.95),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              item.body,
-              style: GoogleFonts.manrope(
-                fontSize: 14,
-                height: 1.45,
-                color: _kSecondary.withValues(alpha: 0.95),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${item.source.toUpperCase()}  •  $timestamp',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 11,
-                letterSpacing: 1.1,
-                color: _kSecondary.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 12),
+              Text(
+                '${presentation.sourceLabel}  •  $timestamp',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 11,
+                  letterSpacing: 1.1,
+                  color: _kSecondary.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _NotificationPresentation {
+  const _NotificationPresentation({
+    required this.title,
+    required this.body,
+    required this.sourceLabel,
+  });
+
+  final String title;
+  final String body;
+  final String sourceLabel;
+
+  factory _NotificationPresentation.fromItem(AppNotificationItem item) {
+    final lang = AppLocale.current;
+    final type = _notificationType(item.source);
+    final cleanTitle = _cleanNotificationText(item.title);
+    final cleanBody = _cleanNotificationText(item.body);
+    final extractedCard = _extractCardName(cleanBody);
+
+    return _NotificationPresentation(
+      title: _titleForType(type, lang, fallback: cleanTitle),
+      body: _bodyForType(
+        type,
+        lang,
+        fallback: cleanBody,
+        cardName: extractedCard,
+      ),
+      sourceLabel: _sourceLabelForType(type, lang),
+    );
+  }
+
+  static String _notificationType(String source) {
+    final normalized = source.toLowerCase();
+    if (normalized.contains('arcana_chat')) return 'arcana_chat';
+    if (normalized.contains('tarot_reminder')) return 'tarot_reminder';
+    if (normalized.contains('daily_tarot') ||
+        normalized.contains('daily_nudge')) {
+      return 'daily_tarot';
+    }
+    return 'unknown';
+  }
+
+  static String _titleForType(
+    String type,
+    String lang, {
+    required String fallback,
+  }) {
+    switch (type) {
+      case 'daily_tarot':
+        return lang == 'tr' ? 'Günün Kozmik Mesajı' : "Today's Cosmic Message";
+      case 'tarot_reminder':
+        return lang == 'tr' ? 'Kartın Seni Bekliyor' : 'Your Card Awaits';
+      case 'arcana_chat':
+        return lang == 'tr' ? 'Arcana Fısıldıyor...' : 'Arcana Whispers...';
+      default:
+        return fallback.isEmpty
+            ? (lang == 'tr' ? 'Bildirim' : 'Notification')
+            : fallback;
+    }
+  }
+
+  static String _bodyForType(
+    String type,
+    String lang, {
+    required String fallback,
+    String? cardName,
+  }) {
+    switch (type) {
+      case 'daily_tarot':
+        return lang == 'tr'
+            ? 'Doğum haritandaki enerji bugün senin için şekillendi. Yorumun hazır!'
+            : 'The energy in your birth chart has aligned for you today. Your reading is ready!';
+      case 'tarot_reminder':
+        return lang == 'tr'
+            ? 'Günün potansiyelini henüz keşfetmedin, tarot kartını çekmeye ne dersin?'
+            : "You haven't explored today's potential yet. Ready to draw your card?";
+      case 'arcana_chat':
+        final card = _localizedCardName(cardName ?? '', lang);
+        if (card.isNotEmpty) {
+          return lang == 'tr'
+              ? 'Bugün çektiğin $card kartı hakkında derin bir sohbete hazır mısın?'
+              : 'Are you ready for a deep conversation about the $card card you drew today?';
+        }
+        return fallback;
+      default:
+        return _localizedCardText(fallback, lang);
+    }
+  }
+
+  static String _sourceLabelForType(String type, String lang) {
+    switch (type) {
+      case 'daily_tarot':
+        return lang == 'tr' ? 'Günlük mesaj' : 'Daily message';
+      case 'tarot_reminder':
+        return lang == 'tr' ? 'Kart hatırlatıcısı' : 'Card reminder';
+      case 'arcana_chat':
+        return lang == 'tr' ? 'Aris sohbeti' : 'Aris chat';
+      default:
+        return lang == 'tr' ? 'Bildirim' : 'Notification';
+    }
+  }
+
+  static String _cleanNotificationText(String value) {
+    return value
+        .replaceAll('🌟', '')
+        .replaceAll('🔮', '')
+        .replaceAll('✨', '')
+        .replaceAll('�', '')
+        .trim();
+  }
+
+  static String? _extractCardName(String text) {
+    for (final entry in _cardNames.entries) {
+      if (text.contains(entry.key) || text.contains(entry.value)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  static String _localizedCardText(String text, String lang) {
+    if (lang != 'tr') return text;
+    var output = text;
+    for (final entry in _cardNames.entries) {
+      output = output.replaceAll(entry.key, entry.value);
+    }
+    return output;
+  }
+
+  static String _localizedCardName(String cardName, String lang) {
+    if (cardName.isEmpty) return '';
+    if (lang != 'tr') return cardName;
+    return _cardNames[cardName] ?? cardName;
+  }
+
+  static const Map<String, String> _cardNames = <String, String>{
+    'The Fool': 'Deli',
+    'The Magician': 'Büyücü',
+    'The High Priestess': 'Baş Rahibe',
+    'The Empress': 'İmparatoriçe',
+    'The Emperor': 'İmparator',
+    'The Hierophant': 'Aziz',
+    'The Lovers': 'Aşıklar',
+    'The Chariot': 'Savaş Arabası',
+    'Strength': 'Güç',
+    'The Hermit': 'Ermiş',
+    'The Wheel Of Fortune': 'Kader Çarkı',
+    'Justice': 'Adalet',
+    'The Hanged Man': 'Asılı Adam',
+    'Death': 'Ölüm',
+    'Temperance': 'Denge',
+    'The Devil': 'Şeytan',
+    'The Tower': 'Kule',
+    'The Star': 'Yıldız',
+    'The Moon': 'Ay',
+    'The Sun': 'Güneş',
+    'Judgement': 'Mahkeme',
+    'The World': 'Dünya',
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════

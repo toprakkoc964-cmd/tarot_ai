@@ -26,9 +26,8 @@ class MajorArcanaCard {
   String get storagePath => 'tarot_cards-major_arcana/$fileName';
   String get displayName => name
       .split('_')
-      .map((part) => part.isEmpty
-          ? part
-          : '${part[0].toUpperCase()}${part.substring(1)}')
+      .map((part) =>
+          part.isEmpty ? part : '${part[0].toUpperCase()}${part.substring(1)}')
       .join(' ');
 }
 
@@ -51,6 +50,8 @@ class TarotService {
 
   final FirebaseStorage _storage;
   final Random _random;
+  final Map<String, Future<String>> _downloadUrlCache = {};
+  final Map<int, Future<DrawnTarotCard>> _cardCache = {};
 
   static const List<MajorArcanaCard> majorArcana = <MajorArcanaCard>[
     MajorArcanaCard(index: 0, name: 'the_fool'),
@@ -79,18 +80,22 @@ class TarotService {
 
   Future<String> getCardDownloadUrlByFileName(String fileName) async {
     final path = 'tarot_cards-major_arcana/$fileName';
-    try {
-      return await _storage.ref(path).getDownloadURL();
-    } on FirebaseException catch (error) {
-      if (error.code == 'object-not-found') {
-        throw TarotCardLoadException('Tarot karti bulunamadi: $path');
+    return _downloadUrlCache.putIfAbsent(path, () async {
+      try {
+        return await _storage.ref(path).getDownloadURL();
+      } on FirebaseException catch (error) {
+        _downloadUrlCache.remove(path);
+        if (error.code == 'object-not-found') {
+          throw TarotCardLoadException('Tarot karti bulunamadi: $path');
+        }
+        throw TarotCardLoadException(
+          'Tarot karti yuklenemedi: ${error.message ?? error.code}',
+        );
+      } catch (error) {
+        _downloadUrlCache.remove(path);
+        throw TarotCardLoadException('Tarot karti yuklenemedi: $error');
       }
-      throw TarotCardLoadException(
-        'Tarot karti yuklenemedi: ${error.message ?? error.code}',
-      );
-    } catch (error) {
-      throw TarotCardLoadException('Tarot karti yuklenemedi: $error');
-    }
+    });
   }
 
   Future<String> getCardDownloadUrl(MajorArcanaCard card) async {
@@ -102,12 +107,20 @@ class TarotService {
       throw RangeError.index(index, majorArcana, 'index');
     }
 
-    final card = majorArcana[index];
-    final normalizedName = card.name.trim().toLowerCase().replaceAll(' ', '_');
-    final fileName =
-        '${index.toString().padLeft(2, '0')}_$normalizedName.webp';
-    final imageUrl = await getCardDownloadUrlByFileName(fileName);
-    return DrawnTarotCard(card: card, imageUrl: imageUrl);
+    return _cardCache.putIfAbsent(index, () async {
+      try {
+        final card = majorArcana[index];
+        final normalizedName =
+            card.name.trim().toLowerCase().replaceAll(' ', '_');
+        final fileName =
+            '${index.toString().padLeft(2, '0')}_$normalizedName.webp';
+        final imageUrl = await getCardDownloadUrlByFileName(fileName);
+        return DrawnTarotCard(card: card, imageUrl: imageUrl);
+      } catch (_) {
+        _cardCache.remove(index);
+        rethrow;
+      }
+    });
   }
 
   Future<DrawnTarotCard> drawRandomCard() async {

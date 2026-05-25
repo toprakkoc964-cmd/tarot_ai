@@ -47,6 +47,38 @@ class TarotFunctionsClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> generateArisOpeningReading({
+    required String cardName,
+    required String cardImageUrl,
+    required String day,
+    String? lang,
+  }) async {
+    final callable = _functions.httpsCallable('generateArisOpeningReading');
+    final response = await callable.call({
+      'cardName': cardName,
+      'cardImageUrl': cardImageUrl,
+      'day': day,
+      if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> continueArisConversation({
+    required String sessionId,
+    required String message,
+    required String idempotencyKey,
+    String? lang,
+  }) async {
+    final callable = _functions.httpsCallable('continueArisConversation');
+    final response = await callable.call({
+      'sessionId': sessionId,
+      'message': message,
+      'idempotencyKey': idempotencyKey,
+      if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<Map<String, dynamic>> validateIosPurchase({
     required String productId,
     required String transactionId,

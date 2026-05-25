@@ -19,6 +19,7 @@ class FrequencyService {
   static const String keyLastFetchDate = 'last_fetch_date';
   static const String keyUserBirthDate = 'user_birth_date';
   static const String keyCommentLang = 'birth_frequency_comment_lang';
+  static const String _commentCacheVersion = 'v2';
 
   static final FrequencyService instance = FrequencyService();
 
@@ -44,13 +45,13 @@ class FrequencyService {
 
     if (lastFetchDate == today &&
         lastFetchLang == resolvedLang &&
-        cachedComment.isNotEmpty) {
+        _isUsableComment(cachedComment)) {
       return cachedComment;
     }
 
     final effectiveBirthDate = (prefs.getString(keyUserBirthDate) ?? '').trim();
     if (effectiveBirthDate.isEmpty) {
-      if (cachedComment.isNotEmpty) return cachedComment;
+      if (_isUsableComment(cachedComment)) return cachedComment;
       return AppTexts.t('home.birth_frequency.unavailable_missing_birth');
     }
 
@@ -64,7 +65,7 @@ class FrequencyService {
             .trim()),
       );
 
-      if (comment.isEmpty) {
+      if (!_isUsableComment(comment)) {
         throw StateError('empty_comment');
       }
 
@@ -82,7 +83,7 @@ class FrequencyService {
       }
       debugPrint('[FrequencyService] getDailyComment error: $debugError');
       debugPrint('$stackTrace');
-      if (cachedComment.isNotEmpty) return cachedComment;
+      if (_isUsableComment(cachedComment)) return cachedComment;
       return AppTexts.t('home.birth_frequency.unavailable_retry');
     }
   }
@@ -105,7 +106,19 @@ class FrequencyService {
     return candidate == 'en' ? 'en' : 'tr';
   }
 
-  String _commentCacheKey(String lang) => 'cached_comment_$lang';
+  String _commentCacheKey(String lang) =>
+      'cached_comment_${_commentCacheVersion}_$lang';
+
+  bool _isUsableComment(String value) {
+    final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length < 24) return false;
+    if (RegExp(r'^(bug[uü]n ruhunuz|bugun ruhunuz|today your soul)$',
+            caseSensitive: false)
+        .hasMatch(normalized)) {
+      return false;
+    }
+    return RegExp(r'[.!?…]$').hasMatch(normalized) || normalized.length >= 60;
+  }
 
   String _compactComment(String value) {
     final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -113,7 +126,7 @@ class FrequencyService {
     final sentenceParts = normalized.split(RegExp(r'(?<=[.!?])\s+'));
     final shortened = sentenceParts.take(2).join(' ').trim();
     final candidate = shortened.isNotEmpty ? shortened : normalized;
-    if (candidate.length <= 120) return candidate;
-    return '${candidate.substring(0, 117).trimRight()}...';
+    if (candidate.length <= 220) return candidate;
+    return '${candidate.substring(0, 217).trimRight()}...';
   }
 }

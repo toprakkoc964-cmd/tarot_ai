@@ -34,9 +34,8 @@ Firebase Console'da `Authentication > Sign-in method` altinda su provider'lari a
 - Login ekraninda Apple/Google butonlari backend auth akisina baglandi.
 
 ## Env Variables (Functions)
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL` (default `gpt-4o-mini`)
-- `OPENAI_TEMPERATURE`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL` (default `gemini-2.5-flash`)
 - `ELEVENLABS_API_KEY`
 - `ELEVENLABS_VOICE_ID`
 - `ELEVENLABS_MODEL_ID`

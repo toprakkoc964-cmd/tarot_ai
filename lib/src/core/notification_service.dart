@@ -256,6 +256,18 @@ class NotificationService {
     await _loadStoredNotifications();
   }
 
+  Future<void> deleteNotification(String id) async {
+    if (id.trim().isEmpty) return;
+    inbox.value =
+        inbox.value.where((item) => item.id != id).toList(growable: false);
+    await _persistNotifications();
+  }
+
+  Future<void> clearInbox() async {
+    inbox.value = const [];
+    await _persistNotifications();
+  }
+
   Future<void> recordRemoteMessage(
     RemoteMessage message, {
     required String source,

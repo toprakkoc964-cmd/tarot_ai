@@ -17,12 +17,17 @@ function getClient(): GoogleGenerativeAI {
 export async function createReadingText(input: {
   systemPrompt: string;
   userPrompt: string;
+  maxOutputTokens?: number;
+  modelName?: string;
 }): Promise<string> {
   try {
-    const modelName = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const modelName = input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
     const model = getClient().getGenerativeModel({
       model: modelName,
       systemInstruction: input.systemPrompt,
+      generationConfig: input.maxOutputTokens
+        ? { maxOutputTokens: input.maxOutputTokens }
+        : undefined,
     });
 
     const result = await model.generateContent(input.userPrompt);

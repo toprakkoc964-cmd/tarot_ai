@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -24,6 +26,7 @@ class NotificationService {
 
   static const DarwinNotificationCategory _dailyCategory =
       DarwinNotificationCategory('daily_readings');
+  static const _scheduledInboxQueueKey = 'scheduled_local_inbox_queue_v1';
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -32,6 +35,8 @@ class NotificationService {
 
   Future<void> init() async {
     await _ensureInitialized();
+    await _backfillPendingNotificationsIntoInboxQueue();
+    await syncDeliveredScheduledNotificationsToInbox();
 
     await scheduleMorningNotifications();
     await scheduleMiddayReminders();
@@ -142,6 +147,7 @@ class NotificationService {
 
   Future<void> cancelAllNotifications() async {
     await _plugin.cancelAll();
+    await _saveScheduledInboxQueue(const []);
   }
 
   Future<void> requestPermissions() async {
@@ -169,7 +175,9 @@ class NotificationService {
 
   Future<void> onDailyCardDrawn(String cardName, String langCode) async {
     final now = tz.TZDateTime.now(tz.local);
-    await _plugin.cancel(id: _middayReminderId(now));
+    final middayReminderId = _middayReminderId(now);
+    await _plugin.cancel(id: middayReminderId);
+    await _removeScheduledInboxItem(middayReminderId);
 
     final title = await NotificationTranslator.getTranslation(
       langCode,
@@ -240,8 +248,7 @@ class NotificationService {
     final title = _resolvedMessageTitle(message, data, langCode, type);
     final body = await _resolvedMessageBody(message, data, langCode, type);
     final storedMessageId =
-        message.messageId ??
-        '${type}_${DateTime.now().microsecondsSinceEpoch}';
+        message.messageId ?? '${type}_${DateTime.now().microsecondsSinceEpoch}';
 
     await _plugin.show(
       id: _backgroundNotificationId(),
@@ -305,6 +312,113 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: '$type:${scheduledAt.toIso8601String()}',
     );
+    await _upsertScheduledInboxItem(
+      _ScheduledInboxItem(
+        id: id,
+        type: type,
+        title: title,
+        body: body,
+        scheduledAt: scheduledAt,
+      ),
+    );
+  }
+
+  Future<void> _backfillPendingNotificationsIntoInboxQueue() async {
+    final pending = await _plugin.pendingNotificationRequests();
+    if (pending.isEmpty) return;
+
+    for (final request in pending) {
+      final scheduledAt = _scheduledAtFromPayload(request.payload);
+      final type = _typeFromPayload(request.payload);
+      final title = request.title?.trim();
+      final body = request.body?.trim();
+      if (scheduledAt == null ||
+          type == null ||
+          title == null ||
+          title.isEmpty ||
+          body == null ||
+          body.isEmpty) {
+        continue;
+      }
+
+      await _upsertScheduledInboxItem(
+        _ScheduledInboxItem(
+          id: request.id,
+          type: type,
+          title: title,
+          body: body,
+          scheduledAt: scheduledAt,
+        ),
+      );
+    }
+  }
+
+  Future<void> syncDeliveredScheduledNotificationsToInbox() async {
+    final queue = await _loadScheduledInboxQueue();
+    if (queue.isEmpty) return;
+
+    final now = DateTime.now();
+    final delivered = queue
+        .where((item) => !item.scheduledAt.isAfter(now))
+        .toList(growable: false);
+    if (delivered.isEmpty) return;
+
+    for (final item in delivered) {
+      await app_notifications.NotificationService.instance.storeNotification(
+        id: item.inboxId,
+        title: item.title,
+        body: item.body,
+        source: 'local_${item.type}',
+        receivedAt: item.scheduledAt,
+      );
+    }
+
+    final pending = queue
+        .where((item) => item.scheduledAt.isAfter(now))
+        .toList(growable: false);
+    await _saveScheduledInboxQueue(pending);
+  }
+
+  Future<void> _upsertScheduledInboxItem(_ScheduledInboxItem item) async {
+    final queue = await _loadScheduledInboxQueue();
+    final updated = <_ScheduledInboxItem>[
+      item,
+      ...queue.where((entry) => entry.id != item.id),
+    ];
+    await _saveScheduledInboxQueue(updated);
+  }
+
+  Future<void> _removeScheduledInboxItem(int id) async {
+    final queue = await _loadScheduledInboxQueue();
+    await _saveScheduledInboxQueue(
+      queue.where((item) => item.id != id).toList(growable: false),
+    );
+  }
+
+  Future<List<_ScheduledInboxItem>> _loadScheduledInboxQueue() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_scheduledInboxQueueKey);
+    if (raw == null || raw.isEmpty) return const [];
+
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(_ScheduledInboxItem.fromMap)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _saveScheduledInboxQueue(
+    List<_ScheduledInboxItem> items,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(
+      items.map((item) => item.toMap()).toList(growable: false),
+    );
+    await prefs.setString(_scheduledInboxQueueKey, encoded);
   }
 
   Future<void> _ensureInitialized() async {
@@ -437,6 +551,12 @@ class NotificationService {
     return DateTime.tryParse(rawDate);
   }
 
+  String? _typeFromPayload(String? payload) {
+    if (payload == null || !payload.contains(':')) return null;
+    final type = payload.split(':').first.trim();
+    return type.isEmpty ? null : type;
+  }
+
   tz.TZDateTime? _randomEveningTime(tz.TZDateTime now) {
     final random = Random();
     final eveningStart = tz.TZDateTime(
@@ -477,17 +597,15 @@ class NotificationService {
 
     switch (type) {
       case 'tarot_reminder':
-        return langCode == 'tr'
-            ? 'Kartin Seni Bekliyor 🔮'
-            : 'Your Card Awaits 🔮';
+        return langCode == 'tr' ? 'Kartin Seni Bekliyor' : 'Your Card Awaits';
       case 'arcana_chat':
         return langCode == 'tr' ? 'Arcana Fisildiyor...' : 'Arcana Whispers...';
       case 'daily_nudge':
       case 'daily_tarot':
       default:
         return langCode == 'tr'
-            ? 'Gunun Kozmik Mesaji 🌟'
-            : "Today's Cosmic Message 🌟";
+            ? 'Gunun Kozmik Mesaji'
+            : "Today's Cosmic Message";
     }
   }
 
@@ -510,7 +628,10 @@ class NotificationService {
     final normalizedType = type == 'daily_nudge' ? 'daily_tarot' : type;
     final args = <String, String>{
       if (data['cardName']?.toString().trim().isNotEmpty ?? false)
-        'cardName': data['cardName'].toString().trim(),
+        'cardName': _localizedCardName(
+          langCode,
+          data['cardName'].toString().trim(),
+        ),
     };
 
     final translated = await NotificationTranslator.getTranslation(
@@ -520,5 +641,73 @@ class NotificationService {
       args: args,
     );
     return translated.isEmpty ? 'Cosmic Message ✨' : translated;
+  }
+
+  String _localizedCardName(String langCode, String cardName) {
+    if (langCode != 'tr') return cardName;
+    const names = <String, String>{
+      'The Fool': 'Deli',
+      'The Magician': 'Buyucu',
+      'The High Priestess': 'Bas Rahibe',
+      'The Empress': 'Imparatorice',
+      'The Emperor': 'Imparator',
+      'The Hierophant': 'Aziz',
+      'The Lovers': 'Asiklar',
+      'The Chariot': 'Savas Arabasi',
+      'Strength': 'Guc',
+      'The Hermit': 'Ermis',
+      'The Wheel Of Fortune': 'Kader Carki',
+      'Justice': 'Adalet',
+      'The Hanged Man': 'Asili Adam',
+      'Death': 'Olum',
+      'Temperance': 'Denge',
+      'The Devil': 'Seytan',
+      'The Tower': 'Kule',
+      'The Star': 'Yildiz',
+      'The Moon': 'Ay',
+      'The Sun': 'Gunes',
+      'Judgement': 'Mahkeme',
+      'The World': 'Dunya',
+    };
+    return names[cardName] ?? cardName;
+  }
+}
+
+class _ScheduledInboxItem {
+  const _ScheduledInboxItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.body,
+    required this.scheduledAt,
+  });
+
+  final int id;
+  final String type;
+  final String title;
+  final String body;
+  final DateTime scheduledAt;
+
+  String get inboxId => 'local_${id}_${scheduledAt.microsecondsSinceEpoch}';
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'id': id,
+      'type': type,
+      'title': title,
+      'body': body,
+      'scheduledAt': scheduledAt.toIso8601String(),
+    };
+  }
+
+  factory _ScheduledInboxItem.fromMap(Map<String, dynamic> map) {
+    return _ScheduledInboxItem(
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      type: map['type'] as String? ?? 'unknown',
+      title: map['title'] as String? ?? '',
+      body: map['body'] as String? ?? '',
+      scheduledAt: DateTime.tryParse(map['scheduledAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
   }
 }

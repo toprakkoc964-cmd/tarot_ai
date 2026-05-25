@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'services/notification_service.dart' as local_notifications;
 import 'src/core/app_check.dart';
 import 'src/core/app_texts.dart';
+import 'src/core/di/service_locator.dart';
 import 'src/core/localization_service.dart';
 import 'src/core/notification_service.dart' as fcm_notifications;
 import 'src/features/auth/auth_gate_page.dart';
@@ -13,6 +14,7 @@ import 'src/features/auth/auth_gate_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await setupServiceLocator();
   runApp(const TarotAiApp());
 }
 
