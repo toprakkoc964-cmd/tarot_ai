@@ -16,6 +16,8 @@ class IOSVisionPalmAnalyzer {
     CameraImage image,
     int sensorOrientation, {
     required bool isFrontCamera,
+    Size? previewSize,
+    Rect? guideRect,
   }) async {
     final totalWatch = Stopwatch()..start();
     if (!Platform.isIOS || image.planes.isEmpty) {
@@ -37,6 +39,12 @@ class IOSVisionPalmAnalyzer {
       'bytesPerPixel': plane.bytesPerPixel,
       'sensorOrientation': sensorOrientation,
       'isFrontCamera': isFrontCamera,
+      'previewWidth': previewSize?.width,
+      'previewHeight': previewSize?.height,
+      'guideLeft': guideRect?.left,
+      'guideTop': guideRect?.top,
+      'guideWidth': guideRect?.width,
+      'guideHeight': guideRect?.height,
     };
 
     if (formatGroup != 'bgra8888') {
@@ -71,6 +79,21 @@ class IOSVisionPalmAnalyzer {
       'isFrontCamera': isFrontCamera,
       'debugMode': kDebugMode,
     };
+    if (previewSize != null &&
+        guideRect != null &&
+        previewSize.width > 0 &&
+        previewSize.height > 0 &&
+        guideRect.width > 0 &&
+        guideRect.height > 0) {
+      payload.addAll({
+        'previewWidth': previewSize.width,
+        'previewHeight': previewSize.height,
+        'guideLeft': guideRect.left,
+        'guideTop': guideRect.top,
+        'guideWidth': guideRect.width,
+        'guideHeight': guideRect.height,
+      });
+    }
 
     try {
       final channelWatch = Stopwatch()..start();
@@ -97,8 +120,12 @@ class IOSVisionPalmAnalyzer {
       _logPerf(debug);
       return PalmDetectionResult(
         state: result.state,
+        scanState: result.scanState,
         confidence: result.confidence,
         labels: result.labels,
+        handDetected: result.handDetected,
+        possibleHand: result.possibleHand,
+        validPalm: result.validPalm,
         source: result.source,
         debug: debug,
       );

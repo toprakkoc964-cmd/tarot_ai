@@ -1130,22 +1130,25 @@ export const validateIosPurchase = onCall({ enforceAppCheck: false }, async (req
 
     const userRef = db.collection('users').doc(uid);
     const idemRef = userRef.collection('idempotency').doc(`purchase_${idemKey}`);
-    const transactionRef = userRef.collection('iap_transactions').doc(transactionId);
+    const safeTransactionId = transactionId || idemKey;
+    const transactionRef = userRef.collection('iap_transactions').doc(safeTransactionId);
     const idemSnap = await idemRef.get();
     if (idemSnap.exists) {
       return idemSnap.data();
     }
 
     const validation = await validateAppleReceipt({ transactionId, productId, receiptData });
-    if (!validation.isValid || validation.creditsToGrant <= 0) {
+    if (!validation.isValid || validation.productType === 'unknown') {
       throw new HttpsError('failed-precondition', 'PURCHASE_INVALID');
     }
 
     let remainingCredits = 0;
+    let premiumActive = false;
     await db.runTransaction(async (tx) => {
       const txSnap = await tx.get(transactionRef);
       if (txSnap.exists) {
         remainingCredits = Number((txSnap.data() as { remainingCredits?: number }).remainingCredits ?? 0);
+        premiumActive = Boolean((txSnap.data() as { premiumActive?: boolean }).premiumActive ?? false);
         return;
       }
 
@@ -1155,34 +1158,68 @@ export const validateIosPurchase = onCall({ enforceAppCheck: false }, async (req
       }
 
       const user = userSnap.data() as UserDoc;
-      remainingCredits = (user.wallet.credits ?? 0) + validation.creditsToGrant;
+      const currentCredits = Number(user.wallet.credits ?? 0);
+      const creditsToGrant = validation.productType === 'monthly_premium'
+        ? validation.premiumBonusCredits
+        : validation.creditsToGrant;
+      remainingCredits = currentCredits + creditsToGrant;
+      premiumActive = validation.productType === 'monthly_premium';
 
-      tx.update(userRef, {
+      const updates: Record<string, unknown> = {
         'wallet.credits': remainingCredits,
         updatedAt: FieldValue.serverTimestamp()
-      });
+      };
+
+      if (validation.productType === 'monthly_premium') {
+        updates['entitlements.premium.active'] = true;
+        updates['entitlements.premium.productId'] = productId;
+        updates['entitlements.premium.originalTransactionId'] = safeTransactionId;
+        updates['entitlements.premium.willRenew'] = true;
+        updates['entitlements.premium.lastVerifiedAt'] = FieldValue.serverTimestamp();
+        // TODO: Store App Store Server API expiration/period values here:
+        // entitlements.premium.expiresAt, currentSubscriptionPeriodId.
+      }
+
+      tx.update(userRef, updates);
 
       tx.set(userRef.collection('credit_ledger').doc(), {
         type: 'credit',
-        amount: validation.creditsToGrant,
-        reason: 'ios_purchase',
+        amount: creditsToGrant,
+        reason: validation.productType === 'monthly_premium'
+          ? 'ios_premium_period_bonus'
+          : 'ios_purchase',
         productId,
-        transactionId,
+        transactionId: safeTransactionId,
         idempotencyKey: idemKey,
         createdAt: FieldValue.serverTimestamp()
       });
       tx.set(transactionRef, {
         productId,
-        transactionId,
-        creditsGranted: validation.creditsToGrant,
+        transactionId: safeTransactionId,
+        productType: validation.productType,
+        creditsGranted: creditsToGrant,
         remainingCredits,
+        premiumActive,
         createdAt: FieldValue.serverTimestamp()
       });
     });
 
     const result = {
-      creditedAmount: validation.creditsToGrant,
-      remainingCredits
+      success: true,
+      creditedAmount: validation.productType === 'monthly_premium'
+        ? validation.premiumBonusCredits
+        : validation.creditsToGrant,
+      remainingCredits,
+      entitlements: {
+        premium: {
+          active: premiumActive,
+          productId: premiumActive ? productId : null,
+          willRenew: premiumActive ? true : null
+        },
+        credits: {
+          balance: remainingCredits
+        }
+      }
     };
 
     await idemRef.set({ ...result, createdAt: FieldValue.serverTimestamp() });

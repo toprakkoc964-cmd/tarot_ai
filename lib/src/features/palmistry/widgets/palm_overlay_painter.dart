@@ -14,6 +14,23 @@ class PalmOverlayPainter extends CustomPainter {
   final double readinessProgress;
   final double pulseValue;
 
+  static Rect guideRectForSize(Size size) {
+    final palmRect = palmRectForSize(size);
+    final palmWidth = size.width * 0.42;
+    return palmRect.inflate(palmWidth * 0.24);
+  }
+
+  static Rect palmRectForSize(Size size) {
+    final center = Offset(size.width / 2, size.height * 0.43);
+    final palmWidth = size.width * 0.42;
+    final palmHeight = size.height * 0.34;
+    return Rect.fromCenter(
+      center: center.translate(0, palmHeight * 0.16),
+      width: palmWidth,
+      height: palmHeight,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final activeColor = switch (detectionState) {
@@ -58,11 +75,7 @@ class PalmOverlayPainter extends CustomPainter {
       ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
 
-    final palmRect = Rect.fromCenter(
-      center: center.translate(0, palmHeight * 0.16),
-      width: palmWidth,
-      height: palmHeight,
-    );
+    final palmRect = palmRectForSize(size);
     final palmPath = Path()
       ..moveTo(palmRect.left + palmWidth * 0.18, palmRect.top + 10)
       ..quadraticBezierTo(
@@ -152,8 +165,13 @@ class PalmOverlayPainter extends CustomPainter {
       guidePaint,
     );
 
-    _drawTargetBrackets(canvas, size, palmRect.inflate(palmWidth * 0.24),
-        bracketPaint, activeColor);
+    _drawTargetBrackets(
+      canvas,
+      size,
+      guideRectForSize(size),
+      bracketPaint,
+      activeColor,
+    );
     _drawReadinessTicks(canvas, size, activeColor);
   }
 

@@ -29,6 +29,8 @@ class PalmFrameAnalyzer {
     required CameraImage image,
     required CameraDescription camera,
     required DeviceOrientation deviceOrientation,
+    Size? previewSize,
+    Rect? guideRect,
   }) async {
     if (Platform.isIOS) {
       try {
@@ -36,6 +38,8 @@ class PalmFrameAnalyzer {
           image,
           camera.sensorOrientation,
           isFrontCamera: camera.lensDirection == CameraLensDirection.front,
+          previewSize: previewSize,
+          guideRect: guideRect,
         );
       } catch (e, st) {
         if (kDebugMode) {
@@ -127,32 +131,42 @@ class PalmFrameAnalyzer {
     if (primaryConfidence >= 0.75) {
       return PalmDetectionResult(
         state: PalmDetectionState.validHand,
+        scanState: PalmScanState.ready,
         confidence: primaryConfidence,
         labels: relatedLabels,
         source: 'MLKit',
+        handDetected: true,
+        possibleHand: true,
+        validPalm: true,
       );
     }
 
     if (primaryConfidence >= 0.6) {
       return PalmDetectionResult(
         state: PalmDetectionState.possibleHand,
+        scanState: PalmScanState.unstable,
         confidence: primaryConfidence,
         labels: relatedLabels,
         source: 'MLKit',
+        handDetected: true,
+        possibleHand: true,
       );
     }
 
     if (partialConfidence > 0) {
       return PalmDetectionResult(
         state: PalmDetectionState.partialHand,
+        scanState: PalmScanState.openFingers,
         confidence: partialConfidence,
         labels: relatedLabels,
         source: 'MLKit',
+        handDetected: true,
       );
     }
 
     return PalmDetectionResult(
       state: PalmDetectionState.noHand,
+      scanState: PalmScanState.noHand,
       confidence: 0,
       labels: relatedLabels,
       source: 'MLKit',

@@ -12,6 +12,7 @@ import 'src/core/di/service_locator.dart';
 import 'src/core/localization_service.dart';
 import 'src/core/notification_service.dart' as fcm_notifications;
 import 'src/features/auth/auth_gate_page.dart';
+import 'src/features/shop/services/purchase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,10 @@ Future<String?> _bootstrapApp() async {
     await _runRequiredBootstrapTask(
       'Localization',
       () => LocalizationService.instance.initialize(),
+    );
+    await _runOptionalBootstrapTask(
+      'Purchase service',
+      () => getIt<PurchaseService>().initialize(),
     );
     return null;
   } catch (e, st) {

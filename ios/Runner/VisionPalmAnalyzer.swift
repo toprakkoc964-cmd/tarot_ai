@@ -10,6 +10,11 @@ final class VisionPalmAnalyzer {
   private let queue = DispatchQueue(label: "tarot_ai.palm_vision.queue", qos: .userInitiated)
   private let stateLock = NSLock()
   private var isProcessing = false
+  private let minHandArea = 0.18
+  private let maxHandArea = 0.65
+  private let minimumGuideOverlap = 0.70
+  private let maximumRotationFromVertical = 25.0
+  private let minimumOpenPalmScore = 0.72
 
   @available(iOS 14.0, *)
   private lazy var handPoseRequest: VNDetectHumanHandPoseRequest = {
@@ -203,7 +208,8 @@ final class VisionPalmAnalyzer {
         points: points,
         observationCount: observations.count,
         inheritedDebug: requestDebug,
-        debugMode: frame.debugMode
+        debugMode: frame.debugMode,
+        frame: frame
       )
     } catch {
       return Self.noHandResponse(
@@ -240,6 +246,35 @@ final class VisionPalmAnalyzer {
     let sensorOrientation = payload["sensorOrientation"] as? Int ?? 0
     let isFrontCamera = payload["isFrontCamera"] as? Bool ?? false
     let debugMode = payload["debugMode"] as? Bool ?? false
+    let previewWidth = numericDouble(payload["previewWidth"])
+    let previewHeight = numericDouble(payload["previewHeight"])
+    let guideLeft = numericDouble(payload["guideLeft"])
+    let guideTop = numericDouble(payload["guideTop"])
+    let guideWidth = numericDouble(payload["guideWidth"])
+    let guideHeight = numericDouble(payload["guideHeight"])
+    let geometry: PalmFrameGeometry?
+    if let previewWidth,
+       let previewHeight,
+       let guideLeft,
+       let guideTop,
+       let guideWidth,
+       let guideHeight,
+       previewWidth > 0,
+       previewHeight > 0,
+       guideWidth > 0,
+       guideHeight > 0 {
+      geometry = PalmFrameGeometry(
+        previewSize: CGSize(width: previewWidth, height: previewHeight),
+        guideRect: CGRect(
+          x: guideLeft,
+          y: guideTop,
+          width: guideWidth,
+          height: guideHeight
+        )
+      )
+    } else {
+      geometry = nil
+    }
     let expectedMinByteCount = (height ?? 0) * (bytesPerRow ?? 0)
     let debug: [String: Any?] = [
       "byteCount": data?.count ?? 0,
@@ -252,6 +287,15 @@ final class VisionPalmAnalyzer {
       "sensorOrientation": sensorOrientation,
       "isFrontCamera": isFrontCamera,
       "debugMode": debugMode,
+      "previewWidth": previewWidth ?? 0,
+      "previewHeight": previewHeight ?? 0,
+      "guideLeft": guideLeft ?? 0,
+      "guideTop": guideTop ?? 0,
+      "guideWidth": guideWidth ?? 0,
+      "guideHeight": guideHeight ?? 0,
+      "coordinateSpaceName": geometry == nil
+        ? "visionNormalizedFallback"
+        : "previewAspectFillGuide",
     ]
 
     guard
@@ -299,7 +343,8 @@ final class VisionPalmAnalyzer {
         bytesPerPixel: bytesPerPixel,
         sensorOrientation: sensorOrientation,
         isFrontCamera: isFrontCamera,
-        debugMode: debugMode
+        debugMode: debugMode,
+        geometry: geometry
       ),
       error: nil,
       debug: debug
@@ -405,37 +450,202 @@ final class VisionPalmAnalyzer {
     points: [VNHumanHandPoseObservation.JointName: VNRecognizedPoint],
     observationCount: Int,
     inheritedDebug: [String: Any?],
-    debugMode: Bool
+    debugMode: Bool,
+    frame: PalmFrame
   ) -> [String: Any] {
     let pointThreshold: VNConfidence = 0.35
     let reliablePoints = points.values.filter { $0.confidence >= pointThreshold }
     let reliablePointCount = reliablePoints.count
+    let avgConfidence = averageConfidence(reliablePoints)
+    let landmarks = recognizedLandmarks(
+      points: points,
+      threshold: pointThreshold,
+      frame: frame
+    )
 
     guard reliablePointCount >= 5 else {
       return Self.noHandResponse(
         labels: ["vision_hand_pose_low_confidence"],
         lastError: nil,
-        debug: baseDebug(
+        debug: mergeDebug(
           inheritedDebug,
-          methodChannelSuccess: true,
-          observationCount: observationCount,
-          reliablePointCount: reliablePointCount,
-          fingertipCount: 0,
-          averageConfidence: averageConfidence(reliablePoints),
-          openPalmScore: 0,
-          spreadScore: 0,
-          palmStructureScore: 0,
-          palmAreaScore: 0,
-          extendedFingerCount: 0,
-          nonThumbFingertipCount: 0,
-          thumbStructureCount: 0,
-          thumbStructureScore: 0,
-          fullPalmGate: false,
-          debugMode: debugMode
+          [
+            "methodChannelSuccess": true,
+            "lastError": nil,
+            "observationCount": observationCount,
+            "handDetected": false,
+            "possibleHand": false,
+            "validPalm": false,
+            "failureReason": "noHand",
+            "scanState": "noHand",
+            "reliablePointCount": reliablePointCount,
+            "averageConfidence": roundMetric(Double(avgConfidence)),
+            "openPalmScore": 0.0,
+            "coordinateSpaceName": frame.geometry == nil
+              ? "visionNormalizedFallback"
+              : "previewAspectFillGuide",
+          ]
         )
       )
     }
 
+    let metrics = palmValidationMetrics(
+      landmarks: landmarks,
+      reliablePointCount: reliablePointCount,
+      averageConfidence: avgConfidence,
+      frame: frame
+    )
+    let validation = validatePalm(metrics)
+    let debug = mergeDebug(
+      inheritedDebug,
+      validationDebug(
+        metrics: metrics,
+        validation: validation,
+        observationCount: observationCount,
+        debugMode: debugMode,
+        frame: frame
+      )
+    )
+
+    return response(
+      state: validation.detectionState,
+      scanState: validation.scanState,
+      confidence: metrics.openPalmScore,
+      labels: validation.labels,
+      debug: debug,
+      handDetected: validation.handDetected,
+      possibleHand: validation.possibleHand,
+      validPalm: validation.validPalm
+    )
+  }
+
+  private func response(
+    state: String,
+    scanState: String,
+    confidence: Double,
+    labels: [String],
+    debug: [String: Any?],
+    handDetected: Bool,
+    possibleHand: Bool,
+    validPalm: Bool
+  ) -> [String: Any] {
+    [
+      "source": "Vision",
+      "state": state,
+      "scanState": scanState,
+      "confidence": roundMetric(confidence),
+      "labels": labels,
+      "handDetected": handDetected,
+      "possibleHand": possibleHand,
+      "validPalm": validPalm,
+      "debug": debug.compactMapValues { $0 },
+    ]
+  }
+
+  @available(iOS 14.0, *)
+  private func recognizedLandmarks(
+    points: [VNHumanHandPoseObservation.JointName: VNRecognizedPoint],
+    threshold: VNConfidence,
+    frame: PalmFrame
+  ) -> [VNHumanHandPoseObservation.JointName: PalmLandmark] {
+    var landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark] = [:]
+    for (name, point) in points where point.confidence >= threshold {
+      let mappedPoint = mapPointToPreviewSpace(
+        visionPoint: point.location,
+        frame: frame
+      )
+      landmarks[name] = PalmLandmark(
+        visionLocation: point.location,
+        location: mappedPoint,
+        confidence: point.confidence
+      )
+    }
+    return landmarks
+  }
+
+  private func mapPointToPreviewSpace(
+    visionPoint: CGPoint,
+    frame: PalmFrame
+  ) -> CGPoint {
+    let normalized = correctedPreviewNormalizedPoint(
+      visionPoint: visionPoint,
+      frame: frame
+    )
+
+    guard let geometry = frame.geometry else {
+      return normalized
+    }
+
+    let imageSize = orientedImageSize(frame: frame)
+    let previewSize = geometry.previewSize
+    guard imageSize.width > 0,
+          imageSize.height > 0,
+          previewSize.width > 0,
+          previewSize.height > 0 else {
+      return normalized
+    }
+
+    let scale = max(
+      previewSize.width / imageSize.width,
+      previewSize.height / imageSize.height
+    )
+    let renderedSize = CGSize(
+      width: imageSize.width * scale,
+      height: imageSize.height * scale
+    )
+    let cropOffset = CGPoint(
+      x: (renderedSize.width - previewSize.width) / 2.0,
+      y: (renderedSize.height - previewSize.height) / 2.0
+    )
+
+    let imagePoint = CGPoint(
+      x: normalized.x * imageSize.width,
+      y: normalized.y * imageSize.height
+    )
+    let previewPoint = CGPoint(
+      x: imagePoint.x * scale - cropOffset.x,
+      y: imagePoint.y * scale - cropOffset.y
+    )
+
+    return CGPoint(
+      x: min(max(previewPoint.x / previewSize.width, 0), 1),
+      y: min(max(previewPoint.y / previewSize.height, 0), 1)
+    )
+  }
+
+  private func correctedPreviewNormalizedPoint(
+    visionPoint: CGPoint,
+    frame: PalmFrame
+  ) -> CGPoint {
+    var point = applyYAxisFlip(visionPoint)
+    if frame.isFrontCamera {
+      point.x = 1.0 - point.x
+    }
+    return CGPoint(
+      x: min(max(point.x, 0), 1),
+      y: min(max(point.y, 0), 1)
+    )
+  }
+
+  private func applyYAxisFlip(_ point: CGPoint) -> CGPoint {
+    CGPoint(x: point.x, y: 1.0 - point.y)
+  }
+
+  private func orientedImageSize(frame: PalmFrame) -> CGSize {
+    let normalized = ((frame.sensorOrientation % 360) + 360) % 360
+    if normalized == 90 || normalized == 270 {
+      return CGSize(width: frame.height, height: frame.width)
+    }
+    return CGSize(width: frame.width, height: frame.height)
+  }
+
+  @available(iOS 14.0, *)
+  private func palmValidationMetrics(
+    landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark],
+    reliablePointCount: Int,
+    averageConfidence: Float,
+    frame: PalmFrame
+  ) -> PalmValidationMetrics {
     let fingertipNames: [VNHumanHandPoseObservation.JointName] = [
       .thumbTip,
       .indexTip,
@@ -443,166 +653,506 @@ final class VisionPalmAnalyzer {
       .ringTip,
       .littleTip,
     ]
-    let nonThumbFingertipNames: [VNHumanHandPoseObservation.JointName] = [
-      .indexTip,
-      .middleTip,
-      .ringTip,
-      .littleTip,
-    ]
-    let palmStructureNames: [VNHumanHandPoseObservation.JointName] = [
-      .wrist,
+    let mcpNames: [VNHumanHandPoseObservation.JointName] = [
       .indexMCP,
       .middleMCP,
       .ringMCP,
       .littleMCP,
     ]
-    let thumbStructureNames: [VNHumanHandPoseObservation.JointName] = [
+    let requiredNames = requiredPalmJointNames()
+    let requiredReliableCount = requiredNames
+      .filter { landmarks[$0] != nil }
+      .count
+    let fingertipCount = fingertipNames
+      .filter { landmarks[$0] != nil }
+      .count
+    let mcpCount = mcpNames
+      .filter { landmarks[$0] != nil }
+      .count
+    let extendedFingerCount = extendedFingerCount(landmarks: landmarks)
+    let palmCenter = averagePoint(mcpNames.compactMap { landmarks[$0]?.location })
+    let guideRect = normalizedGuideRect(frame: frame)
+    let handBox = boundingBox(landmarks.values.map(\.location))
+    let handArea = handBox.width * handBox.height
+    let guideOverlapRatio = calculateGuideOverlap(
+      handBox: handBox,
+      guideRect: guideRect
+    )
+    let wristInsideGuide = landmarks[.wrist]
+      .map { guideRect.contains($0.location) } ?? false
+    let palmCenterInsideGuide = palmCenter
+      .map { guideRect.contains($0) } ?? false
+    let fingertipsInsideGuide = fingertipNames
+      .compactMap { landmarks[$0]?.location }
+      .filter { guideRect.contains($0) }
+      .count
+    let handAreaState: PalmHandAreaState
+    if handArea < minHandArea {
+      handAreaState = .tooFar
+    } else if handArea > maxHandArea {
+      handAreaState = .tooClose
+    } else {
+      handAreaState = .ok
+    }
+    let rotationAngle = rotationAngleFromVertical(landmarks: landmarks)
+    let fingerSpreadRatio = ratio(
+      distanceBetween(.indexTip, .littleTip, in: landmarks),
+      distanceBetween(.wrist, .middleTip, in: landmarks)
+    )
+    let thumbSpreadRatio = ratio(
+      distanceBetween(.thumbTip, .indexMCP, in: landmarks),
+      distanceBetween(.wrist, .middleTip, in: landmarks)
+    )
+    let orientation = calculatePalmOrientation(landmarks: landmarks)
+    let fingerExtensionScore = min(max(Double(extendedFingerCount) / 4.0, 0), 1)
+    let reliablePointScore = min(max(Double(requiredReliableCount) / Double(requiredNames.count), 0), 1)
+    let fingerSpreadScore = normalizedRangeScore(
+      value: fingerSpreadRatio,
+      minValue: 0.35,
+      maxValue: 0.62
+    )
+    let verticalOrientationScore = rotationAngle == nil
+      ? 0
+      : min(max(1.0 - ((rotationAngle ?? 90) / maximumRotationFromVertical), 0), 1)
+    let guideAlignmentScore = guideAlignmentScore(
+      guideOverlapRatio: guideOverlapRatio,
+      palmCenterInsideGuide: palmCenterInsideGuide,
+      wristInsideGuide: wristInsideGuide,
+      fingertipsInsideGuide: fingertipsInsideGuide
+    )
+    let confidenceScore = min(max(Double(averageConfidence), 0), 1)
+    let openPalmScore =
+      reliablePointScore * 0.15 +
+      fingerExtensionScore * 0.25 +
+      fingerSpreadScore * 0.15 +
+      verticalOrientationScore * 0.15 +
+      orientation.score * 0.15 +
+      guideAlignmentScore * 0.15 +
+      confidenceScore * 0.05
+
+    return PalmValidationMetrics(
+      reliablePointCount: reliablePointCount,
+      requiredReliableCount: requiredReliableCount,
+      requiredPointCount: requiredNames.count,
+      fingertipCount: fingertipCount,
+      mcpCount: mcpCount,
+      extendedFingerCount: extendedFingerCount,
+      averageConfidence: averageConfidence,
+      openPalmScore: openPalmScore,
+      fingerSpreadRatio: fingerSpreadRatio,
+      thumbSpreadRatio: thumbSpreadRatio,
+      fingerSpreadScore: fingerSpreadScore,
+      verticalOrientationScore: verticalOrientationScore,
+      palmOrientationScore: orientation.score,
+      palmOrientationReliable: orientation.isReliable,
+      guideAlignmentScore: guideAlignmentScore,
+      guideOverlapRatio: guideOverlapRatio,
+      palmCenterInsideGuide: palmCenterInsideGuide,
+      wristInsideGuide: wristInsideGuide,
+      fingertipsInsideGuide: fingertipsInsideGuide,
+      handArea: handArea,
+      handAreaState: handAreaState,
+      rotationAngleFromVertical: rotationAngle ?? 90,
+      crossZ: orientation.crossZ,
+      isFrontCameraMirrored: frame.isFrontCamera,
+      coordinateSpaceName: frame.geometry == nil
+        ? "visionNormalizedFallback"
+        : "previewAspectFillGuide"
+    )
+  }
+
+  @available(iOS 14.0, *)
+  private func validatePalm(_ metrics: PalmValidationMetrics) -> PalmValidationResult {
+    let handDetected = metrics.reliablePointCount >= 5
+    let possibleHand = metrics.reliablePointCount >= 10 ||
+      metrics.fingertipCount >= 3 ||
+      metrics.mcpCount >= 3
+
+    guard handDetected else {
+      return PalmValidationResult.noHand(reason: "noHand")
+    }
+
+    if metrics.reliablePointCount < 16 ||
+       metrics.requiredReliableCount < metrics.requiredPointCount ||
+       metrics.fingertipCount < 5 ||
+       metrics.mcpCount < 4 ||
+       metrics.averageConfidence < 0.55 {
+      return PalmValidationResult(
+        detectionState: possibleHand ? "partialHand" : "noHand",
+        scanState: metrics.fingertipCount < 5 ? "openFingers" : "showPalm",
+        handDetected: true,
+        possibleHand: possibleHand,
+        validPalm: false,
+        failureReason: metrics.fingertipCount < 5
+          ? "missingFingertips"
+          : "missingRequiredPalmJoints",
+        labels: [
+          "vision_hand_pose",
+          "not_valid_palm",
+          "required_\(metrics.requiredReliableCount)_of_\(metrics.requiredPointCount)",
+          "fingertips_\(metrics.fingertipCount)",
+        ]
+      )
+    }
+
+    if metrics.extendedFingerCount < 4 {
+      return PalmValidationResult.reject(
+        scanState: "openFingers",
+        reason: "fingersNotExtended",
+        metrics: metrics
+      )
+    }
+
+    switch metrics.handAreaState {
+    case .tooFar:
+      return PalmValidationResult.reject(
+        scanState: "handTooFar",
+        reason: "handTooFar",
+        metrics: metrics
+      )
+    case .tooClose:
+      return PalmValidationResult.reject(
+        scanState: "handTooClose",
+        reason: "handTooClose",
+        metrics: metrics
+      )
+    case .ok:
+      break
+    }
+
+    if metrics.guideOverlapRatio < minimumGuideOverlap ||
+       !metrics.palmCenterInsideGuide ||
+       !metrics.wristInsideGuide ||
+       metrics.fingertipsInsideGuide < 4 {
+      return PalmValidationResult.reject(
+        scanState: "handOutsideGuide",
+        reason: "handOutsideGuide",
+        metrics: metrics
+      )
+    }
+
+    if metrics.rotationAngleFromVertical > maximumRotationFromVertical ||
+       metrics.verticalOrientationScore <= 0 {
+      return PalmValidationResult.reject(
+        scanState: "rotateHand",
+        reason: "handNotVertical",
+        metrics: metrics
+      )
+    }
+
+    if metrics.fingerSpreadRatio < 0.35 ||
+       metrics.thumbSpreadRatio < 0.20 ||
+       !metrics.palmOrientationReliable ||
+       metrics.palmOrientationScore < 0.62 {
+      return PalmValidationResult.reject(
+        scanState: "showPalm",
+        reason: "palmOrientationUncertain",
+        metrics: metrics
+      )
+    }
+
+    guard metrics.openPalmScore >= minimumOpenPalmScore else {
+      return PalmValidationResult.reject(
+        scanState: "unstable",
+        reason: "openPalmScoreLow",
+        metrics: metrics
+      )
+    }
+
+    return PalmValidationResult(
+      detectionState: "validHand",
+      scanState: "ready",
+      handDetected: true,
+      possibleHand: true,
+      validPalm: true,
+      failureReason: "none",
+      labels: [
+        "vision_hand_pose",
+        "valid_palm",
+        "open_palm",
+        "fingertips_\(metrics.fingertipCount)",
+        "extended_\(metrics.extendedFingerCount)",
+      ]
+    )
+  }
+
+  private func validationDebug(
+    metrics: PalmValidationMetrics,
+    validation: PalmValidationResult,
+    observationCount: Int,
+    debugMode: Bool,
+    frame: PalmFrame
+  ) -> [String: Any?] {
+    [
+      "methodChannelSuccess": true,
+      "lastError": nil,
+      "observationCount": observationCount,
+      "handDetected": validation.handDetected,
+      "possibleHand": validation.possibleHand,
+      "validPalm": validation.validPalm,
+      "scanState": validation.scanState,
+      "failureReason": validation.failureReason,
+      "reliablePointCount": metrics.reliablePointCount,
+      "requiredReliableCount": metrics.requiredReliableCount,
+      "requiredPointCount": metrics.requiredPointCount,
+      "fingertipCount": metrics.fingertipCount,
+      "mcpCount": metrics.mcpCount,
+      "extendedFingerCount": metrics.extendedFingerCount,
+      "averageConfidence": roundMetric(Double(metrics.averageConfidence)),
+      "openPalmScore": roundMetric(metrics.openPalmScore),
+      "fingerSpreadRatio": roundMetric(metrics.fingerSpreadRatio),
+      "thumbSpreadRatio": roundMetric(metrics.thumbSpreadRatio),
+      "fingerSpreadScore": roundMetric(metrics.fingerSpreadScore),
+      "verticalOrientationScore": roundMetric(metrics.verticalOrientationScore),
+      "palmOrientationScore": roundMetric(metrics.palmOrientationScore),
+      "palmOrientationReliable": metrics.palmOrientationReliable,
+      "guideAlignmentScore": roundMetric(metrics.guideAlignmentScore),
+      "guideOverlapRatio": roundMetric(metrics.guideOverlapRatio),
+      "palmCenterInsideGuide": metrics.palmCenterInsideGuide,
+      "wristInsideGuide": metrics.wristInsideGuide,
+      "fingertipsInsideGuide": metrics.fingertipsInsideGuide,
+      "handArea": roundMetric(metrics.handArea),
+      "handAreaState": metrics.handAreaState.rawValue,
+      "rotationAngleFromVertical": roundMetric(metrics.rotationAngleFromVertical),
+      "crossZ": roundMetric(metrics.crossZ),
+      "isFrontCameraMirrored": metrics.isFrontCameraMirrored,
+      "coordinateSpaceName": metrics.coordinateSpaceName,
+      "debugSmokeMode": debugMode,
+      "previewWidth": frame.geometry?.previewSize.width ?? 0,
+      "previewHeight": frame.geometry?.previewSize.height ?? 0,
+      "guideLeft": frame.geometry?.guideRect.minX ?? 0,
+      "guideTop": frame.geometry?.guideRect.minY ?? 0,
+      "guideWidth": frame.geometry?.guideRect.width ?? 0,
+      "guideHeight": frame.geometry?.guideRect.height ?? 0,
+    ]
+  }
+
+  @available(iOS 14.0, *)
+  private func requiredPalmJointNames() -> [VNHumanHandPoseObservation.JointName] {
+    [
+      .wrist,
       .thumbCMC,
       .thumbMP,
       .thumbIP,
       .thumbTip,
+      .indexMCP,
+      .indexPIP,
+      .indexDIP,
+      .indexTip,
+      .middleMCP,
+      .middlePIP,
+      .middleDIP,
+      .middleTip,
+      .ringMCP,
+      .ringPIP,
+      .ringDIP,
+      .ringTip,
+      .littleMCP,
+      .littlePIP,
+      .littleDIP,
+      .littleTip,
     ]
+  }
 
-    let fingertipCount = countReliablePoints(
-      names: fingertipNames,
-      in: points,
-      threshold: pointThreshold
-    )
-    let nonThumbFingertipCount = countReliablePoints(
-      names: nonThumbFingertipNames,
-      in: points,
-      threshold: pointThreshold
-    )
-    let palmStructureCount = countReliablePoints(
-      names: palmStructureNames,
-      in: points,
-      threshold: pointThreshold
-    )
-    let thumbStructureCount = countReliablePoints(
-      names: thumbStructureNames,
-      in: points,
-      threshold: pointThreshold
-    )
-    let hasWrist = reliablePoint(.wrist, in: points, threshold: pointThreshold) != nil
-    let avgConfidence = averageConfidence(reliablePoints)
-    let extendedFingerCount = extendedFingerCount(
-      points: points,
-      threshold: pointThreshold
-    )
-    let fingerVisibilityScore = fingerVisibilityScore(fingertipCount)
-    let palmStructureScore = Double(palmStructureCount) / Double(palmStructureNames.count)
-    let spreadScore = spreadScore(points: points, threshold: pointThreshold)
-    let palmAreaScore = palmAreaScore(points: points, threshold: pointThreshold)
-    let fingerExtensionScore = Double(extendedFingerCount) / 4.0
-    let thumbStructureScore = Double(thumbStructureCount) / Double(thumbStructureNames.count)
-    let fullPalmGate = hasWrist &&
-      palmStructureCount == palmStructureNames.count &&
-      nonThumbFingertipCount == nonThumbFingertipNames.count &&
-      extendedFingerCount >= 4 &&
-      thumbStructureCount >= 2 &&
-      palmAreaScore >= 0.28
-    let confidenceScore = min(max(Double(avgConfidence), 0), 1)
-    let openPalmScore =
-      fingerVisibilityScore * 0.22 +
-      palmStructureScore * 0.22 +
-      spreadScore * 0.14 +
-      palmAreaScore * 0.16 +
-      fingerExtensionScore * 0.16 +
-      confidenceScore * 0.10
+  @available(iOS 14.0, *)
+  private func extendedFingerCount(
+    landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark]
+  ) -> Int {
+    [
+      (.indexPIP, .indexTip),
+      (.middlePIP, .middleTip),
+      (.ringPIP, .ringTip),
+      (.littlePIP, .littleTip),
+    ].filter { pipName, tipName in
+      guard let wrist = landmarks[.wrist],
+            let pip = landmarks[pipName],
+            let tip = landmarks[tipName] else {
+        return false
+      }
+      return distance(tip.location, wrist.location) >
+        distance(pip.location, wrist.location)
+    }.count
+  }
 
-    let debug = baseDebug(
-      inheritedDebug,
-      methodChannelSuccess: true,
-      observationCount: observationCount,
-      reliablePointCount: reliablePointCount,
-      fingertipCount: fingertipCount,
-      averageConfidence: avgConfidence,
-      openPalmScore: openPalmScore,
-      spreadScore: spreadScore,
-      palmStructureScore: palmStructureScore,
-      palmAreaScore: palmAreaScore,
-      extendedFingerCount: extendedFingerCount,
-      nonThumbFingertipCount: nonThumbFingertipCount,
-      thumbStructureCount: thumbStructureCount,
-      thumbStructureScore: thumbStructureScore,
-      fullPalmGate: fullPalmGate,
-      debugMode: debugMode
-    )
-
-    if !hasWrist ||
-       palmStructureCount < 4 ||
-       nonThumbFingertipCount < 4 ||
-       extendedFingerCount < 3 {
-      return response(
-        state: "partialHand",
-        confidence: openPalmScore,
-        labels: [
-          "vision_hand_pose",
-          "partial_palm",
-          "fingertips_\(fingertipCount)",
-          "extended_\(extendedFingerCount)",
-        ],
-        debug: debug
-      )
+  private func normalizedGuideRect(frame: PalmFrame) -> CGRect {
+    guard let geometry = frame.geometry,
+          geometry.previewSize.width > 0,
+          geometry.previewSize.height > 0 else {
+      return CGRect(x: 0.18, y: 0.22, width: 0.64, height: 0.56)
     }
 
-    if reliablePointCount >= 18,
-       fingertipCount >= 5,
-       avgConfidence >= 0.55,
-       openPalmScore >= 0.72,
-       fullPalmGate {
-      return response(
-        state: "validHand",
-        confidence: openPalmScore,
-        labels: [
-          "vision_hand_pose",
-          "open_palm",
-          "full_palm_gate",
-          "fingertips_\(fingertipCount)",
-        ],
-        debug: debug
-      )
-    }
-
-    if reliablePointCount >= 14,
-       nonThumbFingertipCount >= 4,
-       extendedFingerCount >= 3,
-       palmStructureCount >= 4,
-       palmAreaScore >= 0.18 {
-      return response(
-        state: "possibleHand",
-        confidence: openPalmScore,
-        labels: [
-          "vision_hand_pose",
-          "possible_palm",
-          "fingertips_\(fingertipCount)",
-          "extended_\(extendedFingerCount)",
-        ],
-        debug: debug
-      )
-    }
-
-    return response(
-      state: "partialHand",
-      confidence: openPalmScore,
-      labels: ["vision_hand_pose", "partial_palm", "fingertips_\(fingertipCount)"],
-      debug: debug
+    return CGRect(
+      x: geometry.guideRect.minX / geometry.previewSize.width,
+      y: geometry.guideRect.minY / geometry.previewSize.height,
+      width: geometry.guideRect.width / geometry.previewSize.width,
+      height: geometry.guideRect.height / geometry.previewSize.height
     )
   }
 
-  private func response(
-    state: String,
-    confidence: Double,
-    labels: [String],
-    debug: [String: Any?]
-  ) -> [String: Any] {
-    [
-      "source": "Vision",
-      "state": state,
-      "confidence": roundMetric(confidence),
-      "labels": labels,
-      "debug": debug.compactMapValues { $0 },
-    ]
+  private func calculateGuideOverlap(handBox: CGRect, guideRect: CGRect) -> Double {
+    guard handBox.width > 0, handBox.height > 0 else { return 0 }
+    let intersection = handBox.intersection(guideRect)
+    if intersection.isNull || intersection.isEmpty { return 0 }
+    return min(max((intersection.width * intersection.height) / (handBox.width * handBox.height), 0), 1)
+  }
+
+  private func averagePoint(_ points: [CGPoint]) -> CGPoint? {
+    guard !points.isEmpty else { return nil }
+    let total = points.reduce(CGPoint.zero) { partial, point in
+      CGPoint(x: partial.x + point.x, y: partial.y + point.y)
+    }
+    return CGPoint(
+      x: total.x / CGFloat(points.count),
+      y: total.y / CGFloat(points.count)
+    )
+  }
+
+  private func boundingBox(_ points: [CGPoint]) -> CGRect {
+    guard let first = points.first else { return .zero }
+    var minX = first.x
+    var maxX = first.x
+    var minY = first.y
+    var maxY = first.y
+    for point in points.dropFirst() {
+      minX = min(minX, point.x)
+      maxX = max(maxX, point.x)
+      minY = min(minY, point.y)
+      maxY = max(maxY, point.y)
+    }
+    return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+  }
+
+  @available(iOS 14.0, *)
+  private func rotationAngleFromVertical(
+    landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark]
+  ) -> Double? {
+    guard let wrist = landmarks[.wrist],
+          let middleMCP = landmarks[.middleMCP],
+          let middleTip = landmarks[.middleTip] else {
+      return nil
+    }
+
+    let dx = Double(middleMCP.location.x - wrist.location.x)
+    let dy = Double(middleMCP.location.y - wrist.location.y)
+    let upwardDistance = Double(wrist.location.y - middleTip.location.y)
+    guard upwardDistance > 0.08, dy < -0.01 else { return 90 }
+
+    let radians = atan2(abs(dx), max(0.0001, -dy))
+    return radians * 180.0 / .pi
+  }
+
+  @available(iOS 14.0, *)
+  private func distanceBetween(
+    _ first: VNHumanHandPoseObservation.JointName,
+    _ second: VNHumanHandPoseObservation.JointName,
+    in landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark]
+  ) -> Double? {
+    guard let a = landmarks[first], let b = landmarks[second] else {
+      return nil
+    }
+    return distance(a.location, b.location)
+  }
+
+  private func ratio(_ numerator: Double?, _ denominator: Double?) -> Double {
+    guard let numerator,
+          let denominator,
+          denominator > 0.0001 else {
+      return 0
+    }
+    return numerator / denominator
+  }
+
+  private func normalizedRangeScore(
+    value: Double,
+    minValue: Double,
+    maxValue: Double
+  ) -> Double {
+    guard maxValue > minValue else { return 0 }
+    return min(max((value - minValue) / (maxValue - minValue), 0), 1)
+  }
+
+  private func guideAlignmentScore(
+    guideOverlapRatio: Double,
+    palmCenterInsideGuide: Bool,
+    wristInsideGuide: Bool,
+    fingertipsInsideGuide: Int
+  ) -> Double {
+    let centerScore = palmCenterInsideGuide ? 1.0 : 0.0
+    let wristScore = wristInsideGuide ? 1.0 : 0.0
+    let tipScore = min(max(Double(fingertipsInsideGuide) / 4.0, 0), 1)
+    return guideOverlapRatio * 0.55 + centerScore * 0.15 + wristScore * 0.15 + tipScore * 0.15
+  }
+
+  @available(iOS 14.0, *)
+  private func calculatePalmOrientation(
+    landmarks: [VNHumanHandPoseObservation.JointName: PalmLandmark]
+  ) -> PalmOrientationAssessment {
+    guard let wrist = landmarks[.wrist],
+          let thumbTip = landmarks[.thumbTip],
+          let indexMCP = landmarks[.indexMCP],
+          let littleMCP = landmarks[.littleMCP],
+          let middleMCP = landmarks[.middleMCP],
+          let indexTip = landmarks[.indexTip],
+          let littleTip = landmarks[.littleTip],
+          let middleTip = landmarks[.middleTip] else {
+      return PalmOrientationAssessment(score: 0, isReliable: false, crossZ: 0)
+    }
+
+    let vectorA = CGPoint(
+      x: indexMCP.location.x - wrist.location.x,
+      y: indexMCP.location.y - wrist.location.y
+    )
+    let vectorB = CGPoint(
+      x: littleMCP.location.x - wrist.location.x,
+      y: littleMCP.location.y - wrist.location.y
+    )
+    let crossZ = Double(vectorA.x * vectorB.y - vectorA.y * vectorB.x)
+    let palmWidth = distance(indexMCP.location, littleMCP.location)
+    let palmDepth = distance(wrist.location, middleMCP.location)
+    let crossScore = palmWidth > 0.0001 && palmDepth > 0.0001
+      ? min(max(abs(crossZ) / (palmWidth * palmDepth), 0), 1)
+      : 0
+    let fingerSpreadRatio = ratio(
+      distance(indexTip.location, littleTip.location),
+      distance(wrist.location, middleTip.location)
+    )
+    let thumbSpreadRatio = ratio(
+      distance(thumbTip.location, indexMCP.location),
+      distance(wrist.location, middleTip.location)
+    )
+    let mcpDy = abs(Double(indexMCP.location.y - littleMCP.location.y))
+    let mcpDx = abs(Double(indexMCP.location.x - littleMCP.location.x))
+    let mcpLineScore = min(max(1.0 - (mcpDy / max(mcpDx, 0.0001)), 0), 1)
+    let minMcpX = min(indexMCP.location.x, littleMCP.location.x)
+    let maxMcpX = max(indexMCP.location.x, littleMCP.location.x)
+    let thumbSideScore = thumbTip.location.x < minMcpX - 0.015 ||
+      thumbTip.location.x > maxMcpX + 0.015 ? 1.0 : 0.0
+    let spreadScore = normalizedRangeScore(
+      value: fingerSpreadRatio,
+      minValue: 0.35,
+      maxValue: 0.62
+    )
+    let thumbScore = normalizedRangeScore(
+      value: thumbSpreadRatio,
+      minValue: 0.20,
+      maxValue: 0.38
+    )
+    let score = thumbScore * 0.35 +
+      thumbSideScore * 0.20 +
+      crossScore * 0.20 +
+      mcpLineScore * 0.15 +
+      spreadScore * 0.10
+    let isReliable = thumbSpreadRatio >= 0.20 &&
+      fingerSpreadRatio >= 0.35 &&
+      crossScore >= 0.12 &&
+      mcpDx >= 0.06 &&
+      mcpLineScore >= 0.35
+
+    return PalmOrientationAssessment(
+      score: min(max(score, 0), 1),
+      isReliable: isReliable,
+      crossZ: crossZ
+    )
   }
 
   private func mergeDebug(
@@ -835,6 +1385,15 @@ final class VisionPalmAnalyzer {
   private func elapsedMilliseconds(since start: CFAbsoluteTime) -> Double {
     roundMetric((CFAbsoluteTimeGetCurrent() - start) * 1000)
   }
+
+  private func numericDouble(_ value: Any?) -> Double? {
+    if let value = value as? Double { return value }
+    if let value = value as? CGFloat { return Double(value) }
+    if let value = value as? Float { return Double(value) }
+    if let value = value as? Int { return Double(value) }
+    if let value = value as? NSNumber { return value.doubleValue }
+    return nil
+  }
 }
 
 private struct PalmFrame {
@@ -846,6 +1405,102 @@ private struct PalmFrame {
   let sensorOrientation: Int
   let isFrontCamera: Bool
   let debugMode: Bool
+  let geometry: PalmFrameGeometry?
+}
+
+private struct PalmFrameGeometry {
+  let previewSize: CGSize
+  let guideRect: CGRect
+}
+
+private struct PalmLandmark {
+  let visionLocation: CGPoint
+  let location: CGPoint
+  let confidence: VNConfidence
+}
+
+private enum PalmHandAreaState: String {
+  case tooFar
+  case ok
+  case tooClose
+}
+
+private struct PalmOrientationAssessment {
+  let score: Double
+  let isReliable: Bool
+  let crossZ: Double
+}
+
+private struct PalmValidationMetrics {
+  let reliablePointCount: Int
+  let requiredReliableCount: Int
+  let requiredPointCount: Int
+  let fingertipCount: Int
+  let mcpCount: Int
+  let extendedFingerCount: Int
+  let averageConfidence: Float
+  let openPalmScore: Double
+  let fingerSpreadRatio: Double
+  let thumbSpreadRatio: Double
+  let fingerSpreadScore: Double
+  let verticalOrientationScore: Double
+  let palmOrientationScore: Double
+  let palmOrientationReliable: Bool
+  let guideAlignmentScore: Double
+  let guideOverlapRatio: Double
+  let palmCenterInsideGuide: Bool
+  let wristInsideGuide: Bool
+  let fingertipsInsideGuide: Int
+  let handArea: Double
+  let handAreaState: PalmHandAreaState
+  let rotationAngleFromVertical: Double
+  let crossZ: Double
+  let isFrontCameraMirrored: Bool
+  let coordinateSpaceName: String
+}
+
+private struct PalmValidationResult {
+  let detectionState: String
+  let scanState: String
+  let handDetected: Bool
+  let possibleHand: Bool
+  let validPalm: Bool
+  let failureReason: String
+  let labels: [String]
+
+  static func noHand(reason: String) -> PalmValidationResult {
+    PalmValidationResult(
+      detectionState: "noHand",
+      scanState: "noHand",
+      handDetected: false,
+      possibleHand: false,
+      validPalm: false,
+      failureReason: reason,
+      labels: ["vision_no_valid_hand"]
+    )
+  }
+
+  static func reject(
+    scanState: String,
+    reason: String,
+    metrics: PalmValidationMetrics
+  ) -> PalmValidationResult {
+    PalmValidationResult(
+      detectionState: metrics.reliablePointCount >= 14 ? "possibleHand" : "partialHand",
+      scanState: scanState,
+      handDetected: true,
+      possibleHand: true,
+      validPalm: false,
+      failureReason: reason,
+      labels: [
+        "vision_hand_pose",
+        "not_valid_palm",
+        "failure_\(reason)",
+        "fingertips_\(metrics.fingertipCount)",
+        "extended_\(metrics.extendedFingerCount)",
+      ]
+    )
+  }
 }
 
 private struct PalmFrameBuildResult {
