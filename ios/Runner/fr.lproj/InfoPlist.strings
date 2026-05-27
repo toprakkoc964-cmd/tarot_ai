@@ -1,1 +1,2 @@
-"NSCameraUsageDescription" = "Nous utilisons votre caméra pour l’analyse de chiromancie.";
+"NSCameraUsageDescription" = "Nous utilisons la caméra pour guider le scan de chiromancie et prendre des photos de tasse pour la lecture du café.";
+"NSPhotoLibraryUsageDescription" = "Vous pouvez choisir des photos de tasse dans votre photothèque pour l'expérience de lecture du café.";

@@ -44,6 +44,10 @@ post_install do |installer|
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $iOSVersion
       end
 
+      # Xcode 26 can promote quoted includes inside some third-party
+      # framework headers to build errors. Keep this as a warning for Pods.
+      config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+
       # permission_handler: enable camera permission APIs on iOS.
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
         '$(inherited)',

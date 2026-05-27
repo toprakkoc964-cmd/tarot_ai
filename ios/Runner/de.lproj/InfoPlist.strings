@@ -1,1 +1,2 @@
-"NSCameraUsageDescription" = "Wir verwenden deine Kamera für den Handlinien-Scan.";
+"NSCameraUsageDescription" = "Wir verwenden die Kamera, um den Handlinien-Scan zu führen und Tassenfotos für die Kaffeelesung aufzunehmen.";
+"NSPhotoLibraryUsageDescription" = "Du kannst Tassenfotos aus deiner Mediathek für die Kaffeelesung auswählen.";

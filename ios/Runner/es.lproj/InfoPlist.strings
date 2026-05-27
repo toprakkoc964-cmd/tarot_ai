@@ -1,1 +1,2 @@
-"NSCameraUsageDescription" = "Usamos tu cámara para el escaneo de lectura de la mano.";
+"NSCameraUsageDescription" = "Usamos la cámara para guiar el escaneo de la mano y tomar fotos de la taza para la lectura del café.";
+"NSPhotoLibraryUsageDescription" = "Puedes elegir fotos de una taza desde tu galería para la experiencia de lectura del café.";

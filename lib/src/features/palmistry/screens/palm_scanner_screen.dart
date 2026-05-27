@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -31,27 +31,28 @@ class PalmScannerScreen extends StatefulWidget {
 }
 
 class _PalmScannerScreenState extends State<PalmScannerScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const Duration _frameAnalysisInterval = Duration(milliseconds: 650);
-  static const int _stablePalmTarget = 3;
+  static const Duration _debugRefreshInterval = Duration(milliseconds: 900);
   static const int _detectionHistoryLimit = 5;
 
   final PalmFrameAnalyzer _frameAnalyzer = PalmFrameAnalyzer();
-  final List<PalmDetectionResult> _detectionHistory = <PalmDetectionResult>[];
+  final List<PalmDetectionResult> _recentDetections = <PalmDetectionResult>[];
   late final AnimationController _scanAnimation;
+  late final AnimationController _overlayPulseAnimation;
 
   CameraController? _controller;
   CameraDescription? _camera;
-  DateTime _lastFrameAnalysis = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _lastVisionAnalysisAt;
+  DateTime? _lastDebugRefreshAt;
+  DateTime? _lastDebugLogAt;
   File? _frozenImage;
 
   bool _isInitializing = true;
   bool _isPermissionDenied = false;
   bool _isPermissionPermanentlyDenied = false;
   bool _isProcessingFrame = false;
-  bool _isHandDetected = false;
   bool _isScanning = false;
-  int _stablePalmScore = 0;
   PalmDetectionResult _detectionResult = const PalmDetectionResult.noHand();
   String? _errorTitle;
   String? _errorMessage;
@@ -64,6 +65,10 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1650),
     );
+    _overlayPulseAnimation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
     unawaited(_initializeCamera());
   }
 
@@ -77,6 +82,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _recentDetections.clear();
+    _overlayPulseAnimation.dispose();
     _scanAnimation.dispose();
     unawaited(_frameAnalyzer.dispose());
     unawaited(_disposeCamera());
@@ -121,7 +128,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       );
       final controller = CameraController(
         camera,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -196,79 +203,101 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     CameraDescription camera,
     CameraController controller,
   ) async {
-    if (_isScanning || _isProcessingFrame || !mounted) return;
+    if (!_shouldAnalyzeFrame()) return;
+
+    try {
+      final result = await _frameAnalyzer.analyze(
+        image: image,
+        camera: camera,
+        deviceOrientation: controller.value.deviceOrientation,
+      );
+
+      if (!mounted || _isScanning) return;
+
+      final shouldHaptic = _handleDetectionResult(result);
+      _logDetectionResult(result);
+      if (shouldHaptic) {
+        await HapticFeedback.mediumImpact();
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('PalmVision ERROR: lastError=$e');
+        debugPrintStack(stackTrace: st);
+      }
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
+
+  bool _shouldAnalyzeFrame() {
+    if (_isScanning || _isProcessingFrame || !mounted) return false;
 
     final now = DateTime.now();
-    if (now.difference(_lastFrameAnalysis) < _frameAnalysisInterval) {
-      return;
+    final lastAnalysis = _lastVisionAnalysisAt;
+    if (lastAnalysis != null &&
+        now.difference(lastAnalysis) < _frameAnalysisInterval) {
+      return false;
     }
-    _lastFrameAnalysis = now;
+
+    _lastVisionAnalysisAt = now;
     _isProcessingFrame = true;
-
-    final result = await _frameAnalyzer.analyze(
-      image: image,
-      camera: camera,
-      deviceOrientation: controller.value.deviceOrientation,
-    );
-
-    if (!mounted) {
-      _isProcessingFrame = false;
-      return;
-    }
-
-    final wasReady = _isHandDetected;
-    setState(() => _applyDetectionResult(result));
-    if (!wasReady && _isHandDetected) {
-      await HapticFeedback.mediumImpact();
-    }
-    _isProcessingFrame = false;
+    return true;
   }
 
   void _resetDetectionState() {
-    _detectionHistory.clear();
+    _recentDetections.clear();
     _detectionResult = const PalmDetectionResult.noHand();
-    _stablePalmScore = 0;
-    _isHandDetected = false;
+    _lastVisionAnalysisAt = null;
+    _lastDebugRefreshAt = null;
+    _lastDebugLogAt = null;
   }
 
-  void _applyDetectionResult(PalmDetectionResult result) {
+  bool _handleDetectionResult(PalmDetectionResult result) {
+    final previousDisplayState = _displayDetectionState;
+    final previousCanScan = _canScan;
+
     _detectionResult = result;
-    _detectionHistory.add(result);
-    if (_detectionHistory.length > _detectionHistoryLimit) {
-      _detectionHistory.removeAt(0);
+    _recentDetections.add(result);
+    if (_recentDetections.length > _detectionHistoryLimit) {
+      _recentDetections.removeAt(0);
     }
 
-    switch (result.state) {
-      case PalmDetectionState.validHand:
-        _stablePalmScore = math.min(_stablePalmTarget, _stablePalmScore + 1);
-        break;
-      case PalmDetectionState.possibleHand:
-        // Keep the accumulated score so one softer frame does not flicker.
-        break;
-      case PalmDetectionState.partialHand:
-        _stablePalmScore = math.max(0, _stablePalmScore - 1);
-        break;
-      case PalmDetectionState.noHand:
-        _stablePalmScore = 0;
-        break;
+    final nextDisplayState = _displayDetectionState;
+    final nextCanScan = _canScan;
+    final shouldUpdateUi = previousDisplayState != nextDisplayState ||
+        previousCanScan != nextCanScan ||
+        _shouldRefreshDebugPanel();
+
+    if (shouldUpdateUi && mounted) {
+      setState(() {});
     }
 
-    final validFrameCount =
-        _detectionHistory.where((item) => item.isValid).length;
-    _isHandDetected =
-        _stablePalmScore >= _stablePalmTarget && validFrameCount >= 2;
+    return !previousCanScan && nextCanScan;
+  }
+
+  bool _shouldRefreshDebugPanel() {
+    if (!kDebugMode) return false;
+
+    final now = DateTime.now();
+    final lastRefresh = _lastDebugRefreshAt;
+    if (lastRefresh != null &&
+        now.difference(lastRefresh) < _debugRefreshInterval) {
+      return false;
+    }
+
+    _lastDebugRefreshAt = now;
+    return true;
   }
 
   Future<void> _startScan() async {
     final controller = _controller;
-    if (!_isHandDetected ||
+    if (!_canScan ||
         _isScanning ||
         controller == null ||
         !controller.value.isInitialized) {
       return;
     }
 
-    await HapticFeedback.mediumImpact();
     if (!mounted) return;
     setState(() {
       _isScanning = true;
@@ -407,10 +436,28 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
     final helperText = _helperText;
     final statusColor = _statusColor;
-    final overlayState = _isHandDetected || _isScanning
-        ? PalmDetectionState.validHand
-        : _detectionResult.state;
+    final overlayState =
+        _isScanning ? PalmDetectionState.validHand : _displayDetectionState;
     final detectionProgress = _isScanning ? 1.0 : _detectionProgress;
+    final overlay = CustomPaint(
+      painter: PalmOverlayPainter(
+        detectionState: overlayState,
+        readinessProgress: detectionProgress,
+        pulseValue: 0,
+      ),
+    );
+    final pulsingOverlay = AnimatedBuilder(
+      animation: _overlayPulseAnimation,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: PalmOverlayPainter(
+            detectionState: overlayState,
+            readinessProgress: detectionProgress,
+            pulseValue: _overlayPulseAnimation.value,
+          ),
+        );
+      },
+    );
 
     return Column(
       children: [
@@ -434,9 +481,11 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    _CameraSurface(
-                      controller: controller,
-                      frozenImage: _frozenImage,
+                    RepaintBoundary(
+                      child: _CameraSurface(
+                        controller: controller,
+                        frozenImage: _frozenImage,
+                      ),
                     ),
                     DecoratedBox(
                       decoration: BoxDecoration(
@@ -447,11 +496,10 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                         borderRadius: BorderRadius.circular(34),
                       ),
                     ),
-                    CustomPaint(
-                      painter: PalmOverlayPainter(
-                        detectionState: overlayState,
-                        readinessProgress: detectionProgress,
-                      ),
+                    RepaintBoundary(
+                      child: overlayState == PalmDetectionState.possibleHand
+                          ? pulsingOverlay
+                          : overlay,
                     ),
                     if (_isScanning)
                       RepaintBoundary(
@@ -464,6 +512,25 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                               ),
                             );
                           },
+                        ),
+                      ),
+                    if (kDebugMode)
+                      Positioned(
+                        left: 12,
+                        right: 12,
+                        top: 12,
+                        child: RepaintBoundary(
+                          child: _PalmDebugPanel(
+                            lastResult: _detectionResult,
+                            canScan: _canScan,
+                            recentDetectionsLength: _recentDetections.length,
+                            validCount: _validDetectionCount,
+                            possibleCount: _possibleDetectionCount,
+                            partialCount: _partialDetectionCount,
+                            noHandCount: _noHandDetectionCount,
+                            isProcessingFrame: _isProcessingFrame,
+                            isScanning: _isScanning,
+                          ),
                         ),
                       ),
                   ],
@@ -482,7 +549,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                 helperText,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.spaceGrotesk(
-                  color: _isHandDetected || _isScanning
+                  color: _canScan || _isScanning
                       ? AppColors.primaryPink
                       : statusColor,
                   fontSize: 14,
@@ -499,7 +566,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
               CosmicScanButton(
                 text: AppTexts.t('palmTapToScan'),
                 icon: Icons.front_hand_rounded,
-                enabled: _isHandDetected,
+                enabled: _canScan,
                 isLoading: _isScanning,
                 onTap: _startScan,
               ),
@@ -535,9 +602,9 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
   String get _helperText {
     if (_isScanning) return AppTexts.t('palmScanningLoading');
-    if (_isHandDetected) return AppTexts.t('palmDetected');
+    if (_canScan) return AppTexts.t('palmDetected');
 
-    switch (_detectionResult.state) {
+    switch (_displayDetectionState) {
       case PalmDetectionState.validHand:
       case PalmDetectionState.possibleHand:
         return AppTexts.t('palmHoldSteady');
@@ -549,7 +616,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   }
 
   Color get _statusColor {
-    switch (_detectionResult.state) {
+    switch (_displayDetectionState) {
       case PalmDetectionState.validHand:
       case PalmDetectionState.possibleHand:
         return AppColors.primaryPink;
@@ -561,7 +628,94 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   }
 
   double get _detectionProgress {
-    return (_stablePalmScore / _stablePalmTarget).clamp(0, 1).toDouble();
+    final weightedScore = _validDetectionCount * 2 + _possibleDetectionCount;
+    return (weightedScore / 4).clamp(0, 1).toDouble();
+  }
+
+  PalmDetectionState get _displayDetectionState {
+    if (_canScan) return PalmDetectionState.validHand;
+    if (_recentDetections.isEmpty) return PalmDetectionState.noHand;
+
+    final last = _recentDetections.last;
+    if (last.state == PalmDetectionState.possibleHand) {
+      return PalmDetectionState.possibleHand;
+    }
+    if (last.state == PalmDetectionState.partialHand) {
+      return PalmDetectionState.partialHand;
+    }
+    return last.state;
+  }
+
+  bool get _canScan {
+    if (_isScanning) return false;
+    if (_recentDetections.length < 3) return false;
+
+    final lastState = _recentDetections.last.state;
+    if (lastState == PalmDetectionState.noHand ||
+        lastState == PalmDetectionState.partialHand) {
+      return false;
+    }
+
+    return _validDetectionCount >= 2 ||
+        (_validDetectionCount >= 1 && _possibleDetectionCount >= 2);
+  }
+
+  int get _validDetectionCount {
+    return _recentDetections
+        .where((result) => result.state == PalmDetectionState.validHand)
+        .length;
+  }
+
+  int get _possibleDetectionCount {
+    return _recentDetections
+        .where((result) => result.state == PalmDetectionState.possibleHand)
+        .length;
+  }
+
+  int get _partialDetectionCount {
+    return _recentDetections
+        .where((result) => result.state == PalmDetectionState.partialHand)
+        .length;
+  }
+
+  int get _noHandDetectionCount {
+    return _recentDetections
+        .where((result) => result.state == PalmDetectionState.noHand)
+        .length;
+  }
+
+  void _logDetectionResult(PalmDetectionResult result) {
+    if (!kDebugMode) return;
+
+    final now = DateTime.now();
+    final lastLog = _lastDebugLogAt;
+    if (lastLog != null && now.difference(lastLog) < _debugRefreshInterval) {
+      return;
+    }
+
+    _lastDebugLogAt = now;
+    debugPrint(_debugLine(result));
+  }
+
+  String _debugLine(PalmDetectionResult result) {
+    final debug = result.debug ?? const <String, dynamic>{};
+    final methodChannelSuccess = debug['methodChannelSuccess'];
+    final prefix =
+        methodChannelSuccess == false ? 'PalmVision ERROR: ' : 'PalmVision: ';
+    return '$prefix'
+        'state=${result.state.name}, '
+        'open=${debug['openPalmScore'] ?? '-'}, '
+        'tips=${debug['fingertipCount'] ?? '-'}, '
+        'ext=${debug['extendedFingerCount'] ?? '-'}, '
+        'area=${debug['palmAreaScore'] ?? '-'}, '
+        'gate=${debug['fullPalmGate'] ?? '-'}, '
+        'validCount=$_validDetectionCount, '
+        'possibleCount=$_possibleDetectionCount, '
+        'canScan=$_canScan, '
+        'channel=${debug['channelMs'] ?? '-'}ms, '
+        'vision=${debug['visionMs'] ?? '-'}ms, '
+        'total=${debug['totalMs'] ?? '-'}ms, '
+        'error=${debug['lastError'] ?? '-'}';
   }
 }
 
@@ -609,6 +763,94 @@ class _DetectionProgress extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+class _PalmDebugPanel extends StatelessWidget {
+  const _PalmDebugPanel({
+    required this.lastResult,
+    required this.canScan,
+    required this.recentDetectionsLength,
+    required this.validCount,
+    required this.possibleCount,
+    required this.partialCount,
+    required this.noHandCount,
+    required this.isProcessingFrame,
+    required this.isScanning,
+  });
+
+  final PalmDetectionResult lastResult;
+  final bool canScan;
+  final int recentDetectionsLength;
+  final int validCount;
+  final int possibleCount;
+  final int partialCount;
+  final int noHandCount;
+  final bool isProcessingFrame;
+  final bool isScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = lastResult.labels.take(4).join(', ');
+    final debug = lastResult.debug ?? const <String, dynamic>{};
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.primaryPink.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: DefaultTextStyle(
+          style: GoogleFonts.spaceGrotesk(
+            color: AppColors.onSurface.withValues(alpha: 0.88),
+            fontSize: 11,
+            height: 1.25,
+            fontWeight: FontWeight.w700,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('source: ${lastResult.source ?? '-'}  '
+                  'method: ${debug['methodChannelSuccess'] ?? '-'}'),
+              Text('error: ${debug['lastError'] ?? '-'}'),
+              Text('state: ${lastResult.state.name}  '
+                  'confidence: ${lastResult.confidence.toStringAsFixed(2)}'),
+              Text('recent: $recentDetectionsLength  valid: $validCount  '
+                  'possible: $possibleCount'),
+              Text('partial: $partialCount  noHand: $noHandCount  '
+                  'canScan: $canScan'),
+              Text('processing: $isProcessingFrame  scanning: $isScanning'),
+              Text('reliable: ${debug['reliablePointCount'] ?? '-'}  '
+                  'tips: ${debug['fingertipCount'] ?? '-'}  '
+                  'avg: ${debug['averageConfidence'] ?? '-'}'),
+              Text('open: ${debug['openPalmScore'] ?? '-'}  '
+                  'spread: ${debug['spreadScore'] ?? '-'}  '
+                  'palm: ${debug['palmStructureScore'] ?? '-'}'),
+              Text('area: ${debug['palmAreaScore'] ?? '-'}  '
+                  'extended: ${debug['extendedFingerCount'] ?? '-'}  '
+                  'nonThumbTips: ${debug['nonThumbFingertipCount'] ?? '-'}'),
+              Text('thumb: ${debug['thumbStructureCount'] ?? '-'}  '
+                  'gate: ${debug['fullPalmGate'] ?? '-'}'),
+              Text('obs: ${debug['observationCount'] ?? '-'}  '
+                  'cg: ${debug['cgImageCreated'] ?? '-'}  '
+                  'vision: ${debug['visionRequestSucceeded'] ?? '-'}'),
+              Text('fmt: ${debug['formatGroup'] ?? '-'}  '
+                  'bytes: ${debug['byteCount'] ?? '-'}  '
+                  'row: ${debug['bytesPerRow'] ?? '-'}'),
+              Text('ori: ${debug['sensorOrientation'] ?? '-'}  '
+                  'front: ${debug['isFrontCamera'] ?? '-'}  '
+                  'visionOri: ${debug['visionOrientation'] ?? '-'}'),
+              Text('labels: ${labels.isEmpty ? '-' : labels}'),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

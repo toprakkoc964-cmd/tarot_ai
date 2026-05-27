@@ -7,10 +7,12 @@ class PalmOverlayPainter extends CustomPainter {
   const PalmOverlayPainter({
     required this.detectionState,
     required this.readinessProgress,
+    required this.pulseValue,
   });
 
   final PalmDetectionState detectionState;
   final double readinessProgress;
+  final double pulseValue;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -21,17 +23,26 @@ class PalmOverlayPainter extends CustomPainter {
       PalmDetectionState.noHand => AppColors.secondaryLavender,
     };
     final isReady = detectionState == PalmDetectionState.validHand;
+    final possiblePulse =
+        detectionState == PalmDetectionState.possibleHand ? pulseValue : 0.0;
     final center = Offset(size.width / 2, size.height * 0.43);
     final palmWidth = size.width * 0.42;
     final palmHeight = size.height * 0.34;
 
     final glowPaint = Paint()
-      ..color = activeColor.withValues(alpha: isReady ? 0.24 : 0.14)
+      ..color = activeColor.withValues(
+        alpha: isReady ? 0.24 : 0.14 + possiblePulse * 0.1,
+      )
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 9
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+      ..strokeWidth = 9 + possiblePulse * 2
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        18 + possiblePulse * 6,
+      );
     final linePaint = Paint()
-      ..color = activeColor.withValues(alpha: isReady ? 0.88 : 0.62)
+      ..color = activeColor.withValues(
+        alpha: isReady ? 0.88 : 0.62 + possiblePulse * 0.14,
+      )
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
@@ -207,6 +218,7 @@ class PalmOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant PalmOverlayPainter oldDelegate) {
     return oldDelegate.detectionState != detectionState ||
-        oldDelegate.readinessProgress != readinessProgress;
+        oldDelegate.readinessProgress != readinessProgress ||
+        oldDelegate.pulseValue != pulseValue;
   }
 }

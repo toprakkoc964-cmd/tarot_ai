@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -31,23 +33,62 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<String?> _bootstrapApp() async {
   try {
-    await Firebase.initializeApp().timeout(const Duration(seconds: 12));
-    await fcm_notifications.NotificationService.instance
-        .initialize()
-        .timeout(const Duration(seconds: 12));
-    await local_notifications.NotificationService.instance
-        .init()
-        .timeout(const Duration(seconds: 12));
-    await activateAppCheck(isDebug: kDebugMode)
-        .timeout(const Duration(seconds: 12));
-    await LocalizationService.instance
-        .initialize()
-        .timeout(const Duration(seconds: 12));
+    await _runRequiredBootstrapTask(
+      'Firebase',
+      () => Firebase.initializeApp(),
+    );
+    await _runOptionalBootstrapTask(
+      'App Check',
+      () => activateAppCheck(isDebug: kDebugMode),
+    );
+    await _runOptionalBootstrapTask(
+      'FCM notifications',
+      () => fcm_notifications.NotificationService.instance.initialize(),
+    );
+    await _runOptionalBootstrapTask(
+      'Local notifications',
+      () => local_notifications.NotificationService.instance.init(),
+    );
+    await _runRequiredBootstrapTask(
+      'Localization',
+      () => LocalizationService.instance.initialize(),
+    );
     return null;
   } catch (e, st) {
     debugPrint('Bootstrap failed: $e');
     debugPrintStack(stackTrace: st);
     return e.toString();
+  }
+}
+
+Future<void> _runRequiredBootstrapTask(
+  String name,
+  Future<void> Function() task,
+) async {
+  await task().timeout(
+    const Duration(seconds: 12),
+    onTimeout: () {
+      throw TimeoutException('$name bootstrap timed out');
+    },
+  );
+}
+
+Future<void> _runOptionalBootstrapTask(
+  String name,
+  Future<void> Function() task,
+) async {
+  try {
+    await task().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        throw TimeoutException('$name bootstrap timed out');
+      },
+    );
+  } catch (e, st) {
+    debugPrint('Optional bootstrap task skipped ($name): $e');
+    if (kDebugMode) {
+      debugPrintStack(stackTrace: st);
+    }
   }
 }
 

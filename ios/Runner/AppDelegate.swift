@@ -32,6 +32,8 @@ import UIKit
           result(FlutterMethodNotImplemented)
         }
       }
+
+      PalmVisionPlugin.register(with: controller.binaryMessenger)
     }
 
     application.registerForRemoteNotifications()
@@ -49,5 +51,6 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    PalmVisionPlugin.register(with: engineBridge.applicationRegistrar.messenger())
   }
 }

@@ -40,7 +40,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>We use your camera for the palm reading scan.</string>
+	<string>We use the camera to guide palm reading scans and let you capture cup photos for coffee readings.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We let you choose cup photos from your library for the coffee reading experience.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

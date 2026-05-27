@@ -123,14 +123,14 @@ class LocalizationService {
     'home.cosmic.palm.button': 'START PALM READING',
     'home.cosmic.coffee.title': 'Coffee Reading',
     'home.cosmic.coffee.description':
-        'Learn the meaning of the symbols in your cup.',
+        'Explore the symbols through the cup interior, saucer, and outer traces.',
     'home.cosmic.coffee.button': 'START COFFEE READING',
     'home.cosmic.coming_soon': 'This cosmic path will open soon.',
     'palmScannerTitle': 'Palm Reading Scan',
     'palmScannerDescription': 'Place your palm inside the guide lines.',
     'palmAlignHand': 'Align your hand with the guide lines',
     'palmPartialHand': 'Show your full palm to the camera',
-    'palmHoldSteady': 'Hand is being detected. Hold steady for a moment',
+    'palmHoldSteady': 'Hold your hand steady, the lines are sharpening',
     'palmDetected': 'Hand detected. You are ready to scan.',
     'palmTapToScan': 'TAP TO SCAN',
     'palmScanningLoading': 'Decoding the universal lines...',
@@ -218,6 +218,83 @@ class LocalizationService {
     'common.save_profile': 'Save Profile',
     'common.generate': 'Generate Reading',
     'common.loading': 'Loading...',
+    'common.done': 'Done',
+    'common.cancel': 'Cancel',
+    'common.close': 'Close',
+    'arisTarotTitle': 'Cosmic Sage Aris',
+    'arisAssistantName': 'Sage Aris',
+    'arisLoadingSubtitle': "Gathering your card's energy.",
+    'arisTyping': '{name} is typing',
+    'arisMessageMeta': '{name} • Now',
+    'arisMessageCost': 'Each message costs 10 tokens',
+    'arisQuestionHint': 'Whisper a question to the sage...',
+    'coffeeTitle': 'Coffee Reading',
+    'coffeeDescription':
+        'We will collect 3 photos for Madam Aris: inside the cup, the saucer, and the outside of the cup.',
+    'coffeeOpenCamera': 'Open Camera',
+    'coffeeChooseGallery': 'Choose from Gallery',
+    'coffeeCropTitle': 'Center the Cup',
+    'coffeeCropInsideTitle': 'Center the Inside of the Cup',
+    'coffeeCropSaucerTitle': 'Center the Saucer',
+    'coffeeCropCupSideTitle': 'Center the Outside of the Cup',
+    'coffeePreparingPhoto': 'Preparing photo...',
+    'coffeeStepInsideTitle': '1/3 · Inside the Cup',
+    'coffeeStepInsideDesc': 'Show the grounds and inner traces clearly.',
+    'coffeeStepSaucerTitle': '2/3 · Cup Saucer',
+    'coffeeStepSaucerDesc': 'Center the grounds left on the saucer.',
+    'coffeeStepCupSideTitle': '3/3 · Outside the Cup',
+    'coffeeStepCupSideDesc':
+        'Show the side surface and overall shape of the cup.',
+    'coffeeAddPhoto': 'Add Photo',
+    'coffeeCaptureCompleted': 'This photo is ready.',
+    'coffeeAllPhotosReady':
+        'All three photos are ready. Madam Aris is beginning to read the symbols.',
+    'coffeeProgressHint':
+        '{count}/3 photos ready. Complete all three steps to analyze.',
+    'coffeeContinue': 'Continue',
+    'coffeeInvalidImage':
+        'We could not detect the required coffee cup detail in this image. Please try a clearer photo.',
+    'coffeeInvalidImageDetailed':
+        'We could not detect the required coffee cup detail in this image. Please retake this step with the subject clearer and centered.',
+    'coffeeCupDetected': 'Cup detected',
+    'coffeeWeakImageWarning':
+        'The photo looks a little unclear, but you can continue.',
+    'coffeeStartMadamAris': 'Ask Madam Aris',
+    'coffeeRetakePhoto': 'Choose Again',
+    'coffeeAnalyzingSymbols':
+        'Madam Aris is decoding the symbols in the grounds...',
+    'coffeeAnalyzingSubtitle':
+        'The cup interior, saucer, and outer traces are being read together...',
+    'coffeeMadamArisTitle': 'Madam Aris · Coffee Reading',
+    'coffeeMadamArisName': 'Madam Aris',
+    'coffeeMadamArisSubtitle': 'Coffee Reading Guide',
+    'coffeeReadingReady': 'Madam Aris Interpreted Your Coffee Reading',
+    'coffeePreviewTitle': 'Your Cup Is Ready',
+    'coffeePast': 'Trace from the Past',
+    'coffeePresent': 'Current Energy',
+    'coffeeFuture': 'Near-Term Message',
+    'coffeePermissionDenied':
+        'The required permission for photo selection was denied.',
+    'coffeeCropCancelled': 'Cropping was cancelled.',
+    'coffeeCompressionFailed':
+        'The photo could not be prepared. Please try again.',
+    'coffeeValidationFailed': 'Coffee photo could not be validated',
+    'coffeeEntertainmentDisclaimer':
+        'These readings are created for entertainment and personal awareness. They do not include medical, financial, legal, or definitive future predictions.',
+    'coffeePhotoPrivacyNote':
+        'At this step, your photo is processed only on-device for cup validation. Real AI analysis will be connected securely through the backend in Sprint 3.',
+    'coffeeChatWithMadamAris': 'Chat with Madam Aris',
+    'coffeeMessageNote': 'MVP trial mode · No tokens are spent in this Sprint',
+    'coffeeQuestionHint': 'Ask about the symbols in the grounds...',
+    'coffeeLoadingChatSubtitle': 'Listening to the symbols in the grounds.',
+    'coffeeMockOpening':
+        'I can see your cup and the traces in the grounds... Inside, on the saucer, and across the outer surface, there are symbols that complete each other. This reading is prepared for entertainment and personal awareness. Now, let us read these signs together...',
+    'coffeeMockLoveReply':
+        'Madam Aris notices a soft opening shaped like a heart in your cup. It whispers that listening calmly and clarifying your intention may serve your relationships well.',
+    'coffeeMockCareerReply':
+        'The lines rising toward the rim point to small but steady steps in work and money matters. This is not a promise, only a gentle reminder to gather your focus today.',
+    'coffeeMockGeneralReply':
+        'The overall energy of your cup is calm yet moving. Madam Aris suggests simplifying what is on your mind and noticing the small sign in front of you without magnifying it.',
   };
 
   static const Map<String, String> _fallbackTr = {
@@ -324,14 +401,14 @@ class LocalizationService {
     'home.cosmic.palm.button': 'EL FALINI BAŞLAT',
     'home.cosmic.coffee.title': 'Kahve Falı',
     'home.cosmic.coffee.description':
-        'Fincanındaki sembollerin anlamını öğren.',
+        'Fincanın içi, tabağı ve dış izleriyle sembolleri keşfet.',
     'home.cosmic.coffee.button': 'KAHVE FALINI BAŞLAT',
     'home.cosmic.coming_soon': 'Bu kozmik yol çok yakında açılacak.',
     'palmScannerTitle': 'El Falı Taraması',
     'palmScannerDescription': 'Avucunu kılavuz çizgilerin içine yerleştir.',
     'palmAlignHand': 'Elini kılavuz çizgilere hizala',
     'palmPartialHand': 'Avucunun tamamını kameraya göster',
-    'palmHoldSteady': 'El algılanıyor. Birkaç saniye sabit tut',
+    'palmHoldSteady': 'Elini sabit tut, çizgiler netleşiyor',
     'palmDetected': 'El algılandı. Tarama için hazırsın.',
     'palmTapToScan': 'TARAMA İÇİN DOKUN',
     'palmScanningLoading': 'Evrensel çizgilerin kodları çözülüyor...',
@@ -420,6 +497,79 @@ class LocalizationService {
     'common.save_profile': 'Profili Kaydet',
     'common.generate': 'Fal Uret',
     'common.loading': 'Yukleniyor...',
+    'common.done': 'Tamam',
+    'common.cancel': 'İptal',
+    'common.close': 'Kapat',
+    'arisTarotTitle': 'Kozmik Bilge Aris',
+    'arisAssistantName': 'Bilge Aris',
+    'arisLoadingSubtitle': 'Kartının enerjisini topluyor.',
+    'arisTyping': '{name} yazıyor',
+    'arisMessageMeta': '{name} • Şimdi',
+    'arisMessageCost': 'Her mesaj 10 jeton',
+    'arisQuestionHint': 'Bilgeye bir soru fısılda...',
+    'coffeeTitle': 'Kahve Falı',
+    'coffeeDescription':
+        'Madam Aris için 3 farklı fotoğraf toplayacağız: fincanın içi, tabağı ve dış görünümü.',
+    'coffeeOpenCamera': 'Kamerayı Aç',
+    'coffeeChooseGallery': 'Galeriden Seç',
+    'coffeeCropTitle': 'Fincanı Ortala',
+    'coffeeCropInsideTitle': 'Fincanın İçini Ortala',
+    'coffeeCropSaucerTitle': 'Tabağı Ortala',
+    'coffeeCropCupSideTitle': 'Fincanın Dışını Ortala',
+    'coffeePreparingPhoto': 'Fotoğraf hazırlanıyor...',
+    'coffeeStepInsideTitle': '1/3 · Fincanın İçi',
+    'coffeeStepInsideDesc': 'Telveyi ve fincanın iç izlerini net göster.',
+    'coffeeStepSaucerTitle': '2/3 · Fincan Tabağı',
+    'coffeeStepSaucerDesc': 'Tabağın üzerindeki telve izlerini ortaya al.',
+    'coffeeStepCupSideTitle': '3/3 · Fincanın Dışı',
+    'coffeeStepCupSideDesc': 'Fincanın yan yüzeyini ve genel formunu göster.',
+    'coffeeAddPhoto': 'Fotoğraf Ekle',
+    'coffeeCaptureCompleted': 'Bu fotoğraf hazır.',
+    'coffeeAllPhotosReady':
+        'Üç fotoğraf hazır. Madam Aris sembolleri okumaya başlıyor.',
+    'coffeeProgressHint':
+        '{count}/3 fotoğraf hazır. Analiz için üç adımı tamamla.',
+    'coffeeContinue': 'Devam Et',
+    'coffeeInvalidImage':
+        'Bu görselde gerekli kahve fincanı detayını algılayamadık. Lütfen daha net bir fotoğraf deneyin.',
+    'coffeeInvalidImageDetailed':
+        'Bu görselde gerekli kahve fincanı detayını algılayamadık. Lütfen ilgili adımı daha net ve ortada olacak şekilde tekrar deneyin.',
+    'coffeeCupDetected': 'Fincan algılandı',
+    'coffeeWeakImageWarning':
+        'Fotoğraf biraz belirsiz görünüyor ama devam edebilirsin.',
+    'coffeeStartMadamAris': 'Madam Aris’e Yorumlat',
+    'coffeeRetakePhoto': 'Yeniden Seç',
+    'coffeeAnalyzingSymbols': 'Madam Aris telvedeki sembolleri çözümlüyor...',
+    'coffeeAnalyzingSubtitle':
+        'Fincanın içi, tabağı ve dış izleri birlikte okunuyor...',
+    'coffeeMadamArisTitle': 'Madam Aris · Kahve Falı',
+    'coffeeMadamArisName': 'Madam Aris',
+    'coffeeMadamArisSubtitle': 'Kahve Falı Rehberi',
+    'coffeeReadingReady': 'Madam Aris Kahve Falını Yorumladı',
+    'coffeePreviewTitle': 'Fincanın Hazır',
+    'coffeePast': 'Geçmişten Gelen İz',
+    'coffeePresent': 'Şu Anki Enerji',
+    'coffeeFuture': 'Yakın Dönem Mesajı',
+    'coffeePermissionDenied': 'Fotoğraf seçimi için gerekli izin verilmedi.',
+    'coffeeCropCancelled': 'Kırpma işlemi iptal edildi.',
+    'coffeeCompressionFailed': 'Fotoğraf hazırlanamadı. Lütfen tekrar dene.',
+    'coffeeValidationFailed': 'Kahve fotoğrafı doğrulanamadı',
+    'coffeeEntertainmentDisclaimer':
+        'Bu yorumlar eğlence ve kişisel farkındalık amacıyla hazırlanmıştır. Tıbbi, finansal, hukuki veya kesin gelecek tahmini içermez.',
+    'coffeePhotoPrivacyNote':
+        'Fotoğrafın bu adımda yalnızca cihaz içinde fincan doğrulaması için işlenir. Gerçek AI analizi Sprint 3’te backend üzerinden güvenli şekilde bağlanacaktır.',
+    'coffeeChatWithMadamAris': 'Madam Aris ile Sohbet Et',
+    'coffeeMessageNote': 'MVP deneme modu · Bu Sprint’te jeton harcanmaz',
+    'coffeeQuestionHint': 'Telvedeki sembolleri sor...',
+    'coffeeLoadingChatSubtitle': 'Telvedeki sembolleri dinliyor.',
+    'coffeeMockOpening':
+        'Fincanını ve telvenin izlerini gördüm... İçte, tabakta ve dış yüzeyde birbirini tamamlayan semboller var. Bu yorum eğlence ve kişisel farkındalık amacıyla hazırlanıyor. Şimdi birlikte bu işaretlere bakalım...',
+    'coffeeMockLoveReply':
+        'Madam Aris fincanında kalbe benzeyen yumuşak bir açıklık görüyor. Bu, ilişkilerde acele etmeden dinlemenin ve niyetini netleştirmenin sana iyi geleceğini fısıldıyor.',
+    'coffeeMockCareerReply':
+        'Telvenin kenara doğru yükselen çizgileri iş ve para alanında küçük ama düzenli adımları işaret ediyor. Bu kesin bir vaat değil; sadece bugün odağını toparlaman için zarif bir hatırlatma.',
+    'coffeeMockGeneralReply':
+        'Fincanın genel enerjisi sakin ama hareketli. Madam Aris, bu dönemde içinden geçenleri sadeleştirmeni ve önündeki küçük işareti büyütmeden fark etmeni öneriyor.',
   };
 
   Future<void> initialize() async {

@@ -1,6 +1,6 @@
 name: tarot_ai
 publish_to: none
-version: 0.1.2+5
+version: 0.1.3+6
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -31,6 +31,8 @@ dependencies:
   path_provider: ^2.1.5
   path: ^1.9.1
   permission_handler: ^12.0.1
+  image_picker: ^1.2.2
+  image_cropper: ^12.2.1
 
 dev_dependencies:
   flutter_test:

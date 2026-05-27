@@ -1,1 +1,2 @@
-"NSCameraUsageDescription" = "We use your camera for the palm reading scan.";
+"NSCameraUsageDescription" = "We use the camera to guide palm reading scans and let you capture cup photos for coffee readings.";
+"NSPhotoLibraryUsageDescription" = "We let you choose cup photos from your library for the coffee reading experience.";

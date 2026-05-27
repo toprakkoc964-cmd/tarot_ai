@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -7,9 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_locale.dart';
+import '../../core/app_texts.dart';
 import '../../core/tarot_functions_client.dart';
 import '../auth/user_profile_contract.dart';
 import '../readings/tarot_card_view.dart';
+import 'ai_chat_context.dart';
 
 const _kBg = Color(0xFF17081C);
 const _kPrimary = Color(0xFFFF5ED6);
@@ -23,13 +27,15 @@ class KozmikBilgePage extends StatefulWidget {
   const KozmikBilgePage({
     super.key,
     required this.uid,
-    required this.cardTitle,
-    required this.cardImageUrl,
+    this.cardTitle = '',
+    this.cardImageUrl = '',
+    this.chatContext,
   });
 
   final String uid;
   final String cardTitle;
   final String cardImageUrl;
+  final AiChatContext? chatContext;
 
   @override
   State<KozmikBilgePage> createState() => _KozmikBilgePageState();
@@ -57,7 +63,56 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    final contextImages = widget.chatContext?.contextImageFiles ?? const [];
+    if (widget.chatContext?.ownsImageFile == true && contextImages.isNotEmpty) {
+      unawaited(_deleteOwnedContextImages(contextImages));
+    }
     super.dispose();
+  }
+
+  bool get _isCoffeeChat => widget.chatContext?.isCoffeeReading ?? false;
+
+  String get _chatTitle =>
+      widget.chatContext?.title ?? AppTexts.t('arisTarotTitle');
+
+  String get _assistantName => _isCoffeeChat
+      ? AppTexts.t('coffeeMadamArisName')
+      : AppTexts.t('arisAssistantName');
+
+  String get _loadingSubtitle => _isCoffeeChat
+      ? AppTexts.t('coffeeLoadingChatSubtitle')
+      : AppTexts.t('arisLoadingSubtitle');
+
+  Future<void> _deleteOwnedContextImages(List<File> imageFiles) async {
+    final seenPaths = <String>{};
+    for (final imageFile in imageFiles) {
+      if (!seenPaths.add(imageFile.path)) continue;
+      try {
+        if (await imageFile.exists()) {
+          await imageFile.delete();
+        }
+      } catch (_) {}
+    }
+  }
+
+  List<File> get _coffeeImageFiles {
+    return widget.chatContext?.contextImageFiles ?? const [];
+  }
+
+  Map<String, dynamic> get _coffeeMetadata {
+    return widget.chatContext?.metadata ?? const {};
+  }
+
+  int get _coffeeRequiredPhotoCount {
+    return (_coffeeMetadata['requiredPhotoCount'] as num?)?.toInt() ?? 3;
+  }
+
+  int get _coffeePhotoCount => _coffeeImageFiles.length;
+
+  String get _coffeeHeaderSubtitle {
+    final subtitle = AppTexts.t('coffeeMadamArisSubtitle');
+    if (_coffeePhotoCount >= _coffeeRequiredPhotoCount) return subtitle;
+    return '$subtitle · $_coffeePhotoCount/$_coffeeRequiredPhotoCount';
   }
 
   String _todayKey() {
@@ -77,6 +132,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   }
 
   Future<void> _loadOpeningReading() async {
+    if (_isCoffeeChat) {
+      await _loadCoffeeOpeningReading();
+      return;
+    }
     if (mounted) {
       setState(() {
         _isLoadingOpening = true;
@@ -111,9 +170,32 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     }
   }
 
+  Future<void> _loadCoffeeOpeningReading() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingOpening = true;
+        _openingError = null;
+      });
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+    if (!mounted) return;
+    setState(() {
+      _sessionId = 'mock_coffee_${DateTime.now().microsecondsSinceEpoch}';
+      _messages
+        ..clear()
+        ..add(_ArisChatMessage.assistant(AppTexts.t('coffeeMockOpening')));
+      _isLoadingOpening = false;
+      _openingError = null;
+    });
+  }
+
   Future<void> _sendMessage(int credits) async {
     final text = _messageController.text.trim();
     if (_isSending || text.isEmpty || _sessionId == null) return;
+    if (_isCoffeeChat) {
+      await _sendCoffeeMessage(text);
+      return;
+    }
     if (credits < _kConversationCost) {
       await _showInsufficientCreditsDialog();
       return;
@@ -158,6 +240,39 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
+  }
+
+  Future<void> _sendCoffeeMessage(String text) async {
+    setState(() {
+      _isSending = true;
+      _messageController.clear();
+      _messages.add(_ArisChatMessage.user(text));
+    });
+    _scrollToBottom();
+
+    await Future<void>.delayed(const Duration(milliseconds: 950));
+    if (!mounted) return;
+    setState(() {
+      _messages.add(_ArisChatMessage.assistant(_mockCoffeeReply(text)));
+      _isSending = false;
+    });
+    _scrollToBottom();
+  }
+
+  String _mockCoffeeReply(String text) {
+    final normalized = text.toLowerCase();
+    if (normalized.contains('aşk') ||
+        normalized.contains('ask') ||
+        normalized.contains('love')) {
+      return AppTexts.t('coffeeMockLoveReply');
+    }
+    if (normalized.contains('iş') ||
+        normalized.contains('kariyer') ||
+        normalized.contains('career') ||
+        normalized.contains('para')) {
+      return AppTexts.t('coffeeMockCareerReply');
+    }
+    return AppTexts.t('coffeeMockGeneralReply');
   }
 
   Future<void> _showInsufficientCreditsDialog() async {
@@ -241,13 +356,26 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                 controller: _scrollController,
                 padding: EdgeInsets.fromLTRB(24, topPadding + 92, 24, 170),
                 children: [
-                  _HeroTarotCard(
-                    cardTitle: widget.cardTitle,
-                    cardImageUrl: widget.cardImageUrl,
-                  ),
+                  if (_isCoffeeChat)
+                    _MadamArisHero(
+                      imageFiles: _coffeeImageFiles,
+                      subtitle: _coffeeHeaderSubtitle,
+                    )
+                  else
+                    _HeroTarotCard(
+                      cardTitle: widget.cardTitle,
+                      cardImageUrl: widget.cardImageUrl,
+                    ),
                   const SizedBox(height: 28),
+                  if (_isCoffeeChat) ...[
+                    const _CoffeeDisclaimerBanner(),
+                    const SizedBox(height: 18),
+                  ],
                   if (_isLoadingOpening)
-                    const _ArisLoadingBubble()
+                    _ArisLoadingBubble(
+                      assistantName: _assistantName,
+                      subtitle: _loadingSubtitle,
+                    )
                   else if (_openingError != null)
                     _ArisErrorBubble(
                       message: _openingError!,
@@ -259,17 +387,21 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                       const SizedBox(height: 8),
                     ],
                   if (!_isLoadingOpening && _openingError == null)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: _MessageMeta(),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: _MessageMeta(assistantName: _assistantName),
                     ),
                   if (_isSending) ...[
                     const SizedBox(height: 12),
-                    const _ArisLoadingBubble(compact: true),
+                    _ArisLoadingBubble(
+                      compact: true,
+                      assistantName: _assistantName,
+                      subtitle: _loadingSubtitle,
+                    ),
                   ],
                 ],
               ),
-              _ChatTopBar(credits: credits),
+              _ChatTopBar(credits: credits, title: _chatTitle),
               _ComposerArea(
                 controller: _messageController,
                 enabled: !_isLoadingOpening &&
@@ -277,6 +409,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                     !_isSending &&
                     _sessionId != null,
                 isSending: _isSending,
+                costLabel: _isCoffeeChat
+                    ? AppTexts.t('coffeeMessageNote')
+                    : AppTexts.t('arisMessageCost'),
+                hintText: _isCoffeeChat
+                    ? AppTexts.t('coffeeQuestionHint')
+                    : AppTexts.t('arisQuestionHint'),
                 onSend: () => _sendMessage(credits),
               ),
             ],
@@ -288,9 +426,13 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
 }
 
 class _ChatTopBar extends StatelessWidget {
-  const _ChatTopBar({required this.credits});
+  const _ChatTopBar({
+    required this.credits,
+    required this.title,
+  });
 
   final int credits;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -326,7 +468,7 @@ class _ChatTopBar extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Kozmik Bilge Aris',
+                    title,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.newsreader(
                       fontSize: 22,
@@ -443,6 +585,357 @@ class _HeroTarotCard extends StatelessWidget {
   }
 }
 
+class _MadamArisHero extends StatelessWidget {
+  const _MadamArisHero({
+    required this.imageFiles,
+    required this.subtitle,
+  });
+
+  final List<File> imageFiles;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+        decoration: BoxDecoration(
+          color: _kGlass,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: _kPrimary.withValues(alpha: 0.18),
+              blurRadius: 40,
+              spreadRadius: -12,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const _MadamArisAvatar(size: 74),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppTexts.t('coffeeMadamArisName'),
+                        style: GoogleFonts.newsreader(
+                          color: _kPrimary,
+                          fontSize: 28,
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.spaceGrotesk(
+                          color: _kSecondary.withValues(alpha: 0.82),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.7,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (imageFiles.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  for (var index = 0;
+                      index < math.min(3, imageFiles.length);
+                      index++) ...[
+                    Expanded(
+                      child: _CoffeeThumb(
+                        file: imageFiles[index],
+                        index: index,
+                      ),
+                    ),
+                    if (index != math.min(3, imageFiles.length) - 1)
+                      const SizedBox(width: 9),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CoffeeThumb extends StatelessWidget {
+  const _CoffeeThumb({
+    required this.file,
+    required this.index,
+  });
+
+  final File file;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              file,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.low,
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.42),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  '${index + 1}/3',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: _kTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MadamArisAvatar extends StatelessWidget {
+  const _MadamArisAvatar({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _kPrimary.withValues(alpha: 0.34),
+                  blurRadius: 26,
+                  spreadRadius: 2,
+                ),
+                BoxShadow(
+                  color: _kTertiary.withValues(alpha: 0.14),
+                  blurRadius: 20,
+                ),
+              ],
+            ),
+          ),
+          CustomPaint(
+            size: Size.square(size),
+            painter: _MadamArisAvatarPainter(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MadamArisAvatarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    final bgPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          _kPrimary.withValues(alpha: 0.36),
+          const Color(0xFF2E1537),
+          const Color(0xFF120516),
+        ],
+      ).createShader(Offset.zero & size);
+
+    canvas.drawCircle(center, radius, bgPaint);
+
+    final veilPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          _kPrimary.withValues(alpha: 0.72),
+          const Color(0xFF32113C),
+          const Color(0xFF140516),
+        ],
+      ).createShader(Offset.zero & size);
+
+    final veil = Path()
+      ..moveTo(size.width * 0.18, size.height * 0.70)
+      ..quadraticBezierTo(
+        size.width * 0.26,
+        size.height * 0.14,
+        size.width * 0.50,
+        size.height * 0.10,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.74,
+        size.height * 0.14,
+        size.width * 0.82,
+        size.height * 0.70,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.50,
+        size.height * 0.92,
+        size.width * 0.18,
+        size.height * 0.70,
+      )
+      ..close();
+    canvas.drawPath(veil, veilPaint);
+
+    final facePaint = Paint()..color = const Color(0xFFFFD3F7);
+    final faceRect = Rect.fromCenter(
+      center: Offset(size.width * 0.50, size.height * 0.42),
+      width: size.width * 0.30,
+      height: size.height * 0.36,
+    );
+    canvas.drawOval(faceRect, facePaint);
+
+    final hairPaint = Paint()..color = const Color(0xFF24102B);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(size.width * 0.50, size.height * 0.35),
+        width: size.width * 0.34,
+        height: size.height * 0.22,
+      ),
+      math.pi,
+      math.pi,
+      true,
+      hairPaint,
+    );
+
+    final eyePaint = Paint()
+      ..color = const Color(0xFF430036)
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(size.width * 0.42, size.height * 0.42),
+      Offset(size.width * 0.46, size.height * 0.42),
+      eyePaint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.54, size.height * 0.42),
+      Offset(size.width * 0.58, size.height * 0.42),
+      eyePaint,
+    );
+
+    final shoulderPaint = Paint()
+      ..color = const Color(0xFF4B185B).withValues(alpha: 0.9);
+    final shoulders = Path()
+      ..moveTo(size.width * 0.24, size.height * 0.78)
+      ..quadraticBezierTo(
+        size.width * 0.50,
+        size.height * 0.58,
+        size.width * 0.76,
+        size.height * 0.78,
+      )
+      ..lineTo(size.width * 0.76, size.height * 0.90)
+      ..lineTo(size.width * 0.24, size.height * 0.90)
+      ..close();
+    canvas.drawPath(shoulders, shoulderPaint);
+
+    final starPaint = Paint()..color = _kTertiary;
+    _drawDiamond(
+        canvas, Offset(size.width * 0.27, size.height * 0.30), 3.4, starPaint);
+    _drawDiamond(
+        canvas, Offset(size.width * 0.72, size.height * 0.26), 2.8, starPaint);
+    _drawDiamond(
+        canvas, Offset(size.width * 0.64, size.height * 0.64), 2.4, starPaint);
+
+    final borderPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..color = _kPrimary.withValues(alpha: 0.55);
+    canvas.drawCircle(center, radius - 0.8, borderPaint);
+  }
+
+  void _drawDiamond(Canvas canvas, Offset center, double radius, Paint paint) {
+    final path = Path()
+      ..moveTo(center.dx, center.dy - radius)
+      ..lineTo(center.dx + radius, center.dy)
+      ..lineTo(center.dx, center.dy + radius)
+      ..lineTo(center.dx - radius, center.dy)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CoffeeDisclaimerBanner extends StatelessWidget {
+  const _CoffeeDisclaimerBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: _kGlass,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: _kTertiary,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              AppTexts.t('coffeeEntertainmentDisclaimer'),
+              style: GoogleFonts.manrope(
+                color: _kSecondary.withValues(alpha: 0.78),
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ArisChatMessage {
   const _ArisChatMessage({
     required this.isUser,
@@ -511,9 +1004,15 @@ class _ArisMessageBubble extends StatelessWidget {
 }
 
 class _ArisLoadingBubble extends StatelessWidget {
-  const _ArisLoadingBubble({this.compact = false});
+  const _ArisLoadingBubble({
+    this.compact = false,
+    required this.assistantName,
+    required this.subtitle,
+  });
 
   final bool compact;
+  final String assistantName;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -548,9 +1047,10 @@ class _ArisLoadingBubble extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      compact
-                          ? 'Bilge Aris yaziyor'
-                          : 'Bilge Aris yaziyor',
+                      AppTexts.t('arisTyping').replaceFirst(
+                        '{name}',
+                        assistantName,
+                      ),
                       style: GoogleFonts.manrope(
                         fontWeight: FontWeight.w700,
                         color: _kOnSurface,
@@ -562,7 +1062,7 @@ class _ArisLoadingBubble extends StatelessWidget {
                 if (!compact) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Kartinin enerjisini topluyor.',
+                    subtitle,
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       color: _kSecondary.withValues(alpha: 0.72),
@@ -662,12 +1162,14 @@ class _ArisErrorBubble extends StatelessWidget {
 }
 
 class _MessageMeta extends StatelessWidget {
-  const _MessageMeta();
+  const _MessageMeta({required this.assistantName});
+
+  final String assistantName;
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Aris • Simdi',
+      AppTexts.t('arisMessageMeta').replaceFirst('{name}', assistantName),
       style: GoogleFonts.spaceGrotesk(
         fontSize: 10,
         letterSpacing: 1.3,
@@ -682,12 +1184,16 @@ class _ComposerArea extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.isSending,
+    required this.costLabel,
+    required this.hintText,
     required this.onSend,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final bool isSending;
+  final String costLabel;
+  final String hintText;
   final VoidCallback onSend;
 
   @override
@@ -723,7 +1229,7 @@ class _ComposerArea extends StatelessWidget {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Her mesaj $_kConversationCost jeton',
+                    costLabel,
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 10,
                       letterSpacing: 1.1,
@@ -760,7 +1266,7 @@ class _ComposerArea extends StatelessWidget {
                               horizontal: 16,
                               vertical: 16,
                             ),
-                            hintText: 'Bilgeye bir soru fisilda...',
+                            hintText: hintText,
                             hintStyle: GoogleFonts.manrope(
                               fontStyle: FontStyle.italic,
                               color: _kSecondary.withValues(alpha: 0.60),

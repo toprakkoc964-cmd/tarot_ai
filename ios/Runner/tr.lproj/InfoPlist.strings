@@ -1,1 +1,2 @@
-"NSCameraUsageDescription" = "El falı taraması için kameranı kullanıyoruz.";
+"NSCameraUsageDescription" = "El falı taramasını yönlendirmek ve kahve falı için fincan fotoğrafları çekmenizi sağlamak amacıyla kamerayı kullanıyoruz.";
+"NSPhotoLibraryUsageDescription" = "Kahve falı deneyimi için galerinizden fincan fotoğrafları seçmenizi sağlar.";

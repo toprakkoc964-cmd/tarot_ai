@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
+import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
 import 'home_palette.dart';
@@ -48,7 +49,7 @@ class CosmicPage extends StatelessWidget {
                 buttonText: AppTexts.t('home.cosmic.coffee.button'),
                 icon: Icons.local_cafe_rounded,
                 accentIcon: Icons.coffee_rounded,
-                onTap: () => _showComingSoon(context),
+                onTap: () => _openCoffeeReading(context, uid),
               ),
             ],
           ),
@@ -86,15 +87,36 @@ class CosmicPage extends StatelessWidget {
     );
   }
 
-  static void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(AppTexts.t('home.cosmic.coming_soon')),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+  static Future<void> _openCoffeeReading(
+    BuildContext context,
+    String uid,
+  ) async {
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        pageBuilder: (_, animation, __) {
+          return FadeTransition(
+            opacity: animation,
+            child: CoffeeCaptureFlowScreen(uid: uid),
+          );
+        },
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
