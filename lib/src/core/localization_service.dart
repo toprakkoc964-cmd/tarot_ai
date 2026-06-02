@@ -45,6 +45,7 @@ class LocalizationService {
     'tarot.spread.duplicate_card': 'You already selected this card.',
     'tarot.spread.max_cards': 'You can select up to 7 cards.',
     'tarot.spread.load_failed': 'Card could not be loaded. Try again.',
+    'tarot.spread.draw_failed': 'Card draw failed. Please try again.',
     'tarot.spread.chat_title': 'Bilge Aris · Tarot Spread',
     'tarot.spread.hero_title': 'Your chosen cards',
     'tarot.spread.hero_subtitle': 'Bilge Aris reads them as one spread',
@@ -155,6 +156,7 @@ class LocalizationService {
         'After you draw cards in Ritual and chat with Bilge Aris, your conversations appear here.',
     'messages.load_error':
         'Could not load reading history. Check your connection and try again.',
+    'messages.retry': 'Try again',
     'messages.resume_error': 'Could not open this chat. Please try again.',
     'messages.thread_count': '{count} messages',
     'home.cosmic.eyebrow': 'COSMIC GUIDE',
@@ -278,10 +280,7 @@ class LocalizationService {
     'shopPriceUnavailable': 'This product is currently unavailable',
     'shopPurchaseUnavailable': 'Purchases are currently unavailable',
     'shopProductsNotFoundHint':
-        'Store products could not be loaded. Make sure the product IDs below exist in Play Console / App Store Connect for your app package.',
-    'shopStoreProductIds':
-        'tarotai.jeton.50 · tarotai.credits.250 · tarotai.credits.1000 · tarotai.premium.monthly',
-    'shopRetryLoadProducts': 'Reload products',
+        'This product is temporarily unavailable. Please try again later.',
     'shopPurchasePending': 'Purchase is processing...',
     'shopPurchaseVerifying': 'Purchase is being verified...',
     'shopPurchaseVerified': 'Purchase verified.',
@@ -525,6 +524,7 @@ class LocalizationService {
     'tarot.spread.duplicate_card': 'Bu karti zaten sectin.',
     'tarot.spread.max_cards': 'En fazla 7 kart secebilirsin.',
     'tarot.spread.load_failed': 'Kart yuklenemedi. Tekrar dene.',
+    'tarot.spread.draw_failed': 'Kart cekimi tamamlanamadi. Tekrar dene.',
     'tarot.spread.chat_title': 'Bilge Aris · Tarot Yayilimi',
     'tarot.spread.hero_title': 'Sectigin kartlar',
     'tarot.spread.hero_subtitle': 'Bilge Aris bunlari tek bir yayilim olarak yorumlar',
@@ -614,12 +614,13 @@ class LocalizationService {
     'home.tab.profile': 'Profil',
     'messages.title': 'Mesajlar',
     'messages.subtitle':
-        'Daha önce çektiğin kart yorumlarına buradan devam et.',
+        'Her kart çekimindeki Bilge Aris sohbetlerin burada listelenir.',
     'messages.empty_title': 'Henüz kayıtlı yorum yok',
     'messages.empty_body':
         'Ritüelden kart çekip Bilge Aris ile konuştuğunda sohbetlerin burada saklanır.',
     'messages.load_error':
         'Yorum geçmişi yüklenemedi. Bağlantını kontrol edip tekrar dene.',
+    'messages.retry': 'Tekrar dene',
     'messages.resume_error': 'Sohbet yüklenemedi. Lütfen tekrar dene.',
     'messages.thread_count': '{count} mesaj',
     'home.cosmic.eyebrow': 'KOZMİK REHBER',
@@ -745,10 +746,7 @@ class LocalizationService {
     'shopPriceUnavailable': 'Ürün şu anda kullanılamıyor',
     'shopPurchaseUnavailable': 'Satın alma şu anda kullanılamıyor',
     'shopProductsNotFoundHint':
-        'Mağaza ürünleri yüklenemedi. Play Console / App Store Connect\'te aşağıdaki ürün kimliklerinin uygulama paketiyle eşleştiğinden emin ol.',
-    'shopStoreProductIds':
-        'tarotai.jeton.50 · tarotai.credits.250 · tarotai.credits.1000 · tarotai.premium.monthly',
-    'shopRetryLoadProducts': 'Ürünleri yeniden yükle',
+        'Bu ürün şu an kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
     'shopPurchasePending': 'Satın alma işleniyor...',
     'shopPurchaseVerifying': 'Satın alma doğrulanıyor...',
     'shopPurchaseVerified': 'Satın alma doğrulandı.',

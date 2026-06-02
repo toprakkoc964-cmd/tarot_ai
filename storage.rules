@@ -12,6 +12,18 @@ service firebase.storage {
         && fileName.matches('.*\\.png');
     }
 
+    // Major Arcana kart gorselleri (ornek: 00_the_fool.webp)
+    match /tarot_cards-major_arcana/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Alternatif klasor yapisi kullanildiysa
+    match /tarot_cards/major_arcana/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /coffee/{uid}/{uploadId}/{fileName} {
       allow create: if request.auth != null
         && request.auth.uid == uid

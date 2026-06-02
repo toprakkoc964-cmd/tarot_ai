@@ -236,6 +236,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     });
   }
 
+  String _openingSessionId() {
+    final spreadId = widget.spreadSessionId?.trim() ?? '';
+    if (spreadId.isNotEmpty) return spreadId;
+    return newArisSessionId();
+  }
+
   Future<void> _loadOpeningReading() async {
     if (_isCoffeeChat) {
       await _loadCoffeeOpeningReading();
@@ -271,7 +277,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
             ? (widget.spreadCards.first.imageUrl)
             : widget.cardImageUrl,
         cardNames: cardNames,
-        sessionId: widget.spreadSessionId,
+        sessionId: _openingSessionId(),
         day: _todayKey(),
         lang: _activeArisLanguage(),
       );
@@ -719,10 +725,31 @@ class _HeroTarotCard extends StatelessWidget {
   }
 }
 
-class _TarotSpreadHero extends StatelessWidget {
+class _TarotSpreadHero extends StatefulWidget {
   const _TarotSpreadHero({required this.cards});
 
   final List<DrawnTarotCard> cards;
+
+  @override
+  State<_TarotSpreadHero> createState() => _TarotSpreadHeroState();
+}
+
+class _TarotSpreadHeroState extends State<_TarotSpreadHero> {
+  late List<DrawnTarotCard> _cards;
+
+  @override
+  void initState() {
+    super.initState();
+    TarotService.ensureLocalAssetsCached();
+    _cards = widget.cards.map(_withLocalAsset).toList();
+  }
+
+  DrawnTarotCard _withLocalAsset(DrawnTarotCard card) {
+    final path = card.imageUrl.trim().isNotEmpty
+        ? card.imageUrl
+        : TarotService.assetPathForIndex(card.card.index);
+    return DrawnTarotCard(card: card.card, imageUrl: path);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -767,13 +794,20 @@ class _TarotSpreadHero extends StatelessWidget {
             height: 148,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: cards.length,
+              itemCount: _cards.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
-                final card = cards[index];
+                final card = _cards[index];
+                final imageUrl = card.imageUrl.trim();
                 return SizedBox(
                   width: 96,
-                  child: _SpreadCardPlaceholder(title: card.card.displayName),
+                  child: imageUrl.isNotEmpty
+                      ? TarotCardView(
+                          imageUrl: imageUrl,
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(14)),
+                        )
+                      : _SpreadCardPlaceholder(title: card.card.displayName),
                 );
               },
             ),

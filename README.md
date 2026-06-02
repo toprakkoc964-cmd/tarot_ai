@@ -29,11 +29,10 @@ Firebase Console'da `Authentication > Sign-in method` altinda su provider'lari a
 
 Debug SHA-1 (bu makine): `B5:41:CC:EB:BF:1C:13:87:90:52:EA:CB:6E:B8:7B:33:EA:70:34:81`
 
-### Tarot kart gorselleri (Firebase Storage)
-Gunluk kart cekiminde gorseller `tarot_cards-major_arcana/` klasorunden yuklenir.
-Ornek dosya adlari: `00_the_fool.webp`, `20_judgement.webp`, `21_the_world.webp`.
-Bu klasor bos veya dosya adlari hataliysa kart yine secilir ancak gorsel yerine isimli placeholder gosterilir.
-Storage kurallarinin authenticated/read izinlerini kontrol et.
+### Tarot kart gorselleri (yerel asset)
+Major Arcana gorselleri `assets/card-images/` klasorunden yuklenir (`pubspec.yaml` assets).
+Ornek dosya adlari: `00_the_fool.webp`, `20_judgement.webp`, `21_the_world.webp` (22 dosya).
+Dosya eksik veya adi hataliysa kart yine secilir; gorsel yerine placeholder gosterilir.
 
 ### iOS (Apple Sign-In)
 - Apple Developer hesabinda `Sign in with Apple` capability acik olmali.

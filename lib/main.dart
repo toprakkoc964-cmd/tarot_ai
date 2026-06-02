@@ -12,6 +12,7 @@ import 'src/core/di/service_locator.dart';
 import 'src/core/localization_service.dart';
 import 'src/core/notification_service.dart' as fcm_notifications;
 import 'src/features/auth/auth_gate_page.dart';
+import 'src/features/readings/tarot_service.dart';
 import 'src/features/shop/services/purchase_service.dart';
 
 void main() async {
@@ -41,6 +42,7 @@ Future<String?> _bootstrapApp() async {
     await _runOptionalBootstrapTask(
       'App Check',
       () => activateAppCheck(isDebug: kDebugMode),
+      timeout: const Duration(seconds: 12),
     );
     await _runOptionalBootstrapTask(
       'FCM notifications',
@@ -54,6 +56,7 @@ Future<String?> _bootstrapApp() async {
       'Localization',
       () => LocalizationService.instance.initialize(),
     );
+    _startTarotImagePreloadInBackground();
     await _runOptionalBootstrapTask(
       'Purchase service',
       () => getIt<PurchaseService>().initialize(),
@@ -80,21 +83,26 @@ Future<void> _runRequiredBootstrapTask(
 
 Future<void> _runOptionalBootstrapTask(
   String name,
-  Future<void> Function() task,
-) async {
+  Future<void> Function() task, {
+  Duration timeout = const Duration(seconds: 8),
+}) async {
   try {
     await task().timeout(
-      const Duration(seconds: 8),
+      timeout,
       onTimeout: () {
         throw TimeoutException('$name bootstrap timed out');
       },
     );
   } catch (e, st) {
     debugPrint('Optional bootstrap task skipped ($name): $e');
-    if (kDebugMode) {
+    if (kDebugMode && name != 'App Check') {
       debugPrintStack(stackTrace: st);
     }
   }
+}
+
+void _startTarotImagePreloadInBackground() {
+  TarotService.ensureLocalAssetsCached();
 }
 
 class TarotAiApp extends StatelessWidget {

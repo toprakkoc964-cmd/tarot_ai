@@ -1,7 +1,5 @@
 import 'dart:math';
 
-import 'package:firebase_storage/firebase_storage.dart';
-
 class TarotCardLoadException implements Exception {
   const TarotCardLoadException(this.message);
 
@@ -20,10 +18,12 @@ class MajorArcanaCard {
   final int index;
   final String name;
 
+  static const String assetFolder = 'assets/card-images';
+
   String get snakeCaseName => name.trim().toLowerCase().replaceAll(' ', '_');
   String get fileName =>
       '${index.toString().padLeft(2, '0')}_$snakeCaseName.webp';
-  String get storagePath => 'tarot_cards-major_arcana/$fileName';
+  String get assetPath => '$assetFolder/$fileName';
   String get displayName => name
       .split('_')
       .map((part) =>
@@ -38,20 +38,21 @@ class DrawnTarotCard {
   });
 
   final MajorArcanaCard card;
+
+  /// Yerel asset yolu (`assets/card-images/00_the_fool.webp`) veya ag URL.
   final String imageUrl;
+
+  bool get hasLocalAsset =>
+      imageUrl.isNotEmpty && !imageUrl.startsWith('http');
 }
 
 class TarotService {
-  TarotService({
-    FirebaseStorage? storage,
-    Random? random,
-  })  : _storage = storage ?? FirebaseStorage.instance,
-        _random = random ?? Random();
+  TarotService({Random? random}) : _random = random ?? Random();
 
-  final FirebaseStorage _storage;
   final Random _random;
-  final Map<String, Future<String>> _downloadUrlCache = {};
-  final Map<int, Future<DrawnTarotCard>> _cardCache = {};
+
+  static final Map<int, String> imageUrlByIndex = <int, String>{};
+  static bool _assetsReady = false;
 
   static const List<MajorArcanaCard> majorArcana = <MajorArcanaCard>[
     MajorArcanaCard(index: 0, name: 'the_fool'),
@@ -78,53 +79,56 @@ class TarotService {
     MajorArcanaCard(index: 21, name: 'the_world'),
   ];
 
-  Future<String> getCardDownloadUrlByFileName(String fileName) async {
-    final path = 'tarot_cards-major_arcana/$fileName';
-    return _downloadUrlCache.putIfAbsent(path, () async {
-      try {
-        return await _storage.ref(path).getDownloadURL();
-      } on FirebaseException catch (error) {
-        _downloadUrlCache.remove(path);
-        if (error.code == 'object-not-found') {
-          throw TarotCardLoadException('Tarot karti bulunamadi: $path');
-        }
-        throw TarotCardLoadException(
-          'Tarot karti yuklenemedi: ${error.message ?? error.code}',
-        );
-      } catch (error) {
-        _downloadUrlCache.remove(path);
-        throw TarotCardLoadException('Tarot karti yuklenemedi: $error');
-      }
-    });
+  static void ensureLocalAssetsCached() {
+    final cacheValid = _assetsReady &&
+        imageUrlByIndex.length == majorArcana.length &&
+        imageUrlByIndex.values
+            .every((path) => path.startsWith('${MajorArcanaCard.assetFolder}/'));
+    if (cacheValid) {
+      return;
+    }
+    imageUrlByIndex
+      ..clear()
+      ..addEntries(
+        majorArcana.map(
+          (card) => MapEntry(card.index, card.assetPath),
+        ),
+      );
+    _assetsReady = true;
   }
 
-  Future<String> getCardDownloadUrl(MajorArcanaCard card) async {
-    return getCardDownloadUrlByFileName(card.fileName);
+  static String? cachedUrlForIndex(int index) {
+    ensureLocalAssetsCached();
+    return imageUrlByIndex[index];
+  }
+
+  /// Yerel asset haritasi; aninda tamamlanir.
+  static Future<void> preloadAllCardImages({
+    TarotService? service,
+    bool forceRetry = false,
+  }) async {
+    if (forceRetry) {
+      _assetsReady = false;
+      imageUrlByIndex.clear();
+    }
+    ensureLocalAssetsCached();
+  }
+
+  static String assetPathForIndex(int index) {
+    ensureLocalAssetsCached();
+    return imageUrlByIndex[index] ?? majorArcana[index].assetPath;
   }
 
   Future<DrawnTarotCard> getCardByIndex(int index) async {
     if (index < 0 || index >= majorArcana.length) {
       throw RangeError.index(index, majorArcana, 'index');
     }
-
-    return _cardCache.putIfAbsent(index, () async {
-      try {
-        final card = majorArcana[index];
-        final normalizedName =
-            card.name.trim().toLowerCase().replaceAll(' ', '_');
-        final fileName =
-            '${index.toString().padLeft(2, '0')}_$normalizedName.webp';
-        final imageUrl = await getCardDownloadUrlByFileName(fileName);
-        return DrawnTarotCard(card: card, imageUrl: imageUrl);
-      } catch (_) {
-        _cardCache.remove(index);
-        rethrow;
-      }
-    });
+    final card = majorArcana[index];
+    final path = assetPathForIndex(index);
+    return DrawnTarotCard(card: card, imageUrl: path);
   }
 
   Future<DrawnTarotCard> drawRandomCard() async {
-    final randomIndex = _random.nextInt(majorArcana.length);
-    return getCardByIndex(randomIndex);
+    return getCardByIndex(_random.nextInt(majorArcana.length));
   }
 }

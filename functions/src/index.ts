@@ -175,6 +175,15 @@ function localDateKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+const ARIS_STORED_MESSAGE_LIMIT = 48;
+const ARIS_PROMPT_MESSAGE_LIMIT = 6;
+
+function newArisSessionId(): string {
+  const stamp = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `aris_${stamp}_${rand}`.slice(0, 48);
+}
+
 function buildArisProfileContext(user: UserDoc & Record<string, unknown>): string[] {
   const birthDate = resolveUserBirthDate(user);
   const context: string[] = [
@@ -1355,7 +1364,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       : singleCardName;
     const cardImageUrl = sanitizeShortText(request.data?.cardImageUrl, 500);
     const day = sanitizeShortText(request.data?.day, 10) || localDateKey();
-    const sessionId = sanitizeShortText(request.data?.sessionId, 48) || day;
+    const sessionId = sanitizeShortText(request.data?.sessionId, 48) || newArisSessionId();
     if (!cardName || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
       throw new HttpsError('invalid-argument', 'INVALID_ARIS_OPENING_INPUT');
     }
@@ -1452,6 +1461,44 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
   }
 });
 
+export const listArisSessions = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const uid = request.auth.uid;
+    const snap = await db.collection('users').doc(uid).collection('aris_sessions').limit(80).get();
+    const sessions = snap.docs
+      .map((doc) => {
+        const data = doc.data() as Record<string, unknown>;
+        const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp | undefined;
+        const createdAt = data.createdAt as FirebaseFirestore.Timestamp | undefined;
+        const timestamp = updatedAt ?? createdAt;
+        return {
+          sessionId: doc.id,
+          cardName: typeof data.cardName === 'string' ? data.cardName : '',
+          cardNames: Array.isArray(data.cardNames) ? data.cardNames : [],
+          openingMessage: typeof data.openingMessage === 'string' ? data.openingMessage : '',
+          recentMessages: Array.isArray(data.recentMessages) ? data.recentMessages : [],
+          day: typeof data.day === 'string' ? data.day : '',
+          updatedAtMs: timestamp?.toMillis?.() ?? 0
+        };
+      })
+      .filter((session) => {
+        const opening = String(session.openingMessage).trim();
+        const recent = Array.isArray(session.recentMessages) ? session.recentMessages : [];
+        return opening.length > 0 || recent.length > 0;
+      })
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+      .slice(0, 80);
+
+    return { sessions };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
 export const continueArisConversation = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -1509,7 +1556,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
           text: cleanArisPersonaText(sanitizeShortText(entry.text, 320))
         }))
         .filter((entry) => entry.text)
-        .slice(-6)
+        .slice(-ARIS_STORED_MESSAGE_LIMIT)
       : [];
     const lang = resolveArisLanguage({
       requestedLang: request.data?.lang,
@@ -1528,7 +1575,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
         ...recentMessages,
         { role: 'user' as const, text: message },
         { role: 'assistant' as const, text: guardReply }
-      ].slice(-6);
+      ].slice(-ARIS_STORED_MESSAGE_LIMIT);
       const result = {
         reply: guardReply,
         remainingCredits: currentCredits,
@@ -1554,7 +1601,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
         ...recentMessages,
         { role: 'user' as const, text: message },
         { role: 'assistant' as const, text: quickReply }
-      ].slice(-6);
+      ].slice(-ARIS_STORED_MESSAGE_LIMIT);
       const result = {
         reply: quickReply,
         remainingCredits: currentCredits,
@@ -1627,7 +1674,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
         ...recentMessages,
         { role: 'user' as const, text: message },
         { role: 'assistant' as const, text: reply }
-      ].slice(-6);
+      ].slice(-ARIS_STORED_MESSAGE_LIMIT);
       const result = {
         reply,
         remainingCredits

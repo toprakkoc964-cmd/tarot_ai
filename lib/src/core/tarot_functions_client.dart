@@ -84,6 +84,12 @@ class TarotFunctionsClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> listArisSessions() async {
+    final callable = _functions.httpsCallable('listArisSessions');
+    final response = await callable.call();
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<Map<String, dynamic>> continueArisConversation({
     required String sessionId,
     required String message,
