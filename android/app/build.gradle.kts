@@ -9,7 +9,8 @@ plugins {
 android {
     namespace = "com.example.tarot_ai"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Use a fully installed NDK (28.2 can fail with CXX1101 if download is incomplete).
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

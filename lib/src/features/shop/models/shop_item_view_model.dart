@@ -44,10 +44,14 @@ class ShopItemViewModel {
     required bool storeAvailable,
     required bool isBusy,
     bool isNotFound = false,
+    bool allProductsMissing = false,
   }) {
     final catalog = ShopProductCatalog.find(config.productId);
     final loaded = productDetails != null;
     final purchasable = config.isActive && storeAvailable && loaded && !isBusy;
+    final unavailableText = allProductsMissing
+        ? AppTexts.t('shopProductsNotFoundHint')
+        : AppTexts.t('shopPriceUnavailable');
 
     return ShopItemViewModel(
       productId: config.productId,
@@ -58,8 +62,8 @@ class ShopItemViewModel {
       iconKey: config.iconKey,
       priceText: loaded
           ? productDetails.price
-          : isNotFound
-              ? AppTexts.t('shopPriceUnavailable')
+          : isNotFound || allProductsMissing
+              ? unavailableText
               : (isBusy || storeAvailable)
                   ? AppTexts.t('shopLoadingPrice')
                   : AppTexts.t('shopPurchaseUnavailable'),

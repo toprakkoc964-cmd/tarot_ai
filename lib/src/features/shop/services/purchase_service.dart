@@ -26,16 +26,20 @@ class PurchaseServiceState {
     this.storeAvailable = false,
     this.products = const <String, ProductDetails>{},
     this.notFoundIds = const <String>{},
+    this.queriedProductIds = const <String>{},
     this.activeProductId,
     this.messageKey,
+    this.queryErrorCode,
   });
 
   final PurchaseServicePhase phase;
   final bool storeAvailable;
   final Map<String, ProductDetails> products;
   final Set<String> notFoundIds;
+  final Set<String> queriedProductIds;
   final String? activeProductId;
   final String? messageKey;
+  final String? queryErrorCode;
 
   bool get isBusy {
     return phase == PurchaseServicePhase.loadingProducts ||
@@ -45,24 +49,37 @@ class PurchaseServiceState {
         phase == PurchaseServicePhase.restoring;
   }
 
+  bool get allQueriedProductsMissing {
+    return storeAvailable &&
+        queriedProductIds.isNotEmpty &&
+        products.isEmpty &&
+        notFoundIds.length >= queriedProductIds.length;
+  }
+
   PurchaseServiceState copyWith({
     PurchaseServicePhase? phase,
     bool? storeAvailable,
     Map<String, ProductDetails>? products,
     Set<String>? notFoundIds,
+    Set<String>? queriedProductIds,
     String? activeProductId,
     String? messageKey,
+    String? queryErrorCode,
     bool clearActiveProductId = false,
     bool clearMessageKey = false,
+    bool clearQueryErrorCode = false,
   }) {
     return PurchaseServiceState(
       phase: phase ?? this.phase,
       storeAvailable: storeAvailable ?? this.storeAvailable,
       products: products ?? this.products,
       notFoundIds: notFoundIds ?? this.notFoundIds,
+      queriedProductIds: queriedProductIds ?? this.queriedProductIds,
       activeProductId:
           clearActiveProductId ? null : activeProductId ?? this.activeProductId,
       messageKey: clearMessageKey ? null : messageKey ?? this.messageKey,
+      queryErrorCode:
+          clearQueryErrorCode ? null : queryErrorCode ?? this.queryErrorCode,
     );
   }
 }
@@ -89,6 +106,7 @@ class PurchaseService {
 
   Future<void> initialize() async {
     if (_initialized) return;
+
     _subscription = _iap.purchaseStream.listen(
       _handlePurchaseUpdates,
       onError: (Object error, StackTrace stackTrace) {
@@ -114,14 +132,24 @@ class PurchaseService {
   }
 
   Future<void> loadProducts({Set<String>? productIds}) async {
-    final ids = productIds ?? ShopProductCatalog.productIds;
+    final ids = (productIds ?? ShopProductCatalog.productIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (ids.isEmpty) return;
+
     state.value = state.value.copyWith(
       phase: PurchaseServicePhase.loadingProducts,
+      queriedProductIds: ids,
       clearMessageKey: true,
+      clearQueryErrorCode: true,
     );
 
     final available = await _iap.isAvailable();
     if (!available) {
+      if (kDebugMode) {
+        debugPrint('IAP store is not available on this device/build.');
+      }
       state.value = state.value.copyWith(
         phase: PurchaseServicePhase.idle,
         storeAvailable: false,
@@ -137,16 +165,36 @@ class PurchaseService {
       for (final product in response.productDetails) product.id: product,
     };
 
-    if (kDebugMode && response.notFoundIDs.isNotEmpty) {
-      debugPrint('StoreKit not found IDs: ${response.notFoundIDs.join(', ')}');
+    if (kDebugMode) {
+      if (response.error != null) {
+        debugPrint(
+          'IAP query error: code=${response.error!.code} '
+          'message=${response.error!.message} '
+          'details=${response.error!.details}',
+        );
+      }
+      if (response.notFoundIDs.isNotEmpty) {
+        debugPrint('IAP not found IDs: ${response.notFoundIDs.join(', ')}');
+      }
+      if (products.isNotEmpty) {
+        debugPrint('IAP loaded products: ${products.keys.join(', ')}');
+      }
     }
 
+    final queryFailed = response.error != null;
     state.value = state.value.copyWith(
       phase: PurchaseServicePhase.idle,
-      storeAvailable: true,
+      storeAvailable: !queryFailed,
       products: products,
       notFoundIds: response.notFoundIDs.toSet(),
-      clearMessageKey: true,
+      queryErrorCode: response.error?.code,
+      messageKey: queryFailed
+          ? 'shopPurchaseUnavailable'
+          : (products.isEmpty && response.notFoundIDs.isNotEmpty)
+              ? 'shopProductsNotFoundHint'
+              : null,
+      clearMessageKey: !queryFailed &&
+          !(products.isEmpty && response.notFoundIDs.isNotEmpty),
     );
   }
 
@@ -158,7 +206,9 @@ class PurchaseService {
       state.value = state.value.copyWith(
         phase: PurchaseServicePhase.error,
         activeProductId: productId,
-        messageKey: 'shopPriceUnavailable',
+        messageKey: state.value.allQueriedProductsMissing
+            ? 'shopProductsNotFoundHint'
+            : 'shopPriceUnavailable',
       );
       return;
     }

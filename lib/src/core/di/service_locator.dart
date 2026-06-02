@@ -13,7 +13,7 @@ import '../../features/coffee_reading/services/coffee_temp_file_cleaner.dart';
 import '../../features/coffee_reading/services/coffee_validation_service.dart';
 import '../../features/coffee_reading/services/mock_coffee_reading_service.dart';
 import '../../features/palmistry/services/i_palmistry_service.dart';
-import '../../features/palmistry/services/mock_palmistry_service.dart';
+import '../../features/palmistry/services/cloud_palmistry_service.dart';
 import '../../features/shop/services/backend_purchase_verification_service.dart';
 import '../../features/shop/services/entitlement_service.dart';
 import '../../features/shop/services/purchase_service.dart';
@@ -30,7 +30,7 @@ const _useMockCoffeeReading = bool.fromEnvironment(
 Future<void> setupServiceLocator() async {
   if (!getIt.isRegistered<IPalmistryService>()) {
     getIt.registerLazySingleton<IPalmistryService>(
-      () => MockPalmistryService(),
+      () => CloudPalmistryService(),
     );
   }
   if (!getIt.isRegistered<CoffeeTempFileCleaner>()) {

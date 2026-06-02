@@ -1,4 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+  GenerativeModel,
+  GoogleGenerativeAI
+} from '@google/generative-ai';
 
 let client: GoogleGenerativeAI | null = null;
 
@@ -32,9 +35,23 @@ export async function createReadingText(input: {
 
     const result = await model.generateContent(input.userPrompt);
     const text = result.response.text().trim();
-    return text || 'The cards suggest reflection and steady action.';
+    return text;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`GEMINI_REQUEST_FAILED:${message}`);
   }
+}
+
+export function getGenerativeModelForVision(input: {
+  modelName?: string;
+  maxOutputTokens?: number;
+}): GenerativeModel {
+  const modelName = input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  return getClient().getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature: 0.35,
+      maxOutputTokens: input.maxOutputTokens ?? 720
+    }
+  });
 }

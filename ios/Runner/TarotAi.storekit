@@ -1,0 +1,107 @@
+{
+  "identifier" : "TarotAi",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "29.99",
+      "familyShareable" : false,
+      "internalID" : "6738291001",
+      "localizations" : [
+        {
+          "description" : "50 jeton paketi",
+          "displayName" : "50 Jeton",
+          "locale" : "tr"
+        }
+      ],
+      "productID" : "tarotai.jeton.50",
+      "referenceName" : "50 Credits",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "6738291002",
+      "localizations" : [
+        {
+          "description" : "250 jeton paketi",
+          "displayName" : "250 Jeton",
+          "locale" : "tr"
+        }
+      ],
+      "productID" : "tarotai.credits.250",
+      "referenceName" : "250 Credits",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "299.99",
+      "familyShareable" : false,
+      "internalID" : "6738291003",
+      "localizations" : [
+        {
+          "description" : "1000 jeton paketi",
+          "displayName" : "1000 Jeton",
+          "locale" : "tr"
+        }
+      ],
+      "productID" : "tarotai.credits.1000",
+      "referenceName" : "1000 Credits",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21482901",
+      "localizations" : [
+
+      ],
+      "name" : "Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "149.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6738291004",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Reklamsiz kullanim ve her ay 200 bonus jeton. Aylik otomatik yenilenir.",
+              "displayName" : "Aylik Premium",
+              "locale" : "tr"
+            },
+            {
+              "description" : "Ad-free experience and 200 bonus tokens each month. Renews automatically.",
+              "displayName" : "Monthly Premium",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "tarotai.premium.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Premium Monthly",
+          "subscriptionGroupID" : "21482901",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

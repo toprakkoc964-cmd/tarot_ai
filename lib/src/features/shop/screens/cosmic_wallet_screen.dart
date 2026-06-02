@@ -8,6 +8,7 @@ import '../../../core/app_locale.dart';
 import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/shop_item_view_model.dart';
+import '../models/shop_product_catalog.dart';
 import '../models/shop_product_config.dart';
 import '../services/entitlement_service.dart';
 import '../services/purchase_service.dart';
@@ -51,10 +52,18 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen>
     _purchaseService = GetIt.instance<PurchaseService>();
     _shopConfigService = GetIt.instance<ShopConfigService>();
     _entitlementService = GetIt.instance<EntitlementService>();
-    _configFuture = _shopConfigService.fetchConfig();
+    _configFuture = _loadShopConfig();
     _purchaseService.addListener(_handlePurchaseStateChanged);
     AppLocale.notifier.addListener(_reloadForLocale);
-    _purchaseService.loadProducts();
+  }
+
+  Future<ShopConfig> _loadShopConfig() async {
+    final config = await _shopConfigService.fetchConfig();
+    if (!mounted) return config;
+    await _purchaseService.loadProducts(
+      productIds: ShopProductCatalog.productIdsFromConfig(config),
+    );
+    return config;
   }
 
   @override
@@ -69,8 +78,14 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen>
     if (!mounted) return;
     setState(() {
       _shopConfigService.invalidate();
-      _configFuture = _shopConfigService.fetchConfig();
+      _configFuture = _loadShopConfig();
     });
+  }
+
+  Future<void> _retryLoadProducts(ShopConfig config) async {
+    await _purchaseService.loadProducts(
+      productIds: ShopProductCatalog.productIdsFromConfig(config),
+    );
   }
 
   void _handlePurchaseStateChanged() {
@@ -131,12 +146,14 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen>
                                     config: config,
                                     purchaseService: _purchaseService,
                                     purchaseState: purchaseState,
+                                    onRetryLoad: () => _retryLoadProducts(config),
                                   )
                                 : _PremiumTab(
                                     config: config,
                                     purchaseService: _purchaseService,
                                     shopConfigService: _shopConfigService,
                                     purchaseState: purchaseState,
+                                    onRetryLoad: () => _retryLoadProducts(config),
                                   );
                           },
                         ),
@@ -223,11 +240,13 @@ class _CreditsTab extends StatelessWidget {
     required this.config,
     required this.purchaseService,
     required this.purchaseState,
+    required this.onRetryLoad,
   });
 
   final ShopConfig config;
   final PurchaseService purchaseService;
   final PurchaseServiceState purchaseState;
+  final VoidCallback onRetryLoad;
 
   @override
   Widget build(BuildContext context) {
@@ -240,12 +259,20 @@ class _CreditsTab extends StatelessWidget {
             storeAvailable: purchaseState.storeAvailable,
             isBusy: purchaseState.isBusy,
             isNotFound: purchaseState.notFoundIds.contains(config.productId),
+            allProductsMissing: purchaseState.allQueriedProductsMissing,
           ),
         )
         .toList();
 
     return Column(
       children: [
+        if (purchaseState.allQueriedProductsMissing) ...[
+          _StoreSetupHint(
+            isLoading: purchaseState.phase == PurchaseServicePhase.loadingProducts,
+            onRetry: onRetryLoad,
+          ),
+          const SizedBox(height: 14),
+        ],
         for (final item in items) ...[
           CreditPackCard(
             item: item,
@@ -268,12 +295,14 @@ class _PremiumTab extends StatelessWidget {
     required this.purchaseService,
     required this.shopConfigService,
     required this.purchaseState,
+    required this.onRetryLoad,
   });
 
   final ShopConfig config;
   final PurchaseService purchaseService;
   final ShopConfigService shopConfigService;
   final PurchaseServiceState purchaseState;
+  final VoidCallback onRetryLoad;
 
   @override
   Widget build(BuildContext context) {
@@ -288,10 +317,18 @@ class _PremiumTab extends StatelessWidget {
             isNotFound: purchaseState.notFoundIds.contains(
               configs.first.productId,
             ),
+            allProductsMissing: purchaseState.allQueriedProductsMissing,
           );
 
     return Column(
       children: [
+        if (purchaseState.allQueriedProductsMissing) ...[
+          _StoreSetupHint(
+            isLoading: purchaseState.phase == PurchaseServicePhase.loadingProducts,
+            onRetry: onRetryLoad,
+          ),
+          const SizedBox(height: 14),
+        ],
         if (item == null)
           _ErrorPanel(message: AppTexts.t('shopPriceUnavailable'))
         else
@@ -439,6 +476,74 @@ class _PremiumPill extends StatelessWidget {
               color: AppColors.primaryPink,
               fontSize: 11,
               fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoreSetupHint extends StatelessWidget {
+  const _StoreSetupHint({
+    required this.isLoading,
+    required this.onRetry,
+  });
+
+  final bool isLoading;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primaryPink.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primaryPink.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            AppTexts.t('shopProductsNotFoundHint'),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(
+              color: AppColors.onSurface.withValues(alpha: 0.88),
+              fontSize: 13,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            AppTexts.t('shopStoreProductIds'),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.spaceGrotesk(
+              color: AppColors.tertiaryGold.withValues(alpha: 0.9),
+              fontSize: 11,
+              height: 1.35,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: isLoading ? null : onRetry,
+            icon: isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(AppTexts.t('shopRetryLoadProducts')),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryPink,
+              side: BorderSide(
+                color: AppColors.primaryPink.withValues(alpha: 0.4),
+              ),
             ),
           ),
         ],

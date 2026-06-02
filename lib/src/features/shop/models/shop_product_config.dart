@@ -133,3 +133,9 @@ class ShopConfig {
     return products;
   }
 }
+
+/// Known store package names (must match Play Console / App Store Connect).
+abstract final class ShopStoreTargets {
+  static const String androidPackageName = 'com.example.tarot_ai';
+  static const String iosBundleId = 'com.tarotai';
+}

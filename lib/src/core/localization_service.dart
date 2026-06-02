@@ -28,6 +28,39 @@ class LocalizationService {
     'error.profile_required': 'Please fill all required fields.',
     'error.cards_required': 'Please select at least one card.',
     'error.social_cancelled': 'Sign in was cancelled.',
+    'error.google_sign_in_config':
+        'Google Sign-In is not configured. Add SHA-1 in Firebase and update google-services.json.',
+    'error.google_sign_in_failed': 'Google sign-in failed. Please try again.',
+    'tarot.spread.headline': 'Your spread is ready',
+    'tarot.spread.pick_from_deck':
+        'Choose a card from the deck and reveal today\'s guidance.',
+    'tarot.spread.tap_to_draw':
+        'Tap the deck once — it slows down and a card is drawn for you.',
+    'tarot.spread.pick_another_short': '+1 CARD',
+    'tarot.spread.selection_hint':
+        '{count}/{max} cards selected. Continue or add another card.',
+    'tarot.spread.continue_cta': 'CONTINUE',
+    'tarot.spread.pick_another': 'PICK ANOTHER',
+    'tarot.spread.revealing': 'Revealing card...',
+    'tarot.spread.duplicate_card': 'You already selected this card.',
+    'tarot.spread.max_cards': 'You can select up to 7 cards.',
+    'tarot.spread.load_failed': 'Card could not be loaded. Try again.',
+    'tarot.spread.chat_title': 'Bilge Aris · Tarot Spread',
+    'tarot.spread.hero_title': 'Your chosen cards',
+    'tarot.spread.hero_subtitle': 'Bilge Aris reads them as one spread',
+    'aris.opening_error_generic':
+        'Aris cannot respond right now. Please try again.',
+    'aris.opening_error_api_key':
+        'Gemini API key is not configured on the server. Add it to functions/.env and redeploy Cloud Functions.',
+    'aris.opening_error_auth':
+        'Session could not be verified. Sign out and sign in again.',
+    'aris.opening_error_profile':
+        'Profile record not found. Complete registration or onboarding.',
+    'aris.opening_error_input':
+        'Card data is missing. Restart the spread from the home screen.',
+    'aris.opening_error_network':
+        'Cannot reach the server. Check your connection or whether Cloud Functions are deployed.',
+    'aris.opening_error_app_check': 'App Check verification failed.',
     'error.apple_not_supported':
         'Apple Sign-In is not supported on this device.',
     'toast.reset_sent': 'Password reset email has been sent.',
@@ -110,9 +143,20 @@ class LocalizationService {
         'A daily insight could not be created because your birth date is missing.',
     'home.tab.ritual': 'Ritual',
     'home.tab.archive': 'Archive',
+    'home.tab.messages': 'Messages',
     'home.tab.cosmic': 'Cosmic',
     'home.tab.credit': 'Credit',
     'home.tab.profile': 'Profile',
+    'messages.title': 'Messages',
+    'messages.subtitle':
+        'Continue past tarot readings with Bilge Aris from here.',
+    'messages.empty_title': 'No saved readings yet',
+    'messages.empty_body':
+        'After you draw cards in Ritual and chat with Bilge Aris, your conversations appear here.',
+    'messages.load_error':
+        'Could not load reading history. Check your connection and try again.',
+    'messages.resume_error': 'Could not open this chat. Please try again.',
+    'messages.thread_count': '{count} messages',
     'home.cosmic.eyebrow': 'COSMIC GUIDE',
     'home.cosmic.title': 'Mystic Discovery',
     'home.cosmic.subtitle':
@@ -140,6 +184,16 @@ class LocalizationService {
     'palmOpenFingers': 'Open your fingers.',
     'palmShowPalm': 'Turn your palm toward the camera.',
     'palmTapToScan': 'TAP TO SCAN',
+    'palmReadyToScan': 'Center your palm and tap to scan.',
+    'palmErrorNotPalm':
+        'This does not look like an open palm. Show your inner palm clearly.',
+    'palmErrorUnreadable':
+        'The photo could not be analyzed. Improve lighting and try again.',
+    'palmErrorInvalidImage': 'Invalid or oversized photo. Please capture again.',
+    'palmErrorAuth':
+        'Session could not be verified. Sign out and sign in again.',
+    'palmErrorServerConfig':
+        'Gemini API key is missing on the server. Check functions/.env.',
     'palmScanningLoading': 'Decoding the universal lines...',
     'palmResultTitle': 'Your Palm Reading Is Ready',
     'palmResultDescription':
@@ -223,6 +277,11 @@ class LocalizationService {
     'shopLoadingPrice': 'Calculating price...',
     'shopPriceUnavailable': 'This product is currently unavailable',
     'shopPurchaseUnavailable': 'Purchases are currently unavailable',
+    'shopProductsNotFoundHint':
+        'Store products could not be loaded. Make sure the product IDs below exist in Play Console / App Store Connect for your app package.',
+    'shopStoreProductIds':
+        'tarotai.jeton.50 · tarotai.credits.250 · tarotai.credits.1000 · tarotai.premium.monthly',
+    'shopRetryLoadProducts': 'Reload products',
     'shopPurchasePending': 'Purchase is processing...',
     'shopPurchaseVerifying': 'Purchase is being verified...',
     'shopPurchaseVerified': 'Purchase verified.',
@@ -449,6 +508,26 @@ class LocalizationService {
     'error.profile_required': 'Lutfen zorunlu alanlari doldur.',
     'error.cards_required': 'En az bir kart secmelisin.',
     'error.social_cancelled': 'Giris islemi iptal edildi.',
+    'error.google_sign_in_config':
+        'Google girisi yapilandirilmamis. Firebase\'de SHA-1 ekleyip google-services.json dosyasini guncelleyin.',
+    'error.google_sign_in_failed': 'Google ile giris basarisiz. Tekrar deneyin.',
+    'tarot.spread.headline': 'Secimin hazir',
+    'tarot.spread.pick_from_deck':
+        'Dolasimdaki kartlardan birini sec ve bugunun rehberligini aciga cikar.',
+    'tarot.spread.tap_to_draw':
+        'Desteye bir kez dokun; kartlar yavaslar ve bir kart otomatik secilir.',
+    'tarot.spread.pick_another_short': '+1 KART',
+    'tarot.spread.selection_hint':
+        '{count}/{max} kart sectin. Devam edebilir veya yeni kart ekleyebilirsin.',
+    'tarot.spread.continue_cta': 'DEVAM ET',
+    'tarot.spread.pick_another': 'BIR KART DAHA SEC',
+    'tarot.spread.revealing': 'Kart aciliyor...',
+    'tarot.spread.duplicate_card': 'Bu karti zaten sectin.',
+    'tarot.spread.max_cards': 'En fazla 7 kart secebilirsin.',
+    'tarot.spread.load_failed': 'Kart yuklenemedi. Tekrar dene.',
+    'tarot.spread.chat_title': 'Bilge Aris · Tarot Yayilimi',
+    'tarot.spread.hero_title': 'Sectigin kartlar',
+    'tarot.spread.hero_subtitle': 'Bilge Aris bunlari tek bir yayilim olarak yorumlar',
     'error.apple_not_supported': 'Bu cihazda Apple girisi desteklenmiyor.',
     'toast.reset_sent': 'Sifre sifirlama e-postasi gonderildi.',
     'toast.restore_pending': 'Restore icin satin alma gecmisi baglanmali.',
@@ -529,9 +608,20 @@ class LocalizationService {
         'Dogum tarihin kayitli olmadigi icin bugunluk yorum olusturulamadi.',
     'home.tab.ritual': 'Rituel',
     'home.tab.archive': 'Arsiv',
+    'home.tab.messages': 'Mesajlar',
     'home.tab.cosmic': 'Kozmik',
     'home.tab.credit': 'Kredi',
     'home.tab.profile': 'Profil',
+    'messages.title': 'Mesajlar',
+    'messages.subtitle':
+        'Daha önce çektiğin kart yorumlarına buradan devam et.',
+    'messages.empty_title': 'Henüz kayıtlı yorum yok',
+    'messages.empty_body':
+        'Ritüelden kart çekip Bilge Aris ile konuştuğunda sohbetlerin burada saklanır.',
+    'messages.load_error':
+        'Yorum geçmişi yüklenemedi. Bağlantını kontrol edip tekrar dene.',
+    'messages.resume_error': 'Sohbet yüklenemedi. Lütfen tekrar dene.',
+    'messages.thread_count': '{count} mesaj',
     'home.cosmic.eyebrow': 'KOZMİK REHBER',
     'home.cosmic.title': 'Mistik Keşif',
     'home.cosmic.subtitle':
@@ -559,6 +649,17 @@ class LocalizationService {
     'palmOpenFingers': 'Parmaklarını aç.',
     'palmShowPalm': 'Avuç içini kameraya çevir.',
     'palmTapToScan': 'TARAMA İÇİN DOKUN',
+    'palmReadyToScan': 'Avucunu ortaya hizala ve taramak için dokun.',
+    'palmErrorNotPalm':
+        'Bu görüntü avuç içi gibi görünmüyor. Avucunu açık ve net şekilde göster.',
+    'palmErrorUnreadable':
+        'Fotoğraf analiz edilemedi. Işığı artırıp avucunu sabit tutarak tekrar dene.',
+    'palmErrorInvalidImage':
+        'Fotoğraf geçersiz veya çok büyük. Tekrar çekmeyi dene.',
+    'palmErrorAuth':
+        'Oturumun doğrulanamadı. Çıkış yapıp tekrar giriş yap.',
+    'palmErrorServerConfig':
+        'Sunucuda Gemini API anahtarı eksik. Geliştirici functions/.env dosyasını kontrol etmeli.',
     'palmScanningLoading': 'Evrensel çizgilerin kodları çözülüyor...',
     'palmResultTitle': 'El Falı Analizin Hazır',
     'palmResultDescription':
@@ -643,6 +744,11 @@ class LocalizationService {
     'shopLoadingPrice': 'Fiyat hesaplanıyor...',
     'shopPriceUnavailable': 'Ürün şu anda kullanılamıyor',
     'shopPurchaseUnavailable': 'Satın alma şu anda kullanılamıyor',
+    'shopProductsNotFoundHint':
+        'Mağaza ürünleri yüklenemedi. Play Console / App Store Connect\'te aşağıdaki ürün kimliklerinin uygulama paketiyle eşleştiğinden emin ol.',
+    'shopStoreProductIds':
+        'tarotai.jeton.50 · tarotai.credits.250 · tarotai.credits.1000 · tarotai.premium.monthly',
+    'shopRetryLoadProducts': 'Ürünleri yeniden yükle',
     'shopPurchasePending': 'Satın alma işleniyor...',
     'shopPurchaseVerifying': 'Satın alma doğrulanıyor...',
     'shopPurchaseVerified': 'Satın alma doğrulandı.',

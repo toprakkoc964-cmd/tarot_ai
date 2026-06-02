@@ -22,7 +22,7 @@ export async function validateAppleReceipt(input: {
   }
 
   const productCreditsMap: Record<string, number> = {
-    'tarotai.credits.50': 50,
+    'tarotai.jeton.50': 50,
     'tarotai.credits.250': 250,
     'tarotai.credits.1000': 1000
   };

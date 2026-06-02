@@ -20,7 +20,20 @@ Firebase Console'da `Authentication > Sign-in method` altinda su provider'lari a
 
 ### Android
 - `Project settings > Your apps > Android` altinda SHA-1 ve SHA-256 fingerprint ekle.
-- `google-services.json` dosyasini `flutter_app/android/app/google-services.json` altina koy.
+- `google-services.json` dosyasini `android/app/google-services.json` altina koy.
+- **Google ile giris** icin `oauth_client` dizisi bos olmamali. Bos ise:
+  1. Firebase Console → Authentication → Sign-in method → **Google** acik olsun.
+  2. Android uygulamasina debug SHA-1/SHA-256 ekle (`powershell scripts/print_android_sha.ps1`).
+  3. Guncel `google-services.json` indir ve `android/app/` altina kopyala.
+  4. Firebase → Authentication → Google → **Web client ID** degerini `lib/src/core/google_auth_config.dart` icindeki `_defaultWebClientId` alanina yapistir (veya `--dart-define=GOOGLE_WEB_CLIENT_ID=...` kullan).
+
+Debug SHA-1 (bu makine): `B5:41:CC:EB:BF:1C:13:87:90:52:EA:CB:6E:B8:7B:33:EA:70:34:81`
+
+### Tarot kart gorselleri (Firebase Storage)
+Gunluk kart cekiminde gorseller `tarot_cards-major_arcana/` klasorunden yuklenir.
+Ornek dosya adlari: `00_the_fool.webp`, `20_judgement.webp`, `21_the_world.webp`.
+Bu klasor bos veya dosya adlari hataliysa kart yine secilir ancak gorsel yerine isimli placeholder gosterilir.
+Storage kurallarinin authenticated/read izinlerini kontrol et.
 
 ### iOS (Apple Sign-In)
 - Apple Developer hesabinda `Sign in with Apple` capability acik olmali.

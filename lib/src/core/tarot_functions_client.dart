@@ -49,16 +49,36 @@ class TarotFunctionsClient {
   }
 
   Future<Map<String, dynamic>> generateArisOpeningReading({
-    required String cardName,
-    required String cardImageUrl,
+    String? cardName,
+    String? cardImageUrl,
     required String day,
     String? lang,
+    List<String>? cardNames,
+    String? sessionId,
   }) async {
     final callable = _functions.httpsCallable('generateArisOpeningReading');
     final response = await callable.call({
-      'cardName': cardName,
-      'cardImageUrl': cardImageUrl,
+      if (cardName != null && cardName.trim().isNotEmpty) 'cardName': cardName,
+      if (cardImageUrl != null && cardImageUrl.trim().isNotEmpty)
+        'cardImageUrl': cardImageUrl,
       'day': day,
+      if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
+      if (cardNames != null && cardNames.isNotEmpty) 'cardNames': cardNames,
+      if (sessionId != null && sessionId.trim().isNotEmpty)
+        'sessionId': sessionId.trim(),
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> analyzePalmReading({
+    required String imageBase64,
+    String? lang,
+    String mimeType = 'image/jpeg',
+  }) async {
+    final callable = _functions.httpsCallable('analyzePalmReading');
+    final response = await callable.call({
+      'imageBase64': imageBase64,
+      'mimeType': mimeType,
       if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
     });
     return Map<String, dynamic>.from(response.data as Map);

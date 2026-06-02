@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -288,30 +289,70 @@ class NotificationService {
     required String body,
     required tz.TZDateTime scheduledAt,
   }) async {
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: scheduledAt,
-      notificationDetails: const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'high_importance_channel',
-          'Daily Readings',
-          channelDescription:
-              'Daily tarot and spiritual reminder notifications.',
-          importance: Importance.high,
-          priority: Priority.high,
+    final scheduleMode = await _resolveAndroidScheduleMode();
+    try {
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduledAt,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'high_importance_channel',
+            'Daily Readings',
+            channelDescription:
+                'Daily tarot and spiritual reminder notifications.',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(
+            categoryIdentifier: 'daily_readings',
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
-        iOS: DarwinNotificationDetails(
-          categoryIdentifier: 'daily_readings',
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: '$type:${scheduledAt.toIso8601String()}',
-    );
+        androidScheduleMode: scheduleMode,
+        payload: '$type:${scheduledAt.toIso8601String()}',
+      );
+    } on PlatformException catch (e) {
+      if (e.code != 'exact_alarms_not_permitted' ||
+          scheduleMode == AndroidScheduleMode.inexactAllowWhileIdle) {
+        debugPrint('Notification schedule skipped ($type): $e');
+        return;
+      }
+
+      try {
+        await _plugin.zonedSchedule(
+          id: id,
+          title: title,
+          body: body,
+          scheduledDate: scheduledAt,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'high_importance_channel',
+              'Daily Readings',
+              channelDescription:
+                  'Daily tarot and spiritual reminder notifications.',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+            iOS: DarwinNotificationDetails(
+              categoryIdentifier: 'daily_readings',
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          payload: '$type:${scheduledAt.toIso8601String()}',
+        );
+      } on PlatformException catch (retryError) {
+        debugPrint('Notification schedule skipped ($type): $retryError');
+        return;
+      }
+    }
+
     await _upsertScheduledInboxItem(
       _ScheduledInboxItem(
         id: id,
@@ -321,6 +362,21 @@ class NotificationService {
         scheduledAt: scheduledAt,
       ),
     );
+  }
+
+  Future<AndroidScheduleMode> _resolveAndroidScheduleMode() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return AndroidScheduleMode.exactAllowWhileIdle;
+    }
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canScheduleExact =
+        await androidPlugin?.canScheduleExactNotifications();
+    if (canScheduleExact == true) {
+      return AndroidScheduleMode.exactAllowWhileIdle;
+    }
+    return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
   Future<void> _backfillPendingNotificationsIntoInboxQueue() async {

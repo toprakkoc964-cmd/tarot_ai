@@ -13,7 +13,9 @@ import '../../core/app_texts.dart';
 import '../../core/tarot_functions_client.dart';
 import '../auth/user_profile_contract.dart';
 import '../readings/tarot_card_view.dart';
+import '../readings/tarot_service.dart';
 import 'ai_chat_context.dart';
+import 'aris_session_service.dart';
 
 const _kBg = Color(0xFF17081C);
 const _kPrimary = Color(0xFFFF5ED6);
@@ -29,12 +31,18 @@ class KozmikBilgePage extends StatefulWidget {
     required this.uid,
     this.cardTitle = '',
     this.cardImageUrl = '',
+    this.spreadCards = const [],
+    this.spreadSessionId,
+    this.resumeSessionId,
     this.chatContext,
   });
 
   final String uid;
   final String cardTitle;
   final String cardImageUrl;
+  final List<DrawnTarotCard> spreadCards;
+  final String? spreadSessionId;
+  final String? resumeSessionId;
   final AiChatContext? chatContext;
 
   @override
@@ -56,7 +64,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   @override
   void initState() {
     super.initState();
-    _loadOpeningReading();
+    final resumeId = widget.resumeSessionId?.trim() ?? '';
+    if (resumeId.isNotEmpty) {
+      _loadResumedSession(resumeId);
+    } else {
+      _loadOpeningReading();
+    }
   }
 
   @override
@@ -72,8 +85,24 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
 
   bool get _isCoffeeChat => widget.chatContext?.isCoffeeReading ?? false;
 
+  bool get _isSpreadChat => widget.spreadCards.isNotEmpty;
+
+  List<String> get _spreadCardNames => widget.spreadCards
+      .map((card) => card.card.displayName.trim())
+      .where((name) => name.isNotEmpty)
+      .toList(growable: false);
+
+  String? get _spreadCardNameJoined {
+    final names = _spreadCardNames;
+    if (names.isEmpty) return null;
+    return names.join(', ');
+  }
+
   String get _chatTitle =>
-      widget.chatContext?.title ?? AppTexts.t('arisTarotTitle');
+      widget.chatContext?.title ??
+      (_isSpreadChat
+          ? AppTexts.t('tarot.spread.chat_title')
+          : AppTexts.t('arisTarotTitle'));
 
   String get _assistantName => _isCoffeeChat
       ? AppTexts.t('coffeeMadamArisName')
@@ -120,6 +149,29 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  String _mapOpeningError(FirebaseFunctionsException error) {
+    final details = error.details?.toString().trim();
+    final code = (error.message ?? details ?? error.code).trim();
+    switch (code) {
+      case 'GEMINI_API_KEY_MISSING':
+        return AppTexts.t('aris.opening_error_api_key');
+      case 'AUTH_REQUIRED':
+      case 'unauthenticated':
+        return AppTexts.t('aris.opening_error_auth');
+      case 'USER_NOT_FOUND':
+        return AppTexts.t('aris.opening_error_profile');
+      case 'INVALID_ARIS_OPENING_INPUT':
+        return AppTexts.t('aris.opening_error_input');
+      case 'APP_CHECK_REQUIRED':
+        return AppTexts.t('aris.opening_error_app_check');
+      default:
+        if (error.code == 'unavailable' || error.code == 'deadline-exceeded') {
+          return AppTexts.t('aris.opening_error_network');
+        }
+        return AppTexts.t('aris.opening_error_generic');
+    }
+  }
+
   String _activeArisLanguage() {
     const supported = {'tr', 'en', 'de', 'es', 'fr', 'it', 'pt'};
     final appLang = AppLocale.current.trim().toLowerCase();
@@ -129,6 +181,59 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         PlatformDispatcher.instance.locale.languageCode.trim().toLowerCase();
     if (supported.contains(deviceLang)) return deviceLang;
     return 'en';
+  }
+
+  Future<void> _loadResumedSession(String sessionId) async {
+    if (mounted) {
+      setState(() {
+        _isLoadingOpening = true;
+        _openingError = null;
+      });
+    }
+    try {
+      final record = await ArisSessionService().fetchSession(
+        uid: widget.uid,
+        sessionId: sessionId,
+      );
+      if (!mounted) return;
+      if (record == null) {
+        setState(() {
+          _isLoadingOpening = false;
+          _openingError = AppTexts.t('messages.resume_error');
+        });
+        return;
+      }
+      setState(() {
+        _sessionId = record.sessionId;
+        _messages.clear();
+        if (record.openingMessage.isNotEmpty) {
+          _messages.add(_ArisChatMessage.assistant(record.openingMessage));
+        }
+        for (final entry in record.recentMessages) {
+          _messages.add(
+            entry.isUser
+                ? _ArisChatMessage.user(entry.text)
+                : _ArisChatMessage.assistant(entry.text),
+          );
+        }
+        _isLoadingOpening = false;
+        _openingError = null;
+      });
+      _scrollToBottomSoon();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingOpening = false;
+        _openingError = AppTexts.t('messages.resume_error');
+      });
+    }
+  }
+
+  void _scrollToBottomSoon() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
   }
 
   Future<void> _loadOpeningReading() async {
@@ -143,9 +248,30 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       });
     }
     try {
+      if (_isSpreadChat && _spreadCardNames.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _isLoadingOpening = false;
+          _openingError = AppTexts.t('aris.opening_error_input');
+        });
+        return;
+      }
+
+      final spreadNames = _isSpreadChat ? _spreadCardNames : null;
+      final singleName = widget.cardTitle.trim();
+      final cardNames = spreadNames ??
+          (singleName.isNotEmpty ? [singleName] : null);
+      final cardNameForApi = spreadNames != null
+          ? _spreadCardNameJoined
+          : (singleName.isNotEmpty ? singleName : null);
+
       final response = await _functionsClient.generateArisOpeningReading(
-        cardName: widget.cardTitle,
-        cardImageUrl: widget.cardImageUrl,
+        cardName: cardNameForApi,
+        cardImageUrl: _isSpreadChat
+            ? (widget.spreadCards.first.imageUrl)
+            : widget.cardImageUrl,
+        cardNames: cardNames,
+        sessionId: widget.spreadSessionId,
         day: _todayKey(),
         lang: _activeArisLanguage(),
       );
@@ -161,11 +287,17 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         _isLoadingOpening = false;
         _openingError = openingMessage.isEmpty ? 'Yorum alinamadi.' : null;
       });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingOpening = false;
+        _openingError = _mapOpeningError(error);
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isLoadingOpening = false;
-        _openingError = 'Aris simdi yanit veremiyor. Lutfen tekrar dene.';
+        _openingError = AppTexts.t('aris.opening_error_generic');
       });
     }
   }
@@ -361,6 +493,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                       imageFiles: _coffeeImageFiles,
                       subtitle: _coffeeHeaderSubtitle,
                     )
+                  else if (_isSpreadChat)
+                    _TarotSpreadHero(cards: widget.spreadCards)
                   else
                     _HeroTarotCard(
                       cardTitle: widget.cardTitle,
@@ -580,6 +714,106 @@ class _HeroTarotCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TarotSpreadHero extends StatelessWidget {
+  const _TarotSpreadHero({required this.cards});
+
+  final List<DrawnTarotCard> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: _kGlass,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimary.withValues(alpha: 0.18),
+            blurRadius: 40,
+            spreadRadius: -12,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppTexts.t('tarot.spread.hero_title'),
+            style: GoogleFonts.newsreader(
+              color: _kPrimary,
+              fontSize: 26,
+              fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            AppTexts.t('tarot.spread.hero_subtitle'),
+            style: GoogleFonts.spaceGrotesk(
+              color: _kSecondary.withValues(alpha: 0.82),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.7,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 148,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: cards.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final card = cards[index];
+                return SizedBox(
+                  width: 96,
+                  child: _SpreadCardPlaceholder(title: card.card.displayName),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpreadCardPlaceholder extends StatelessWidget {
+  const _SpreadCardPlaceholder({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2A1235), Color(0xFF17081C)],
+        ),
+        border: Border.all(color: _kPrimary.withValues(alpha: 0.28)),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.newsreader(
+              fontSize: 13,
+              fontStyle: FontStyle.italic,
+              color: _kOnSurface,
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -1,4 +1,15 @@
+import { config as loadEnv } from 'dotenv';
+import { resolve } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
+
+loadEnv({ path: resolve(__dirname, '../../.env') });
+
+if (!process.env.GEMINI_API_KEY?.trim()) {
+  logger.warn(
+    'GEMINI_API_KEY is not set. Aris opening/chat will use card-based fallback text when Gemini is unavailable.'
+  );
+}
+
 import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -19,6 +30,12 @@ import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
 import { getUserFcmTokens, sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
+import {
+  arisSpreadSystemRules,
+  isOffTopicArisMessage,
+  offTopicArisReply
+} from './lib/aris-guardrails';
+import { analyzePalmWithGemini } from './lib/palm-reading';
 
 initializeApp();
 
@@ -139,6 +156,11 @@ function sanitizeShortText(value: unknown, maxLength: number): string {
   return value.trim().replace(/\s+/g, ' ').slice(0, maxLength);
 }
 
+function sanitizeBase64Image(value: unknown, maxChars: number): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, '').slice(0, maxChars);
+}
+
 function cleanArisPersonaText(value: string): string {
   return value
     .replace(/\bAk[iı]l Amca(?:'n[iı]n|'ya|'dan|'da)?\b/gi, 'Bilge Aris')
@@ -188,26 +210,32 @@ function buildArisProfileContext(user: UserDoc & Record<string, unknown>): strin
 function buildArisOpeningPrompt(input: {
   user: UserDoc & Record<string, unknown>;
   cardName: string;
+  cardNames?: string[];
   lang: string;
 }): { systemPrompt: string; userPrompt: string } {
+  const spread = Array.isArray(input.cardNames) ? input.cardNames.filter(Boolean) : [];
+  const isSpread = spread.length > 1;
+  const cardsLine = isSpread
+    ? `Selected tarot cards (${spread.length}): ${spread.join(', ')}`
+    : `Daily card: ${input.cardName}`;
+
   return {
     systemPrompt: [
-      'You are Bilge Aris, a mystical but grounded tarot guide.',
-      'Your name is exactly Bilge Aris. Never rename yourself, translate your name, or refer to any guide as Akil Amca, Wise Uncle, mentor uncle, or another persona.',
-      'Tarot card names are canonical labels. Do not translate, rename, or personify the card as a different guide.',
-      'Write warm, specific reflections that feel personal, spacious, and useful without claiming certainty.',
-      'Do not mention that you are an AI.',
-      'Do not use markdown, emojis, bullet lists, medical advice, legal advice, financial advice, or deterministic predictions.',
-      'Never predict death dates, exact happiness dates, or fixed life outcomes.',
-      `Response language must be strictly: ${input.lang}.`,
-      'Keep the response between 75 and 115 words.'
+      arisSpreadSystemRules(input.lang),
+      isSpread
+        ? 'Keep the response between 180 and 260 words.'
+        : 'Keep the response between 100 and 140 words.'
     ].join(' '),
     userPrompt: [
-      'Create the opening daily-card reflection for this user.',
+      isSpread
+        ? 'Create the opening spread interpretation for this user.'
+        : 'Create the opening daily-card reflection for this user.',
       ...buildArisProfileContext(input.user),
-      `Daily card: ${input.cardName}`,
-      'Focus on what this card may invite the user to notice today.',
-      'End with one gentle, actionable reflection.'
+      cardsLine,
+      isSpread
+        ? 'Interpret ONLY these cards together. For EACH selected card, write 2-3 sentences on its specific meaning in this spread (name the card explicitly). Then add a synthesis paragraph on how the cards interact (tension, harmony, shared theme). End with one grounded practical reflection for today.'
+        : 'Focus on what this single card invites the user to notice today. Give layered meaning, not a one-line summary.',
+      'Do not answer unrelated life topics. Do not use generic filler.'
     ].join('\n')
   };
 }
@@ -215,33 +243,39 @@ function buildArisOpeningPrompt(input: {
 function buildArisFallbackOpening(input: {
   user: UserDoc & Record<string, unknown>;
   cardName: string;
+  cardNames?: string[];
   lang: string;
 }): string {
+  const spread = Array.isArray(input.cardNames) ? input.cardNames.filter(Boolean) : [];
+  const cardsLabel = spread.length > 0 ? spread.join(', ') : input.cardName;
   const name = resolveUserDisplayName(input.user);
-  const birthDate = resolveUserBirthDate(input.user);
-  let zodiac = '';
-  if (birthDate) {
-    try {
-      zodiac = zodiacFromBirthDate(birthDate);
-    } catch {
-      zodiac = '';
-    }
-  }
+  const address = name && name !== 'Seeker' ? `${name}, ` : '';
 
   if (input.lang === 'tr') {
-    const address = name && name !== 'Seeker' ? `${name}, ` : '';
-    const zodiacPart = zodiac ? `${zodiac} enerjinle birlikte ` : '';
+    if (spread.length > 1) {
+      return [
+        `${address}sectigin kartlar ${cardsLabel} birlikte tek bir hikaye anlatiyor.`,
+        'Bu yayilim acele karar yerine netlik ve ic dengenin yeniden kurulmasini cagiriyor.',
+        'Her kartin sesini ayri ayri dinle; sonra bugun icin tek bir nazik adim sec.'
+      ].join(' ');
+    }
     return [
-      `${address}${zodiacPart}${input.cardName} karti bugun sana daha sakin ama daha duru bir bakis cagrisinda bulunuyor.`,
+      `${address}${input.cardName} karti bugun sana daha sakin ama daha duru bir bakis cagrisinda bulunuyor.`,
       'Bu kart, aceleyle cevap aramak yerine icinden gecen isareti fark etmeni ister.',
       'Bugun bir adim atmadan once kendine sunu sor: Beni gercekten hafifleten secim hangisi?'
     ].join(' ');
   }
 
-  const address = name && name !== 'Seeker' ? `${name}, ` : '';
-  const zodiacPart = zodiac ? `with your ${zodiac} energy, ` : '';
+  if (spread.length > 1) {
+    return [
+      `${address}your spread ${cardsLabel} speaks as one story.`,
+      'Together these cards invite clarity and emotional balance instead of haste.',
+      'Listen to each card, then choose one gentle step for today.'
+    ].join(' ');
+  }
+
   return [
-    `${address}${zodiacPart}${input.cardName} invites you to slow down and notice what is becoming clearer today.`,
+    `${address}${input.cardName} invites you to slow down and notice what is becoming clearer today.`,
     'This card asks you to choose the path that feels honest rather than merely urgent.',
     'Before you act, ask yourself which next step would leave you lighter.'
   ].join(' ');
@@ -414,11 +448,16 @@ function quickArisReply(input: {
 function buildArisConversationPrompt(input: {
   user: UserDoc & Record<string, unknown>;
   cardName: string;
+  cardNames?: string[];
   openingMessage: string;
   recentMessages: Array<{ role: 'user' | 'assistant'; text: string }>;
   userMessage: string;
   lang: string;
 }): { systemPrompt: string; userPrompt: string } {
+  const spread = Array.isArray(input.cardNames) ? input.cardNames.filter(Boolean) : [];
+  const cardsLine = spread.length > 0
+    ? `Selected tarot cards: ${spread.join(', ')}`
+    : `Daily card: ${input.cardName}`;
   const transcript = input.recentMessages
     .slice(-6)
     .map((message) => `${message.role === 'user' ? 'User' : 'Aris'}: ${message.text}`)
@@ -426,26 +465,18 @@ function buildArisConversationPrompt(input: {
 
   return {
     systemPrompt: [
-      'You are Bilge Aris, a mystical but grounded tarot guide continuing a short conversation.',
-      'Your name is exactly Bilge Aris. Never rename yourself, translate your name, or refer to any guide as Akil Amca, Wise Uncle, mentor uncle, or another persona.',
-      'Tarot card names are canonical labels. Do not translate, rename, or personify the card as a different guide.',
-      'Give rich, emotionally intelligent, and practical reflections with a clear beginning, insight, and grounded next step.',
-      'Do not mention that you are an AI.',
-      'Do not use markdown, emojis, bullet lists, medical advice, legal advice, financial advice, or deterministic predictions.',
-      'Never predict death dates, exact happiness dates, or fixed life outcomes.',
-      'If the user asks about known profile facts, answer directly from the profile context before adding any reflection.',
-      'If the user asks to continue in a specific language, obey that language immediately.',
-      `Response language must be strictly: ${input.lang}.`,
-      'If the user only thanks you, greets you, corrects your name, or asks for a tiny acknowledgement, answer briefly in one or two sentences.',
-      'Keep the response between 85 and 140 words unless the user asks a direct factual profile question or a short social acknowledgement.'
+      arisSpreadSystemRules(input.lang),
+      'If the user asks about known profile facts, answer directly from profile context first.',
+      'If the user only thanks you or greets you, answer briefly in one or two sentences.',
+      'Keep the response between 85 and 140 words unless it is a short acknowledgement.'
     ].join(' '),
     userPrompt: [
       ...buildArisProfileContext(input.user),
-      `Daily card: ${input.cardName}`,
+      cardsLine,
       `Opening reflection: ${input.openingMessage}`,
       transcript ? `Recent conversation:\n${transcript}` : '',
       `User: ${input.userMessage}`,
-      'Answer as Aris. For direct profile questions, use the profile context directly; for reflective questions, stay anchored to the daily card while still answering the user clearly.'
+      'Answer ONLY through this spread. Reference at least one selected card by exact name. Refuse unrelated topics.'
     ].filter(Boolean).join('\n')
   };
 }
@@ -1308,9 +1339,23 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
 
     requireAppCheckIfEnabled(request);
     const uid = request.auth.uid;
-    const cardName = sanitizeShortText(request.data?.cardName, 80);
+    let cardNamesInput = Array.isArray(request.data?.cardNames)
+      ? request.data.cardNames.map((item: unknown) => sanitizeShortText(item, 80)).filter(Boolean).slice(0, 7)
+      : [];
+    const singleCardName = sanitizeShortText(request.data?.cardName, 80);
+    if (cardNamesInput.length === 0 && singleCardName.includes(',')) {
+      cardNamesInput = singleCardName
+        .split(',')
+        .map((item) => sanitizeShortText(item, 80))
+        .filter(Boolean)
+        .slice(0, 7);
+    }
+    const cardName = cardNamesInput.length > 0
+      ? cardNamesInput.join(', ')
+      : singleCardName;
     const cardImageUrl = sanitizeShortText(request.data?.cardImageUrl, 500);
     const day = sanitizeShortText(request.data?.day, 10) || localDateKey();
+    const sessionId = sanitizeShortText(request.data?.sessionId, 48) || day;
     if (!cardName || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
       throw new HttpsError('invalid-argument', 'INVALID_ARIS_OPENING_INPUT');
     }
@@ -1325,7 +1370,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       requestedLang: request.data?.lang,
       user
     });
-    const sessionRef = userRef.collection('aris_sessions').doc(day);
+    const sessionRef = userRef.collection('aris_sessions').doc(sessionId);
     const existingSession = await sessionRef.get();
     if (existingSession.exists) {
       const existing = existingSession.data() as {
@@ -1337,7 +1382,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       const openingMessage = existing.openingMessage?.trim();
       if (existing.cardName === cardName && existing.lang === lang && openingMessage && !hasArisPersonaLeak(openingMessage)) {
         return {
-          sessionId: day,
+          sessionId,
           openingMessage,
           cardName,
           cardImageUrl: existing.cardImageUrl ?? cardImageUrl,
@@ -1346,13 +1391,18 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       }
     }
 
-    const prompts = buildArisOpeningPrompt({ user, cardName, lang });
+    const prompts = buildArisOpeningPrompt({
+      user,
+      cardName,
+      cardNames: cardNamesInput.length > 0 ? cardNamesInput : undefined,
+      lang
+    });
     let openingMessage = '';
     let source: 'ai' | 'fallback' = 'ai';
     try {
       openingMessage = (await createReadingText({
         ...prompts,
-        maxOutputTokens: 220,
+        maxOutputTokens: cardNamesInput.length > 1 ? 640 : 320,
         modelName: arisModel
       })).trim();
     } catch (err) {
@@ -1366,7 +1416,12 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
     }
     if (!openingMessage) {
       source = 'fallback';
-      openingMessage = buildArisFallbackOpening({ user, cardName, lang });
+      openingMessage = buildArisFallbackOpening({
+        user,
+        cardName,
+        cardNames: cardNamesInput.length > 0 ? cardNamesInput : undefined,
+        lang
+      });
     }
     openingMessage = cleanArisPersonaText(openingMessage);
 
@@ -1375,6 +1430,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       day,
       lang,
       cardName,
+      cardNames: cardNamesInput.length > 0 ? cardNamesInput : [cardName],
       cardImageUrl,
       openingMessage,
       openingSource: source,
@@ -1384,7 +1440,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
     }, { merge: true });
 
     return {
-      sessionId: day,
+      sessionId,
       openingMessage,
       cardName,
       cardImageUrl,
@@ -1404,7 +1460,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
 
     requireAppCheckIfEnabled(request);
     const uid = request.auth.uid;
-    const sessionId = sanitizeShortText(request.data?.sessionId, 40);
+    const sessionId = sanitizeShortText(request.data?.sessionId, 48);
     const message = sanitizeShortText(request.data?.message, 320);
     const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
     if (!sessionId || !message) {
@@ -1430,11 +1486,15 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
     const user = userSnap.data() as UserDoc & Record<string, unknown>;
     const session = sessionSnap.data() as {
       cardName?: string;
+      cardNames?: string[];
       openingMessage?: string;
       lang?: string;
       recentMessages?: Array<{ role?: string; text?: string }>;
     };
     const cardName = session.cardName?.trim();
+    const cardNames = Array.isArray(session.cardNames)
+      ? session.cardNames.map((item) => sanitizeShortText(item, 80)).filter(Boolean)
+      : [];
     const openingMessage = session.openingMessage
       ? cleanArisPersonaText(session.openingMessage.trim())
       : '';
@@ -1459,14 +1519,18 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
     });
     const currentCredits = Number((user as UserDoc).wallet.credits ?? 0);
     const restrictedReply = restrictedArisReply({ message, lang });
-    if (restrictedReply) {
+    const offTopicReply = !restrictedReply && isOffTopicArisMessage(message)
+      ? offTopicArisReply(lang)
+      : null;
+    if (restrictedReply || offTopicReply) {
+      const guardReply = restrictedReply ?? offTopicReply!;
       const updatedMessages = [
         ...recentMessages,
         { role: 'user' as const, text: message },
-        { role: 'assistant' as const, text: restrictedReply }
+        { role: 'assistant' as const, text: guardReply }
       ].slice(-6);
       const result = {
-        reply: restrictedReply,
+        reply: guardReply,
         remainingCredits: currentCredits,
         restricted: true
       };
@@ -1544,6 +1608,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
         : buildArisConversationPrompt({
         user,
         cardName,
+        cardNames: cardNames.length > 0 ? cardNames : undefined,
         openingMessage,
         recentMessages,
         userMessage: message,
@@ -2124,6 +2189,55 @@ export const cleanupCoffeeArtifacts = onSchedule(
     });
   }
 );
+
+export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    requireAppCheckIfEnabled(request);
+    const imageBase64 = sanitizeBase64Image(request.data?.imageBase64, 6_000_000);
+    if (!imageBase64 || imageBase64.length < 100) {
+      throw new HttpsError('invalid-argument', 'INVALID_PALM_IMAGE_INPUT');
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(imageBase64, 'base64');
+    } catch {
+      throw new HttpsError('invalid-argument', 'INVALID_PALM_IMAGE_INPUT');
+    }
+    if (buffer.length > 4 * 1024 * 1024) {
+      throw new HttpsError('invalid-argument', 'PALM_IMAGE_TOO_LARGE');
+    }
+    if (buffer.length < 4_000) {
+      throw new HttpsError('invalid-argument', 'PALM_IMAGE_TOO_SMALL');
+    }
+
+    const lang = resolveLanguage(request.data?.lang);
+    const mimeType = sanitizeShortText(request.data?.mimeType, 32) || 'image/jpeg';
+    const analysis = await analyzePalmWithGemini({
+      imageBase64,
+      mimeType,
+      lang
+    });
+
+    if (!analysis.isValid || !analysis.reading) {
+      throw new HttpsError(
+        'failed-precondition',
+        analysis.rejectionCode ?? 'NOT_A_PALM'
+      );
+    }
+
+    return {
+      isValid: true,
+      reading: analysis.reading
+    };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
 
 export const backfillMissingUserWallets = onSchedule(
   {

@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_page.dart';
 import 'cosmic_page.dart';
 import 'credit_page.dart';
+import 'messages_page.dart';
 import 'home_palette.dart';
 import 'profile_page.dart';
 import '../auth/auth_service.dart';
@@ -22,7 +22,6 @@ import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
 import '../../core/widgets/cosmic_permission_dialog.dart';
-import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
 import '../../../services/notification_service.dart' as local_notifications;
 
@@ -66,10 +65,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _scheduleNotificationQueues() async {
-    await local_notifications.NotificationService.instance
-        .scheduleMorningNotifications();
-    await local_notifications.NotificationService.instance
-        .scheduleMiddayReminders();
+    try {
+      await local_notifications.NotificationService.instance
+          .scheduleMorningNotifications();
+      await local_notifications.NotificationService.instance
+          .scheduleMiddayReminders();
+    } catch (e, st) {
+      debugPrint('Notification queue scheduling skipped: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
 
   Future<void> _maybePromptNotificationPermission() async {
@@ -121,7 +125,7 @@ class _HomePageState extends State<HomePage> {
 
   void _onNavTap(int i) {
     setState(() {
-      if (i == 0 || i == 1 || i == 2 || i == 3) {
+      if (i >= 0 && i <= 4) {
         _navIndex = i;
       }
       _flashNavIndex = i;
@@ -134,9 +138,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isCosmicPage = _navIndex == 1;
-    final isCreditPage = _navIndex == 2;
-    final isProfilePage = _navIndex == 3;
+    final isMessagesPage = _navIndex == 1;
+    final isCosmicPage = _navIndex == 2;
+    final isCreditPage = _navIndex == 3;
+    final isProfilePage = _navIndex == 4;
     final topBarHeight = _TopBar.estimatedHeight(context);
     final bottomBarHeight = _BottomNavBar.estimatedHeight(context);
 
@@ -145,8 +150,13 @@ class _HomePageState extends State<HomePage> {
       body: Stack(
         children: [
           // ── Nebula background ──
-          if (!isCosmicPage && !isCreditPage && !isProfilePage)
+          if (!isMessagesPage && !isCosmicPage && !isCreditPage && !isProfilePage)
             const _NebulaBackground(),
+          if (isMessagesPage)
+            MessagesPage(
+              uid: widget.uid,
+              bottomInset: bottomBarHeight,
+            ),
           if (isCosmicPage)
             CosmicPage(
               bottomInset: bottomBarHeight,
@@ -165,7 +175,10 @@ class _HomePageState extends State<HomePage> {
             ),
 
           // ── Scrollable content ──
-          if (!isCosmicPage && !isCreditPage && !isProfilePage)
+          if (!isMessagesPage &&
+              !isCosmicPage &&
+              !isCreditPage &&
+              !isProfilePage)
             CustomScrollView(
               slivers: [
                 // Top padding for fixed header
@@ -193,7 +206,10 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           // ── Fixed Top Bars ──
-          if (!isCosmicPage && !isCreditPage && !isProfilePage)
+          if (!isMessagesPage &&
+              !isCosmicPage &&
+              !isCreditPage &&
+              !isProfilePage)
             Positioned(
               top: 0,
               left: 0,
@@ -421,6 +437,7 @@ class _HeroSectionState extends State<_HeroSection>
   static const _initialLoopPage = _loopItemCount ~/ 2;
   static const _deckCardWidth = 224.0;
   static const _deckCardHeight = 348.0;
+  static const _maxSpreadCards = 7;
   static const List<String> _cardNames = <String>[
     'the_fool',
     'the_magician',
@@ -459,24 +476,26 @@ class _HeroSectionState extends State<_HeroSection>
     initialPage: _initialLoopPage,
   );
   final _random = math.Random();
-  final Map<int, Future<DrawnTarotCard>> _warmCardFutures = {};
   int _currentLoopPage = _initialLoopPage;
   int _deckOffset = 0;
-  int? _lastIntroCardIndex;
   int? _selectedCardIndex;
   bool _isDrawing = false;
   bool _isDeckVisible = false;
-  bool _introSpinComplete = false;
   bool _selectionLocked = false;
   bool _isLoadingCard = false;
   bool _isDrawRequestInFlight = false;
   final _functionsClient = TarotFunctionsClient();
-  final _tarotService = TarotService();
   late final DocumentReference<Map<String, dynamic>> _userDoc =
       FirebaseFirestore.instance
           .collection(UserProfileContract.usersCollection)
           .doc(widget.uid);
   DrawnTarotCard? _drawnCard;
+  final List<DrawnTarotCard> _selectedCards = [];
+  final Set<int> _pickedCardIndices = {};
+  bool _awaitingSpreadAction = false;
+  int _deckSpinGeneration = 0;
+  static const int _deckSpinMsPerPageNormal = 380;
+  static const int _deckSpinMsPerPageFast = 115;
 
   String _drawBadgeText({
     required bool isLoading,
@@ -493,8 +512,11 @@ class _HeroSectionState extends State<_HeroSection>
     required bool isLoading,
     required int credits,
   }) {
+    if (_awaitingSpreadAction) {
+      return AppTexts.t('tarot.spread.continue_cta');
+    }
     if (_selectionLocked || _isLoadingCard || _isDrawRequestInFlight) {
-      return 'Kart aciliyor...';
+      return AppTexts.t('tarot.spread.revealing');
     }
     if (isLoading) return AppTexts.t('common.loading');
     if (credits >= _kPaidDrawCost) {
@@ -535,24 +557,35 @@ class _HeroSectionState extends State<_HeroSection>
     return normalized < 0 ? normalized + _cardNames.length : normalized;
   }
 
-  Future<DrawnTarotCard> _cardFutureForIndex(int index) {
-    return _warmCardFutures.putIfAbsent(
-      index,
-      () => _tarotService.getCardByIndex(index),
+  DrawnTarotCard _localCardForIndex(int index) {
+    return DrawnTarotCard(
+      card: TarotService.majorArcana[index],
+      imageUrl: '',
     );
   }
 
-  void _warmNearbyCards(int centerLoopPage) {
-    for (var delta = -3; delta <= 3; delta++) {
-      final cardIndex = _cardIndexForLoopPage(centerLoopPage + delta);
-      _cardFutureForIndex(cardIndex).then((card) {
-        if (!mounted) return;
-        precacheImage(
-          CachedNetworkImageProvider(card.imageUrl),
-          context,
-        ).catchError((_) {});
-      }).catchError((_) {});
+  String _spreadSessionId(List<String> cardNames) {
+    final slug = cardNames
+        .map((name) => name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_'))
+        .join('_');
+    final day = DateTime.now().toIso8601String().split('T').first;
+    final raw = '${day}_$slug';
+    return raw.length <= 48 ? raw : raw.substring(0, 48);
+  }
+
+  int _loopPageForCardIndex(int cardIndex) {
+    final currentIndex = _cardIndexForLoopPage(_currentLoopPage);
+    var delta = cardIndex - currentIndex;
+    if (delta < 0) {
+      delta += _cardNames.length;
     }
+    return _currentLoopPage + delta;
+  }
+
+  List<int> _availableCardIndices() {
+    return List<int>.generate(_cardNames.length, (index) => index)
+        .where((index) => !_pickedCardIndices.contains(index))
+        .toList(growable: false);
   }
 
   void _prepareDeckForRitual() {
@@ -569,42 +602,80 @@ class _HeroSectionState extends State<_HeroSection>
     setState(() {
       _isDrawing = false;
       _isDeckVisible = false;
-      _introSpinComplete = false;
       _selectionLocked = false;
       _selectedCardIndex = null;
       _drawnCard = null;
       _isLoadingCard = false;
+      _selectedCards.clear();
+      _pickedCardIndices.clear();
+      _awaitingSpreadAction = false;
     });
+    _stopDeckSpin();
     if (_pageController.hasClients) {
       _currentLoopPage = _initialLoopPage;
       _pageController.jumpToPage(_initialLoopPage);
     }
   }
 
-  Future<void> _runIntroSpin() async {
-    if (!mounted || !_pageController.hasClients) return;
-    var travelPages = 4 + _random.nextInt(3);
-    var targetPage = _currentLoopPage + travelPages;
-    while (_cardIndexForLoopPage(targetPage) == _lastIntroCardIndex) {
-      travelPages += 1;
-      targetPage = _currentLoopPage + travelPages;
+  bool get _shouldKeepDeckSpinning =>
+      _isDrawing &&
+      _isDeckVisible &&
+      !_selectionLocked &&
+      !_awaitingSpreadAction;
+
+  void _stopDeckSpin() {
+    _deckSpinGeneration++;
+  }
+
+  Future<void> _startDeckSpin({required bool fast}) async {
+    _stopDeckSpin();
+    final generation = _deckSpinGeneration;
+    final msPerPage =
+        fast ? _deckSpinMsPerPageFast : _deckSpinMsPerPageNormal;
+
+    while (mounted &&
+        generation == _deckSpinGeneration &&
+        _shouldKeepDeckSpinning) {
+      if (!_pageController.hasClients) {
+        await Future<void>.delayed(const Duration(milliseconds: 24));
+        continue;
+      }
+      final targetPage = _currentLoopPage + 1;
+      try {
+        await _pageController.animateToPage(
+          targetPage,
+          duration: Duration(milliseconds: msPerPage),
+          curve: Curves.linear,
+        );
+      } catch (_) {
+        break;
+      }
+      if (!mounted || generation != _deckSpinGeneration) return;
+      setState(() => _currentLoopPage = targetPage);
     }
+  }
+
+  Future<void> _landOnCardPage(int targetPage) async {
+    _stopDeckSpin();
+    if (!_pageController.hasClients) return;
+    final pageDelta = (targetPage - _currentLoopPage).abs();
+    final pages = pageDelta < 1 ? 1 : pageDelta;
     await _pageController.animateToPage(
       targetPage,
-      duration: Duration(milliseconds: 6800 + _random.nextInt(700)),
-      curve: Curves.easeInOutSine,
+      duration: Duration(
+        milliseconds: pages * _deckSpinMsPerPageNormal,
+      ),
+      curve: Curves.linear,
     );
-    if (!mounted || !_isDrawing || _selectionLocked) return;
-    setState(() {
-      _currentLoopPage = targetPage;
-      _lastIntroCardIndex = _cardIndexForLoopPage(targetPage);
-      _introSpinComplete = true;
-    });
-    _warmNearbyCards(targetPage);
   }
 
   Future<void> _startRitual({required bool canDraw}) async {
-    if (_isDrawing || _isDrawRequestInFlight || _selectionLocked) return;
+    if (_isDrawing ||
+        _isDrawRequestInFlight ||
+        _selectionLocked ||
+        _awaitingSpreadAction) {
+      return;
+    }
     if (!canDraw) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -618,19 +689,20 @@ class _HeroSectionState extends State<_HeroSection>
       _isDrawRequestInFlight = true;
       _isDrawing = true;
       _isDeckVisible = false;
-      _introSpinComplete = false;
       _selectionLocked = false;
       _selectedCardIndex = null;
       _drawnCard = null;
+      _selectedCards.clear();
+      _pickedCardIndices.clear();
+      _awaitingSpreadAction = false;
     });
     _prepareDeckForRitual();
 
     Future<void>.delayed(const Duration(milliseconds: 280), () {
       if (!mounted || !_isDrawing || _selectionLocked) return;
       setState(() => _isDeckVisible = true);
-      _warmNearbyCards(_currentLoopPage);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _runIntroSpin();
+        unawaited(_startDeckSpin(fast: false));
       });
     });
 
@@ -654,91 +726,119 @@ class _HeroSectionState extends State<_HeroSection>
     }
   }
 
-  Future<void> _handleCardTap({
-    required int loopPage,
-    required int cardIndex,
-  }) async {
-    if (_selectionLocked || _isDrawRequestInFlight || _isLoadingCard) return;
-    if (!_isDeckVisible || !_introSpinComplete) return;
+  Future<void> _handleDeckRevealTap() async {
+    if (_awaitingSpreadAction ||
+        _selectionLocked ||
+        _isDrawRequestInFlight ||
+        _isLoadingCard) {
+      return;
+    }
+    if (!_isDeckVisible) return;
 
-    final homePageState = context.findAncestorStateOfType<_HomePageState>();
+    final available = _availableCardIndices();
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppTexts.t('tarot.spread.max_cards'))),
+      );
+      return;
+    }
+
+    final cardIndex = available[_random.nextInt(available.length)];
+    final targetPage = _loopPageForCardIndex(cardIndex);
+
     try {
-      if (_pageController.hasClients && loopPage != _currentLoopPage) {
-        await _pageController.animateToPage(
-          loopPage,
-          duration: const Duration(milliseconds: 340),
-          curve: Curves.easeOutCubic,
-        );
-      }
-      final imageFuture = _cardFutureForIndex(cardIndex);
-
-      if (!mounted) return;
       setState(() {
         _selectionLocked = true;
-        _currentLoopPage = loopPage;
         _selectedCardIndex = cardIndex;
         _isLoadingCard = true;
       });
 
-      final selectedCard = await imageFuture;
+      await _landOnCardPage(targetPage);
       if (!mounted) return;
-      await precacheImage(
-        CachedNetworkImageProvider(selectedCard.imageUrl),
-        context,
-      );
-      if (!mounted) return;
+
+      setState(() => _currentLoopPage = targetPage);
+      final selectedCard = _localCardForIndex(cardIndex);
       setState(() {
         _drawnCard = selectedCard;
         _isLoadingCard = false;
       });
       await _flipController.forward(from: 0);
-
-      final languageCode = _resolveDeviceLanguageCode();
-      final drawnCardName = selectedCard.card.displayName;
-      await local_notifications.NotificationService.instance.onDailyCardDrawn(
-        drawnCardName,
-        languageCode,
-      );
-      await homePageState?._maybePromptNotificationPermission();
       if (!mounted) return;
 
-      await Future<void>.delayed(const Duration(milliseconds: 760));
-      if (!mounted) return;
-      final chatResult = await Navigator.of(context).push<String>(
-        MaterialPageRoute<String>(
-          builder: (_) => KozmikBilgePage(
-            uid: widget.uid,
-            cardTitle: selectedCard.card.displayName,
-            cardImageUrl: selectedCard.imageUrl,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      if (chatResult == 'credits') {
-        context.findAncestorStateOfType<_HomePageState>()?._onNavTap(2);
+      setState(() {
+        _selectedCards.add(selectedCard);
+        _pickedCardIndices.add(cardIndex);
+        _awaitingSpreadAction = true;
+      });
+
+      if (_selectedCards.length == 1) {
+        final homePageState = context.findAncestorStateOfType<_HomePageState>();
+        final languageCode = _resolveDeviceLanguageCode();
+        await local_notifications.NotificationService.instance.onDailyCardDrawn(
+          selectedCard.card.displayName,
+          languageCode,
+        );
+        await homePageState?._maybePromptNotificationPermission();
       }
-      await _resetSelection();
     } catch (error) {
       debugPrint('Tarot ritual draw failed: $error');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gorsel yuklenemedi'),
-        ),
+        SnackBar(content: Text(AppTexts.t('tarot.spread.load_failed'))),
       );
       await _resetSelection();
     } finally {
       if (mounted) {
-        setState(() {
-          _isDrawRequestInFlight = false;
-          _isLoadingCard = false;
-        });
+        setState(() => _isLoadingCard = false);
       }
     }
   }
 
+  Future<void> _pickAnotherCard() async {
+    if (!_awaitingSpreadAction || _selectedCards.length >= _maxSpreadCards) {
+      return;
+    }
+    _flipController.reset();
+    setState(() {
+      _awaitingSpreadAction = false;
+      _selectionLocked = false;
+      _selectedCardIndex = null;
+      _drawnCard = null;
+      _isLoadingCard = false;
+      _isDrawing = true;
+      _isDeckVisible = true;
+    });
+
+    if (!_pageController.hasClients) return;
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted || _awaitingSpreadAction || _selectionLocked) return;
+    unawaited(_startDeckSpin(fast: true));
+  }
+
+  Future<void> _openSpreadReading() async {
+    if (_selectedCards.isEmpty) return;
+    final cardNames =
+        _selectedCards.map((card) => card.card.displayName).toList(growable: false);
+    final sessionId = _spreadSessionId(cardNames);
+    final chatResult = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => KozmikBilgePage(
+          uid: widget.uid,
+          spreadCards: List<DrawnTarotCard>.unmodifiable(_selectedCards),
+          spreadSessionId: sessionId,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (chatResult == 'credits') {
+      context.findAncestorStateOfType<_HomePageState>()?._onNavTap(3);
+    }
+    await _resetSelection();
+  }
+
   @override
   void dispose() {
+    _stopDeckSpin();
     _pageController.dispose();
     _flipController.dispose();
     _ritualAuraController.dispose();
@@ -779,18 +879,28 @@ class _HeroSectionState extends State<_HeroSection>
         );
         final selectedIndex =
             _selectedCardIndex ?? _cardIndexForLoopPage(_currentLoopPage);
-        final headline = _selectionLocked
-            ? _displayNameForIndex(selectedIndex)
-            : 'Gunun Rehberi';
-        final subtitle = _isDrawing && _isDeckVisible
-            ? 'Dolasimdaki kartlardan birini sec ve bugunun rehberligini aciga cikar.'
-            : '';
-        final canTapCarousel = _isDrawing &&
+        final headline = _awaitingSpreadAction
+            ? AppTexts.t('tarot.spread.headline')
+            : (_selectionLocked
+                ? _displayNameForIndex(selectedIndex)
+                : 'Gunun Rehberi');
+        final subtitle = _awaitingSpreadAction
+            ? AppTexts.t('tarot.spread.selection_hint')
+                .replaceAll('{count}', '${_selectedCards.length}')
+                .replaceAll('{max}', '$_maxSpreadCards')
+            : (_isDrawing && _isDeckVisible
+                ? AppTexts.t('tarot.spread.tap_to_draw')
+                : '');
+        final canTapDeck = _isDrawing &&
             _isDeckVisible &&
-            _introSpinComplete &&
             !_selectionLocked &&
-            !_isLoadingCard;
-        final ritualStageHeight = _isDrawing ? 470.0 : 316.0;
+            !_isLoadingCard &&
+            !_awaitingSpreadAction;
+        final ritualStageHeight = _isDrawing
+            ? (_awaitingSpreadAction ? 430.0 : 470.0)
+            : 316.0;
+        final canPickAnother =
+            _awaitingSpreadAction && _selectedCards.length < _maxSpreadCards;
 
         return _GlassCard(
           borderRadius: 32,
@@ -884,11 +994,14 @@ class _HeroSectionState extends State<_HeroSection>
                             child: _isDeckVisible
                                 ? IgnorePointer(
                                     key: const ValueKey('drawing_deck'),
-                                    ignoring: !canTapCarousel,
+                                    ignoring: !canTapDeck,
                                     child: AnimatedOpacity(
                                       duration:
                                           const Duration(milliseconds: 280),
-                                      opacity: _selectionLocked ? 0.16 : 1,
+                                      opacity: (_selectionLocked ||
+                                              _awaitingSpreadAction)
+                                          ? 0.16
+                                          : 1,
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
                                           final carouselWidth =
@@ -898,26 +1011,25 @@ class _HeroSectionState extends State<_HeroSection>
                                             maxWidth: carouselWidth,
                                             child: SizedBox(
                                               width: carouselWidth,
-                                              child: _FocusDeckCarousel(
-                                                controller: _pageController,
-                                                cardCount: _cardNames.length,
-                                                cardWidth: _deckCardWidth,
-                                                cardHeight: _deckCardHeight,
-                                                allowUserScroll:
-                                                    _introSpinComplete,
-                                                displayNameForIndex:
-                                                    _displayNameForIndex,
-                                                cardIndexForLoopPage:
-                                                    _cardIndexForLoopPage,
-                                                onPageChanged: (loopPage) {
-                                                  _currentLoopPage = loopPage;
-                                                  _warmNearbyCards(loopPage);
-                                                },
-                                                onCardTap:
-                                                    (loopPage, cardIndex) =>
-                                                        _handleCardTap(
-                                                  loopPage: loopPage,
-                                                  cardIndex: cardIndex,
+                                              child: GestureDetector(
+                                                onTap: canTapDeck
+                                                    ? _handleDeckRevealTap
+                                                    : null,
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                child: _FocusDeckCarousel(
+                                                  controller: _pageController,
+                                                  cardCount: _cardNames.length,
+                                                  cardWidth: _deckCardWidth,
+                                                  cardHeight: _deckCardHeight,
+                                                  displayNameForIndex:
+                                                      _displayNameForIndex,
+                                                  cardIndexForLoopPage:
+                                                      _cardIndexForLoopPage,
+                                                  onPageChanged: (loopPage) {
+                                                    _currentLoopPage =
+                                                        loopPage;
+                                                  },
                                                 ),
                                               ),
                                             ),
@@ -963,20 +1075,67 @@ class _HeroSectionState extends State<_HeroSection>
                     ),
                     const SizedBox(height: 16),
 
-                    // CTA Button
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      opacity: _isDrawing ? 0 : 1,
-                      child: IgnorePointer(
-                        ignoring: _isDrawing,
-                        child: _HeroCtaButton(
-                          canDraw: canDraw,
-                          ctaText: ctaText,
-                          onPressed: () => _startRitual(canDraw: canDraw),
+                    if (_selectedCards.isNotEmpty) ...[
+                      _SelectedSpreadStrip(cards: _selectedCards),
+                      const SizedBox(height: 14),
+                    ],
+
+                    if (_awaitingSpreadAction) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed:
+                                  canPickAnother ? _pickAnotherCard : null,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _kSecondary,
+                                side: BorderSide(
+                                  color: _kPrimary.withValues(alpha: 0.35),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 14,
+                                ),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  AppTexts.t('tarot.spread.pick_another_short'),
+                                  maxLines: 1,
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: _HeroCtaButton(
+                              canDraw: true,
+                              ctaText: AppTexts.t('tarot.spread.continue_cta'),
+                              onPressed: _openSpreadReading,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOutCubic,
+                        opacity: _isDrawing ? 0 : 1,
+                        child: IgnorePointer(
+                          ignoring: _isDrawing,
+                          child: _HeroCtaButton(
+                            canDraw: canDraw,
+                            ctaText: ctaText,
+                            onPressed: () => _startRitual(canDraw: canDraw),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -984,6 +1143,49 @@ class _HeroSectionState extends State<_HeroSection>
           ),
         );
       },
+    );
+  }
+}
+
+class _SelectedSpreadStrip extends StatelessWidget {
+  const _SelectedSpreadStrip({required this.cards});
+
+  final List<DrawnTarotCard> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final card = cards[index];
+          return Container(
+            width: 92,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: _kSurfaceContainerHigh,
+              border: Border.all(color: _kPrimary.withValues(alpha: 0.35)),
+            ),
+            child: Center(
+              child: Text(
+                card.card.displayName,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.newsreader(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: _kOnSurface,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1050,68 +1252,41 @@ class _FocusDeckCarousel extends StatelessWidget {
     required this.cardCount,
     required this.cardWidth,
     required this.cardHeight,
-    required this.allowUserScroll,
     required this.displayNameForIndex,
     required this.cardIndexForLoopPage,
     required this.onPageChanged,
-    required this.onCardTap,
   });
 
   final PageController controller;
   final int cardCount;
   final double cardWidth;
   final double cardHeight;
-  final bool allowUserScroll;
   final String Function(int index) displayNameForIndex;
   final int Function(int loopPage) cardIndexForLoopPage;
   final ValueChanged<int> onPageChanged;
-  final void Function(int loopPage, int cardIndex) onCardTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: cardHeight + 24,
-      child: NotificationListener<ScrollEndNotification>(
-        onNotification: (notification) {
-          if (!allowUserScroll || !controller.hasClients) return false;
-          final nearestPage = controller.page?.round();
-          if (nearestPage == null) return false;
-          final currentPage = controller.page ?? nearestPage.toDouble();
-          if ((currentPage - nearestPage).abs() < 0.01) return false;
-          controller.animateToPage(
-            nearestPage,
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
+      child: PageView.builder(
+        controller: controller,
+        itemCount: _HeroSectionState._loopItemCount,
+        clipBehavior: Clip.none,
+        pageSnapping: false,
+        physics: const NeverScrollableScrollPhysics(),
+        onPageChanged: onPageChanged,
+        itemBuilder: (context, loopPage) {
+          final cardIndex = cardIndexForLoopPage(loopPage);
+          return Center(
+            child: _GuideCardBack(
+              cardName: displayNameForIndex(cardIndex),
+              width: cardWidth,
+              height: cardHeight,
+              margin: EdgeInsets.zero,
+            ),
           );
-          return false;
         },
-        child: PageView.builder(
-          controller: controller,
-          itemCount: _HeroSectionState._loopItemCount,
-          clipBehavior: Clip.none,
-          pageSnapping: false,
-          physics: allowUserScroll
-              ? const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                )
-              : const NeverScrollableScrollPhysics(),
-          onPageChanged: onPageChanged,
-          itemBuilder: (context, loopPage) {
-            final cardIndex = cardIndexForLoopPage(loopPage);
-            return GestureDetector(
-              onTap: () => onCardTap(loopPage, cardIndex),
-              behavior: HitTestBehavior.opaque,
-              child: Center(
-                child: _GuideCardBack(
-                  cardName: displayNameForIndex(cardIndex),
-                  width: cardWidth,
-                  height: cardHeight,
-                  margin: EdgeInsets.zero,
-                ),
-              ),
-            );
-          },
-        ),
       ),
     );
   }
@@ -1427,34 +1602,21 @@ class _SelectedGuideCardFace extends StatelessWidget {
       child: Stack(
         children: [
           Positioned.fill(
-            child: (imageUrl?.trim().isNotEmpty ?? false)
-                ? TarotCardView(
-                    imageUrl: imageUrl!,
-                    borderRadius: BorderRadius.circular(18),
-                  )
-                : Container(
+            child: isLoading
+                ? Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       color: _kSurfaceContainerHigh,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _kPrimary.withValues(alpha: 0.26),
-                          blurRadius: 32,
-                          spreadRadius: 4,
-                        ),
-                      ],
                     ),
-                    child: Center(
-                      child: isLoading
-                          ? const CircularProgressIndicator(
-                              color: _kTertiary,
-                            )
-                          : const Icon(
-                              Icons.auto_awesome,
-                              color: _kTertiary,
-                              size: 42,
-                            ),
+                    child: const Center(
+                      child: CircularProgressIndicator(color: _kTertiary),
                     ),
+                  )
+                : _GuideCardBack(
+                    cardName: title,
+                    width: 210,
+                    height: 320,
+                    margin: EdgeInsets.zero,
                   ),
           ),
           Positioned(
@@ -1761,6 +1923,7 @@ class _BottomNavBar extends StatelessWidget {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final items = [
       (Icons.blur_circular_rounded, AppTexts.t('home.tab.ritual')),
+      (Icons.forum_outlined, AppTexts.t('home.tab.messages')),
       (Icons.auto_awesome_rounded, AppTexts.t('home.tab.cosmic')),
       (Icons.payments_outlined, AppTexts.t('home.tab.credit')),
       (Icons.person_outline, AppTexts.t('home.tab.profile')),
@@ -1790,8 +1953,8 @@ class _BottomNavBar extends StatelessWidget {
           padding: EdgeInsets.only(
             top: 10,
             bottom: bottomPadding + 10,
-            left: 20,
-            right: 20,
+            left: 8,
+            right: 8,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1805,7 +1968,8 @@ class _BottomNavBar extends StatelessWidget {
               final iconColor = isFlashing
                   ? flashColor
                   : (active ? activeColor : inactiveColor);
-              return GestureDetector(
+              return Expanded(
+                child: GestureDetector(
                 onTap: () => onTap(i),
                 behavior: HitTestBehavior.opaque,
                 child: Column(
@@ -1815,7 +1979,7 @@ class _BottomNavBar extends StatelessWidget {
                       active
                           ? (i == 0 ? Icons.blur_circular_rounded : icon)
                           : icon,
-                      size: 24,
+                      size: 22,
                       color: iconColor,
                       shadows: (active || isFlashing)
                           ? [
@@ -1828,17 +1992,21 @@ class _BottomNavBar extends StatelessWidget {
                           : null,
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      label.toUpperCase(),
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 10,
-                        letterSpacing: 2.0,
-                        fontWeight: FontWeight.w600,
-                        color: iconColor,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label.toUpperCase(),
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w600,
+                          color: iconColor,
+                        ),
                       ),
                     ),
                   ],
                 ),
+              ),
               );
             }),
           ),
