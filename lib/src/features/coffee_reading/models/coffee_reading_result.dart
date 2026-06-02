@@ -1,36 +1,46 @@
+import 'coffee_ai_reading_response.dart';
+
 class CoffeeReadingResult {
   const CoffeeReadingResult({
     required this.readingId,
-    required this.past,
-    required this.present,
-    required this.future,
+    required this.reading,
     required this.createdAt,
+    required this.chargedCredits,
+    required this.remainingCredits,
   });
 
   final String readingId;
-  final String past;
-  final String present;
-  final String future;
+  final CoffeeAiReadingResponse reading;
   final DateTime createdAt;
+  final int chargedCredits;
+  final int remainingCredits;
+
+  String get past => reading.pastTrace;
+  String get present => reading.presentMood;
+  String get future => reading.nearFutureMessage;
 
   Map<String, dynamic> toMap() {
     return {
       'readingId': readingId,
-      'past': past,
-      'present': present,
-      'future': future,
+      'reading': reading.toMap(),
       'createdAt': createdAt.toIso8601String(),
+      'chargedCredits': chargedCredits,
+      'remainingCredits': remainingCredits,
     };
   }
 
-  factory CoffeeReadingResult.fromMap(Map<String, dynamic> map) {
+  factory CoffeeReadingResult.fromAnalyzeResponse({
+    required String readingId,
+    required CoffeeAiReadingResponse reading,
+    required int chargedCredits,
+    required int remainingCredits,
+  }) {
     return CoffeeReadingResult(
-      readingId: (map['readingId'] as String?) ?? '',
-      past: (map['past'] as String?) ?? '',
-      present: (map['present'] as String?) ?? '',
-      future: (map['future'] as String?) ?? '',
-      createdAt: DateTime.tryParse((map['createdAt'] as String?) ?? '') ??
-          DateTime.now(),
+      readingId: readingId,
+      reading: reading,
+      createdAt: DateTime.now(),
+      chargedCredits: chargedCredits,
+      remainingCredits: remainingCredits,
     );
   }
 }

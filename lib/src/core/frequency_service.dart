@@ -14,23 +14,30 @@ typedef DailyCommentFetcher = Future<String> Function({
 });
 
 class FrequencyService {
-  FrequencyService({DailyCommentFetcher? fetcher}) : _fetcher = fetcher;
+  FrequencyService({
+    DailyCommentFetcher? fetcher,
+    DateTime Function()? now,
+  })  : _fetcher = fetcher,
+        _now = now ?? DateTime.now;
 
-  static const String keyLastFetchDate = 'last_fetch_date';
+  static const String keyLastFetchDate = 'birth_frequency_last_fetch_date';
   static const String keyUserBirthDate = 'user_birth_date';
   static const String keyCommentLang = 'birth_frequency_comment_lang';
-  static const String _commentCacheVersion = 'v2';
+  static const String keyCommentBirthDate =
+      'birth_frequency_comment_birth_date';
+  static const String _commentCacheVersion = 'v3';
 
   static final FrequencyService instance = FrequencyService();
 
   final DailyCommentFetcher? _fetcher;
+  final DateTime Function() _now;
 
   Future<String> getDailyComment({
     required String? userBirthDate,
     String? lang,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final today = DateFormat('yyyy-MM-dd').format(_now());
     final resolvedLang = _resolveLang(lang);
     final cachedCommentKey = _commentCacheKey(resolvedLang);
 
@@ -41,17 +48,19 @@ class FrequencyService {
 
     final lastFetchDate = prefs.getString(keyLastFetchDate);
     final lastFetchLang = (prefs.getString(keyCommentLang) ?? '').trim();
+    final lastFetchBirthDate =
+        (prefs.getString(keyCommentBirthDate) ?? '').trim();
     final cachedComment = (prefs.getString(cachedCommentKey) ?? '').trim();
+    final effectiveBirthDate = (prefs.getString(keyUserBirthDate) ?? '').trim();
 
     if (lastFetchDate == today &&
         lastFetchLang == resolvedLang &&
+        lastFetchBirthDate == effectiveBirthDate &&
         _isUsableComment(cachedComment)) {
       return cachedComment;
     }
 
-    final effectiveBirthDate = (prefs.getString(keyUserBirthDate) ?? '').trim();
     if (effectiveBirthDate.isEmpty) {
-      if (_isUsableComment(cachedComment)) return cachedComment;
       return AppTexts.t('home.birth_frequency.unavailable_missing_birth');
     }
 
@@ -72,6 +81,7 @@ class FrequencyService {
       await prefs.setString(cachedCommentKey, comment);
       await prefs.setString(keyLastFetchDate, today);
       await prefs.setString(keyCommentLang, resolvedLang);
+      await prefs.setString(keyCommentBirthDate, effectiveBirthDate);
       return comment;
     } catch (error, stackTrace) {
       String debugError = '$error';
@@ -83,7 +93,12 @@ class FrequencyService {
       }
       debugPrint('[FrequencyService] getDailyComment error: $debugError');
       debugPrint('$stackTrace');
-      if (_isUsableComment(cachedComment)) return cachedComment;
+      if (lastFetchDate == today &&
+          lastFetchLang == resolvedLang &&
+          lastFetchBirthDate == effectiveBirthDate &&
+          _isUsableComment(cachedComment)) {
+        return cachedComment;
+      }
       return AppTexts.t('home.birth_frequency.unavailable_retry');
     }
   }
@@ -102,8 +117,13 @@ class FrequencyService {
   }
 
   String _resolveLang(String? lang) {
-    final candidate = (lang ?? AppLocale.current).trim().toLowerCase();
-    return candidate == 'en' ? 'en' : 'tr';
+    const supportedLanguages = {'tr', 'en', 'de', 'es', 'fr', 'it', 'pt'};
+    final candidate = (lang ?? AppLocale.current)
+        .trim()
+        .toLowerCase()
+        .split(RegExp('[-_]'))
+        .first;
+    return supportedLanguages.contains(candidate) ? candidate : 'en';
   }
 
   String _commentCacheKey(String lang) =>

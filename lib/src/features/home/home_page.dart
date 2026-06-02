@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:math' as math;
 
@@ -1501,9 +1502,64 @@ class _IdentityModule extends StatefulWidget {
   State<_IdentityModule> createState() => _IdentityModuleState();
 }
 
-class _IdentityModuleState extends State<_IdentityModule> {
+class _IdentityModuleState extends State<_IdentityModule>
+    with WidgetsBindingObserver {
   String _commentKey = '';
   Future<String>? _commentFuture;
+  Timer? _dailyCommentRefreshTimer;
+  String _activeCommentDay = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleDailyCommentRefresh();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshDailyCommentIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dailyCommentRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  String _localDayKey([DateTime? value]) {
+    final date = value ?? DateTime.now();
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  void _scheduleDailyCommentRefresh() {
+    _dailyCommentRefreshTimer?.cancel();
+    final now = DateTime.now();
+    final nextDay = DateTime(now.year, now.month, now.day + 1);
+    _dailyCommentRefreshTimer = Timer(
+      nextDay.difference(now) + const Duration(seconds: 1),
+      () {
+        if (!mounted) return;
+        _refreshDailyCommentIfNeeded();
+      },
+    );
+  }
+
+  void _refreshDailyCommentIfNeeded() {
+    final today = _localDayKey();
+    _scheduleDailyCommentRefresh();
+    if (_activeCommentDay == today) return;
+    setState(() {
+      _commentFuture = null;
+      _commentKey = '';
+      _activeCommentDay = today;
+    });
+  }
 
   DateTime? _parseBirthDate(dynamic raw) {
     if (raw is! String || raw.trim().isEmpty) return null;
@@ -1557,8 +1613,10 @@ class _IdentityModuleState extends State<_IdentityModule> {
 
   Future<String> _dailyCommentFuture(String? storedBirthDate) {
     final key = (storedBirthDate ?? '').trim();
-    final localeAwareKey = '$key|${AppLocale.current}';
+    final today = _localDayKey();
+    final localeAwareKey = '$key|${AppLocale.current}|$today';
     if (_commentFuture == null || localeAwareKey != _commentKey) {
+      _activeCommentDay = today;
       _commentKey = localeAwareKey;
       _commentFuture = FrequencyService.instance.getDailyComment(
         userBirthDate: key,

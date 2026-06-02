@@ -1,5 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../features/coffee_reading/models/coffee_analyze_response.dart';
 import '../features/auth/onboarding_payload.dart';
 import '../features/purchases/restore_purchase_item.dart';
 import '../features/readings/reading_models.dart';
@@ -77,6 +78,31 @@ class TarotFunctionsClient {
       if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
     });
     return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<CoffeeAnalyzeResponse> analyzeCoffeeReading({
+    required String languageCode,
+    required Map<String, String> imageRefs,
+    required Map<String, dynamic> localValidation,
+    required String idempotencyKey,
+  }) async {
+    final callable = _functions.httpsCallable('analyzeCoffeeReading');
+    final response = await callable.call({
+      'languageCode': languageCode,
+      'imageRefs': imageRefs,
+      'localValidation': localValidation,
+      'idempotencyKey': idempotencyKey,
+    });
+    return CoffeeAnalyzeResponse.fromMap(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<void> deleteCoffeeReadingPhotos({
+    required String readingId,
+  }) async {
+    final callable = _functions.httpsCallable('deleteCoffeeReadingPhotos');
+    await callable.call({'readingId': readingId});
   }
 
   Future<Map<String, dynamic>> validateIosPurchase({

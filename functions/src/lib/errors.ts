@@ -25,6 +25,12 @@ export function mapError(err: unknown): HttpsError {
     if (err.message === 'APP_CHECK_REQUIRED') {
       return new HttpsError('failed-precondition', 'APP_CHECK_REQUIRED');
     }
+    if (err.message === 'COFFEE_ANALYSIS_IN_PROGRESS') {
+      return new HttpsError('aborted', 'COFFEE_ANALYSIS_IN_PROGRESS');
+    }
+    if (err.message === 'COFFEE_RATE_LIMITED') {
+      return new HttpsError('resource-exhausted', 'COFFEE_RATE_LIMITED');
+    }
   }
 
   return new HttpsError('internal', 'AI_TEMPORARY_FAILURE');

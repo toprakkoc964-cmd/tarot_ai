@@ -12,12 +12,14 @@ class CoffeeCaptureCard extends StatelessWidget {
     required this.step,
     required this.result,
     required this.isProcessing,
+    required this.needsRetry,
     required this.onAddPhoto,
   });
 
   final CoffeePhotoStep step;
   final CoffeeImagePipelineResult? result;
   final bool isProcessing;
+  final bool needsRetry;
   final VoidCallback onAddPhoto;
 
   @override
@@ -28,7 +30,11 @@ class CoffeeCaptureCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.glassBg,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: AppColors.glassBorder),
+        border: Border.all(
+          color: needsRetry
+              ? AppColors.tertiaryGold.withValues(alpha: 0.58)
+              : AppColors.glassBorder,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryNeonPink.withValues(alpha: 0.14),
@@ -76,9 +82,11 @@ class CoffeeCaptureCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        isCompleted
-                            ? AppTexts.t('coffeeCaptureCompleted')
-                            : AppTexts.t(step.descriptionKey),
+                        needsRetry
+                            ? AppTexts.t('coffeePhotoNeedsRetry')
+                            : isCompleted
+                                ? AppTexts.t('coffeePhotoReady')
+                                : AppTexts.t(step.descriptionKey),
                         style: GoogleFonts.manrope(
                           color: AppColors.secondaryLavender.withValues(
                             alpha: 0.86,
@@ -94,16 +102,66 @@ class CoffeeCaptureCard extends StatelessWidget {
             ),
             if (result != null) ...[
               const SizedBox(height: 18),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Image.file(
-                    result!.compressedImage,
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.medium,
+              Stack(
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: needsRetry
+                            ? AppColors.tertiaryGold.withValues(alpha: 0.54)
+                            : AppColors.primaryPink.withValues(alpha: 0.32),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              AppColors.primaryNeonPink.withValues(alpha: 0.16),
+                          blurRadius: 28,
+                          spreadRadius: -12,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: Image.file(
+                          result!.compressedImage,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _PhotoChip(
+                          icon: needsRetry
+                              ? Icons.priority_high_rounded
+                              : Icons.check_rounded,
+                          text: AppTexts.t(
+                            needsRetry
+                                ? 'coffeePhotoNeedsRetry'
+                                : 'coffeePhotoReady',
+                          ),
+                          isWarning: needsRetry,
+                        ),
+                        _PhotoChip(
+                          icon: result!.source.isGallery
+                              ? Icons.photo_library_rounded
+                              : Icons.photo_camera_rounded,
+                          text: AppTexts.t(result!.source.labelKey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               if (result!.validationResult.hasWarning) ...[
                 const SizedBox(height: 12),
@@ -192,7 +250,7 @@ class CoffeeCaptureCard extends StatelessWidget {
                           const SizedBox(width: 10),
                           Text(
                             isCompleted
-                                ? AppTexts.t('coffeeRetakePhoto')
+                                ? AppTexts.t(result!.source.replaceActionKey)
                                 : AppTexts.t('coffeeAddPhoto'),
                             style: GoogleFonts.spaceGrotesk(
                               color: AppColors.onPrimary,
@@ -223,5 +281,45 @@ class CoffeeCaptureCard extends StatelessWidget {
       case CoffeePhotoStep.cupSide:
         return Icons.local_cafe_rounded;
     }
+  }
+}
+
+class _PhotoChip extends StatelessWidget {
+  const _PhotoChip({
+    required this.icon,
+    required this.text,
+    this.isWarning = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool isWarning;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isWarning ? AppColors.tertiaryGold : AppColors.primaryPink;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: GoogleFonts.manrope(
+              color: AppColors.onSurface,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

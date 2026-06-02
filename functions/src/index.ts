@@ -9,12 +9,14 @@ import * as logger from 'firebase-functions/logger';
 import { mapError } from './lib/errors';
 import { buildSystemPrompt } from './lib/context-builder';
 import { createReadingText } from './lib/gemini';
+import { createCoffeeReadingWithVision } from './lib/coffee-reading';
 import { renderShareImage } from './lib/share-image';
 import { buildShareDeepLink } from './lib/deep-link';
 import { validateAppleReceipt } from './lib/purchase';
 import { requireIdempotencyKey } from './lib/idempotency';
 import { AIPersonaDoc, UserDoc } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
+import { buildBirthFrequencyFallback } from './lib/birth-frequency';
 import { getUserFcmTokens, sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
 
@@ -29,7 +31,37 @@ const supportedLanguages = new Set(['tr', 'en', 'de', 'es', 'fr', 'it', 'pt']);
 const defaultPersonaId = process.env.DEFAULT_PERSONA_ID ?? 'emilia';
 const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
 const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '10');
+const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
 const arisModel = process.env.GEMINI_ARIS_MODEL ?? 'gemini-2.5-flash-lite';
+const coffeeRequiredSteps = ['cupInside', 'saucer', 'cupSide'] as const;
+const coffeeReservationTtlMs = 10 * 60 * 1000;
+const coffeeRetentionMs = 7 * 24 * 60 * 60 * 1000;
+const coffeeOrphanGraceMs = 24 * 60 * 60 * 1000;
+const coffeeMaxImageBytes = 5 * 1024 * 1024;
+const coffeeTenMinuteAttemptLimit = 3;
+const coffeeDailyAttemptLimit = 10;
+
+type CoffeeStep = typeof coffeeRequiredSteps[number];
+type CoffeeImageRefs = Record<CoffeeStep, string>;
+type CoffeeReservationStatus = 'processing' | 'charged' | 'released' | 'expired';
+
+type CoffeeReservationDoc = {
+  uid: string;
+  idempotencyKey: string;
+  amount: number;
+  status: CoffeeReservationStatus;
+  expiresAtMs: number;
+};
+
+type CoffeeAnalysisState = {
+  activeReservationId?: string | null;
+  activeReservationExpiresAtMs?: number | null;
+  activeReservationAmount?: number | null;
+  windowStartedAtMs?: number;
+  windowCount?: number;
+  dayKey?: string;
+  dayCount?: number;
+};
 
 function requireAppCheckIfEnabled(request: { app?: unknown }) {
   const appCheckRequired = (process.env.APP_CHECK_ENFORCE ?? 'false') === 'true';
@@ -273,31 +305,6 @@ function isUsableBirthFrequencyComment(value: string): boolean {
   return /[.!?…]$/.test(normalized) || normalized.length >= 60;
 }
 
-function buildBirthFrequencyFallback(input: {
-  birthDate: string;
-  lang: string;
-}): string {
-  const month = Number(input.birthDate.slice(5, 7));
-  const day = Number(input.birthDate.slice(8, 10));
-  const seasonal = (month + day) % 4;
-  if (input.lang === 'tr') {
-    const comments = [
-      'Bugun ic sesin daha net duyuluyor; acele kararlar yerine sakin bir an sec ve kalbinin gercek ihtiyacini dinle.',
-      'Bugun enerjin toparlanmaya acik; kucuk bir duzenleme yapmak zihnini hafifletip gunun akisini yumusatabilir.',
-      'Bugun duygularin sana yol gosterebilir; bir seyi zorlamak yerine nazikce adim atmak daha iyi hissettirecek.',
-      'Bugun ruhun daha sade bir ritim istiyor; kendine alan ac ve seni besleyen tek bir niyete odaklan.'
-    ];
-    return comments[seasonal];
-  }
-  const comments = [
-    'Your inner voice is clearer today; choose a quiet moment and listen to what your heart truly needs before rushing.',
-    'Your energy is ready to settle; one small act of order can soften your mind and make the day feel lighter.',
-    'Your feelings can guide you today; instead of forcing an answer, take one gentle step toward what feels honest.',
-    'Your spirit wants a simpler rhythm today; make space for yourself and focus on one intention that nourishes you.'
-  ];
-  return comments[seasonal];
-}
-
 function restrictedArisReply(input: {
   message: string;
   lang: string;
@@ -468,7 +475,19 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
 
   const userRef = db.collection('users').doc(user.uid);
   const snap = await userRef.get();
-  if (snap.exists) return;
+  if (snap.exists) {
+    const existing = snap.data() as Partial<UserDoc>;
+    if (!existing.wallet || typeof existing.wallet.credits !== 'number') {
+      await userRef.set({
+        wallet: {
+          credits: initialFreeCredits,
+          isFirstFreeUsed: false
+        },
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    return;
+  }
 
   const payload: UserDoc = {
     uid: user.uid,
@@ -651,6 +670,476 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
   }
 });
 
+function parseCoffeeImageRefs(uid: string, rawRefs: unknown): {
+  imageRefs: CoffeeImageRefs;
+  uploadId: string;
+} {
+  if (!rawRefs || typeof rawRefs !== 'object' || Array.isArray(rawRefs)) {
+    throw new HttpsError('invalid-argument', 'INVALID_COFFEE_INPUT');
+  }
+
+  const input = rawRefs as Record<string, unknown>;
+  const parsed = {} as CoffeeImageRefs;
+  let uploadId = '';
+  const seenPaths = new Set<string>();
+
+  for (const step of coffeeRequiredSteps) {
+    const path = typeof input[step] === 'string' ? input[step].trim() : '';
+    const match = path.match(/^coffee\/([^/]+)\/(coffee_[0-9]+)\/(cupInside|saucer|cupSide)\.jpg$/);
+    if (!match || match[1] !== uid || match[3] !== step || seenPaths.has(path)) {
+      throw new HttpsError('invalid-argument', 'INVALID_COFFEE_IMAGE_REF');
+    }
+    if (uploadId && uploadId !== match[2]) {
+      throw new HttpsError('invalid-argument', 'INVALID_COFFEE_IMAGE_REF');
+    }
+    uploadId = match[2];
+    parsed[step] = path;
+    seenPaths.add(path);
+  }
+
+  return { imageRefs: parsed, uploadId };
+}
+
+function validateLocalCoffeeSummary(rawSummary: unknown) {
+  if (!rawSummary || typeof rawSummary !== 'object' || Array.isArray(rawSummary)) {
+    throw new HttpsError('invalid-argument', 'INVALID_COFFEE_LOCAL_VALIDATION');
+  }
+  const summary = rawSummary as Record<string, unknown>;
+  for (const step of coffeeRequiredSteps) {
+    const stepSummary = summary[step];
+    if (!stepSummary || typeof stepSummary !== 'object' || Array.isArray(stepSummary)) {
+      throw new HttpsError('invalid-argument', 'INVALID_COFFEE_LOCAL_VALIDATION');
+    }
+    if ((stepSummary as Record<string, unknown>).isValid !== true) {
+      throw new HttpsError('failed-precondition', 'INVALID_COFFEE_LOCAL_VALIDATION');
+    }
+  }
+}
+
+async function deleteCoffeeImages(imageRefs: Partial<CoffeeImageRefs>) {
+  await Promise.all(
+    Object.values(imageRefs).map(async (path) => {
+      if (!path) return;
+      try {
+        await storage.bucket().file(path).delete({ ignoreNotFound: true });
+      } catch (error) {
+        logger.warn('Coffee image cleanup failed', {
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })
+  );
+}
+
+async function loadCoffeeImages(imageRefs: CoffeeImageRefs) {
+  const images: Array<{ step: string; mimeType: string; base64: string }> = [];
+  for (const step of coffeeRequiredSteps) {
+    const file = storage.bucket().file(imageRefs[step]);
+    const [metadata] = await file.getMetadata();
+    const size = Number(metadata.size ?? 0);
+    if (metadata.contentType !== 'image/jpeg' || size <= 0 || size > coffeeMaxImageBytes) {
+      throw new HttpsError('invalid-argument', 'INVALID_COFFEE_IMAGE_METADATA');
+    }
+    const [buffer] = await file.download();
+    images.push({
+      step,
+      mimeType: 'image/jpeg',
+      base64: buffer.toString('base64'),
+    });
+  }
+  return images;
+}
+
+function coffeeDayKey(nowMs: number) {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+function coffeeResultWithoutInternalFields(data: FirebaseFirestore.DocumentData) {
+  const {
+    status: _status,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
+    ...result
+  } = data;
+  return result;
+}
+
+async function reserveCoffeeCredits(input: {
+  uid: string;
+  idemKey: string;
+  userRef: FirebaseFirestore.DocumentReference;
+  idempotencyRef: FirebaseFirestore.DocumentReference;
+  reservationRef: FirebaseFirestore.DocumentReference;
+}) {
+  const nowMs = Date.now();
+  let cachedResult: FirebaseFirestore.DocumentData | null = null;
+
+  await db.runTransaction(async (tx) => {
+    const [userSnap, idempotencySnap] = await Promise.all([
+      tx.get(input.userRef),
+      tx.get(input.idempotencyRef),
+    ]);
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'USER_NOT_FOUND');
+    }
+
+    if (idempotencySnap.exists) {
+      const data = idempotencySnap.data() ?? {};
+      if (data.status === 'processing') {
+        throw new Error('COFFEE_ANALYSIS_IN_PROGRESS');
+      }
+      if (data.status === 'completed' || typeof data.success === 'boolean') {
+        cachedResult = coffeeResultWithoutInternalFields(data);
+        return;
+      }
+    }
+
+    const user = userSnap.data() as UserDoc & {
+      coffeeAnalysis?: CoffeeAnalysisState;
+    };
+    const wallet = user.wallet ?? { credits: 0, isFirstFreeUsed: false };
+    const analysis = user.coffeeAnalysis ?? {};
+    const activeReservationId = analysis.activeReservationId ?? null;
+    const activeExpiresAtMs = Number(analysis.activeReservationExpiresAtMs ?? 0);
+    const activeAmount = Number(analysis.activeReservationAmount ?? 0);
+    let reservedCredits = Number(wallet.coffeeReservedCredits ?? 0);
+
+    if (activeReservationId && activeExpiresAtMs > nowMs) {
+      throw new Error('COFFEE_ANALYSIS_IN_PROGRESS');
+    }
+    if (activeReservationId && activeExpiresAtMs <= nowMs) {
+      reservedCredits = Math.max(0, reservedCredits - activeAmount);
+      tx.set(
+        input.userRef.collection('coffee_reservations').doc(activeReservationId),
+        {
+          status: 'expired',
+          expiresAtMs: null,
+          releasedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    const windowStartedAtMs = Number(analysis.windowStartedAtMs ?? 0);
+    const isCurrentWindow = nowMs - windowStartedAtMs < 10 * 60 * 1000;
+    const windowCount = isCurrentWindow ? Number(analysis.windowCount ?? 0) : 0;
+    const dayKey = coffeeDayKey(nowMs);
+    const dayCount = analysis.dayKey === dayKey ? Number(analysis.dayCount ?? 0) : 0;
+    if (windowCount >= coffeeTenMinuteAttemptLimit || dayCount >= coffeeDailyAttemptLimit) {
+      throw new Error('COFFEE_RATE_LIMITED');
+    }
+
+    const credits = Number(wallet.credits ?? 0);
+    if (credits - reservedCredits < coffeeReadingCost) {
+      throw new Error('INSUFFICIENT_CREDITS');
+    }
+
+    const expiresAtMs = nowMs + coffeeReservationTtlMs;
+    tx.update(input.userRef, {
+      'wallet.coffeeReservedCredits': reservedCredits + coffeeReadingCost,
+      coffeeAnalysis: {
+        activeReservationId: input.idemKey,
+        activeReservationExpiresAtMs: expiresAtMs,
+        activeReservationAmount: coffeeReadingCost,
+        windowStartedAtMs: isCurrentWindow ? windowStartedAtMs : nowMs,
+        windowCount: windowCount + 1,
+        dayKey,
+        dayCount: dayCount + 1,
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(input.reservationRef, {
+      uid: input.uid,
+      idempotencyKey: input.idemKey,
+      amount: coffeeReadingCost,
+      status: 'processing',
+      expiresAtMs,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(input.idempotencyRef, {
+      status: 'processing',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return cachedResult;
+}
+
+async function releaseCoffeeReservation(input: {
+  userRef: FirebaseFirestore.DocumentReference;
+  idempotencyRef: FirebaseFirestore.DocumentReference;
+  reservationRef: FirebaseFirestore.DocumentReference;
+  result?: Record<string, unknown>;
+}) {
+  await db.runTransaction(async (tx) => {
+    const [userSnap, reservationSnap] = await Promise.all([
+      tx.get(input.userRef),
+      tx.get(input.reservationRef),
+    ]);
+    if (!userSnap.exists || !reservationSnap.exists) return;
+
+    const reservation = reservationSnap.data() as CoffeeReservationDoc;
+    if (reservation.status !== 'processing') return;
+
+    const user = userSnap.data() as UserDoc & { coffeeAnalysis?: CoffeeAnalysisState };
+    const analysis = user.coffeeAnalysis ?? {};
+    const reservedCredits = Math.max(
+      0,
+      Number(user.wallet?.coffeeReservedCredits ?? 0) - Number(reservation.amount ?? 0)
+    );
+    const updates: Record<string, unknown> = {
+      'wallet.coffeeReservedCredits': reservedCredits,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (analysis.activeReservationId === reservation.idempotencyKey) {
+      updates['coffeeAnalysis.activeReservationId'] = null;
+      updates['coffeeAnalysis.activeReservationExpiresAtMs'] = null;
+      updates['coffeeAnalysis.activeReservationAmount'] = null;
+    }
+    tx.update(input.userRef, updates);
+    tx.update(input.reservationRef, {
+      status: 'released',
+      expiresAtMs: null,
+      releasedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      input.idempotencyRef,
+      input.result
+        ? {
+          ...input.result,
+          status: 'completed',
+          updatedAt: FieldValue.serverTimestamp(),
+        }
+        : {
+          status: 'failed',
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+      { merge: true }
+    );
+  });
+}
+
+export const analyzeCoffeeReading = onCall(
+  {
+    enforceAppCheck: false,
+    secrets: ['GEMINI_API_KEY'],
+    maxInstances: 3,
+    concurrency: 2,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    let imageRefs: CoffeeImageRefs | null = null;
+    let reservationStarted = false;
+    let completed = false;
+    try {
+      if (!request.auth?.uid) {
+        throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+      }
+
+      const uid = request.auth.uid;
+      requireAppCheckIfEnabled(request);
+      logger.info('Coffee App Check telemetry', {
+        hasAppCheck: Boolean(request.app),
+      });
+
+      const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
+      const languageCode = resolveLanguage(request.data?.languageCode);
+      const parsedRefs = parseCoffeeImageRefs(uid, request.data?.imageRefs);
+      imageRefs = parsedRefs.imageRefs;
+      validateLocalCoffeeSummary(request.data?.localValidation);
+
+      const userRef = db.collection('users').doc(uid);
+      const idempotencyRef = userRef.collection('idempotency').doc(`coffee_${idemKey}`);
+      const reservationRef = userRef.collection('coffee_reservations').doc(idemKey);
+      const cachedResult = await reserveCoffeeCredits({
+        uid,
+        idemKey,
+        userRef,
+        idempotencyRef,
+        reservationRef,
+      });
+      if (cachedResult) {
+        completed = true;
+        return cachedResult;
+      }
+      reservationStarted = true;
+
+      const images = await loadCoffeeImages(imageRefs);
+      const aiPayload = await createCoffeeReadingWithVision({
+        languageCode,
+        images,
+      });
+
+      if (!aiPayload.validation.isValid || !aiPayload.reading) {
+        const userSnap = await userRef.get();
+        const invalidResult = {
+          success: false,
+          chargedCredits: 0,
+          remainingCredits: Number((userSnap.data() as Partial<UserDoc> | undefined)?.wallet?.credits ?? 0),
+          readingId: '',
+          validation: aiPayload.validation,
+          reading: null,
+        };
+        await releaseCoffeeReservation({
+          userRef,
+          idempotencyRef,
+          reservationRef,
+          result: invalidResult,
+        });
+        await deleteCoffeeImages(imageRefs);
+        completed = true;
+        return invalidResult;
+      }
+
+      const readingRef = userRef.collection('coffee_readings').doc();
+      const retentionExpiresAtMs = Date.now() + coffeeRetentionMs;
+      let remainingCredits = 0;
+      const successResult = {
+        success: true,
+        chargedCredits: coffeeReadingCost,
+        remainingCredits,
+        readingId: readingRef.id,
+        validation: aiPayload.validation,
+        reading: aiPayload.reading,
+      };
+
+      await db.runTransaction(async (tx) => {
+        const [userSnap, reservationSnap] = await Promise.all([
+          tx.get(userRef),
+          tx.get(reservationRef),
+        ]);
+        if (!userSnap.exists) {
+          throw new HttpsError('not-found', 'USER_NOT_FOUND');
+        }
+        if (!reservationSnap.exists) {
+          throw new Error('COFFEE_RESERVATION_MISSING');
+        }
+        const reservation = reservationSnap.data() as CoffeeReservationDoc;
+        if (reservation.status !== 'processing') {
+          throw new Error('COFFEE_RESERVATION_INVALID');
+        }
+
+        const user = userSnap.data() as UserDoc;
+        const credits = Number(user.wallet?.credits ?? 0);
+        const reservedCredits = Number(user.wallet?.coffeeReservedCredits ?? 0);
+        if (credits < coffeeReadingCost || reservedCredits < coffeeReadingCost) {
+          throw new Error('INSUFFICIENT_CREDITS');
+        }
+        remainingCredits = credits - coffeeReadingCost;
+        successResult.remainingCredits = remainingCredits;
+
+        tx.update(userRef, {
+          'wallet.credits': remainingCredits,
+          'wallet.coffeeReservedCredits': Math.max(0, reservedCredits - coffeeReadingCost),
+          'coffeeAnalysis.activeReservationId': null,
+          'coffeeAnalysis.activeReservationExpiresAtMs': null,
+          'coffeeAnalysis.activeReservationAmount': null,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.update(reservationRef, {
+          status: 'charged',
+          expiresAtMs: null,
+          chargedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(userRef.collection('credit_ledger').doc(), {
+          type: 'debit',
+          amount: -coffeeReadingCost,
+          reason: 'coffee_reading',
+          idempotencyKey: idemKey,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(readingRef, {
+          uid,
+          languageCode,
+          uploadId: parsedRefs.uploadId,
+          imageRefs,
+          validation: aiPayload.validation,
+          reading: aiPayload.reading,
+          status: 'succeeded',
+          idempotencyKey: idemKey,
+          retentionExpiresAtMs,
+          imagesDeletedAt: null,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(idempotencyRef, {
+          ...successResult,
+          status: 'completed',
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+
+      await Promise.all(Object.values(imageRefs).map(async (path) => {
+        try {
+          await storage.bucket().file(path).setMetadata({
+            metadata: {
+              coffeeReadingId: readingRef.id,
+              coffeeRetentionUntil: new Date(retentionExpiresAtMs).toISOString(),
+            },
+          });
+        } catch (error) {
+          logger.warn('Coffee retention metadata update failed', {
+            path,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }));
+      completed = true;
+      return successResult;
+    } catch (err) {
+      if (reservationStarted && !completed && request.auth?.uid) {
+        const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
+        const userRef = db.collection('users').doc(request.auth.uid);
+        await releaseCoffeeReservation({
+          userRef,
+          idempotencyRef: userRef.collection('idempotency').doc(`coffee_${idemKey}`),
+          reservationRef: userRef.collection('coffee_reservations').doc(idemKey),
+        });
+      }
+      if (!completed && imageRefs) {
+        await deleteCoffeeImages(imageRefs);
+      }
+      throw mapError(err);
+    }
+  }
+);
+
+export const deleteCoffeeReadingPhotos = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+    requireAppCheckIfEnabled(request);
+    const uid = request.auth.uid;
+    const readingId = String(request.data?.readingId ?? '').trim();
+    if (!readingId) {
+      throw new HttpsError('invalid-argument', 'INVALID_READING_ID');
+    }
+
+    const readingRef = db.collection('users').doc(uid).collection('coffee_readings').doc(readingId);
+    const readingSnap = await readingRef.get();
+    if (!readingSnap.exists) {
+      throw new HttpsError('not-found', 'READING_NOT_FOUND');
+    }
+    const reading = readingSnap.data() as { imageRefs?: unknown };
+    const { imageRefs } = parseCoffeeImageRefs(uid, reading.imageRefs);
+    await deleteCoffeeImages(imageRefs);
+    await readingRef.update({
+      imagesDeletedAt: FieldValue.serverTimestamp(),
+      retentionExpiresAtMs: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { success: true };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
 export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -734,7 +1223,7 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
         lang,
         badComment: comment.slice(0, 120)
       });
-      comment = buildBirthFrequencyFallback({ birthDate, lang });
+      comment = buildBirthFrequencyFallback({ birthDate, day, lang });
     }
 
     await dailyCommentRef.set({
@@ -1525,6 +2014,116 @@ export const sendTestDailyNudge = onCall({ enforceAppCheck: false }, async (requ
     throw mapError(err);
   }
 });
+
+export const cleanupCoffeeArtifacts = onSchedule(
+  {
+    schedule: 'every 60 minutes',
+    timeZone: process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul',
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const nowMs = Date.now();
+    let releasedReservations = 0;
+    let deletedExpiredReadingImages = 0;
+    let deletedOrphanImages = 0;
+
+    const expiredReservations = await db
+      .collectionGroup('coffee_reservations')
+      .where('expiresAtMs', '<=', nowMs)
+      .limit(250)
+      .get();
+    for (const reservationSnap of expiredReservations.docs) {
+      const reservation = reservationSnap.data() as CoffeeReservationDoc;
+      if (reservation.status !== 'processing') {
+        await reservationSnap.ref.set({
+          expiresAtMs: null,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        continue;
+      }
+      const userRef = reservationSnap.ref.parent.parent;
+      if (!userRef) continue;
+      await releaseCoffeeReservation({
+        userRef,
+        reservationRef: reservationSnap.ref,
+        idempotencyRef: userRef.collection('idempotency').doc(`coffee_${reservation.idempotencyKey}`),
+      });
+      await reservationSnap.ref.set({
+        status: 'expired',
+        expiresAtMs: null,
+        releasedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      releasedReservations += 1;
+    }
+
+    const expiredReadings = await db
+      .collectionGroup('coffee_readings')
+      .where('retentionExpiresAtMs', '<=', nowMs)
+      .limit(250)
+      .get();
+    for (const readingSnap of expiredReadings.docs) {
+      const reading = readingSnap.data() as {
+        uid?: string;
+        imageRefs?: Partial<CoffeeImageRefs>;
+        imagesDeletedAt?: unknown;
+        retentionExpiresAtMs?: unknown;
+      };
+      if (reading.imagesDeletedAt || !reading.imageRefs) {
+        await readingSnap.ref.update({
+          retentionExpiresAtMs: null,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        continue;
+      }
+      await deleteCoffeeImages(reading.imageRefs);
+      await readingSnap.ref.update({
+        imagesDeletedAt: FieldValue.serverTimestamp(),
+        retentionExpiresAtMs: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      deletedExpiredReadingImages += 1;
+    }
+
+    const [coffeeFiles] = await storage.bucket().getFiles({
+      prefix: 'coffee/',
+      maxResults: 500,
+    });
+    for (const file of coffeeFiles) {
+      const match = file.name.match(/^coffee\/([^/]+)\/(coffee_[0-9]+)\/(cupInside|saucer|cupSide)\.jpg$/);
+      if (!match) continue;
+      const [metadata] = await file.getMetadata();
+      const createdAtMs = Date.parse(String(metadata.timeCreated ?? ''));
+      const retentionUntilMs = Date.parse(String(metadata.metadata?.coffeeRetentionUntil ?? ''));
+      if (Number.isFinite(retentionUntilMs) && retentionUntilMs <= nowMs) {
+        await file.delete({ ignoreNotFound: true });
+        deletedExpiredReadingImages += 1;
+        continue;
+      }
+      if (!Number.isFinite(createdAtMs) || nowMs - createdAtMs < coffeeOrphanGraceMs) {
+        continue;
+      }
+
+      const ownerReading = await db
+        .collection('users')
+        .doc(match[1])
+        .collection('coffee_readings')
+        .where('uploadId', '==', match[2])
+        .limit(1)
+        .get();
+      if (ownerReading.empty) {
+        await file.delete({ ignoreNotFound: true });
+        deletedOrphanImages += 1;
+      }
+    }
+
+    logger.info('cleanupCoffeeArtifacts completed', {
+      releasedReservations,
+      deletedExpiredReadingImages,
+      deletedOrphanImages,
+    });
+  }
+);
 
 export const backfillMissingUserWallets = onSchedule(
   {

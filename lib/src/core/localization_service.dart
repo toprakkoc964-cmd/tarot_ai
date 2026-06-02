@@ -281,7 +281,7 @@ class LocalizationService {
     'arisQuestionHint': 'Whisper a question to the sage...',
     'coffeeTitle': 'Coffee Reading',
     'coffeeDescription':
-        'We will collect 3 photos for Madam Aris: inside the cup, the saucer, and the outside of the cup.',
+        'Madam Aris will read the inside of your cup, the saucer, and the outer surface together.',
     'coffeeOpenCamera': 'Open Camera',
     'coffeeChooseGallery': 'Choose from Gallery',
     'coffeeCropTitle': 'Center the Cup',
@@ -289,6 +289,7 @@ class LocalizationService {
     'coffeeCropSaucerTitle': 'Center the Saucer',
     'coffeeCropCupSideTitle': 'Center the Outside of the Cup',
     'coffeePreparingPhoto': 'Preparing photo...',
+    'coffeeValidatingPhoto': 'Validating photo...',
     'coffeeStepInsideTitle': '1/3 · Inside the Cup',
     'coffeeStepInsideDesc': 'Show the grounds and inner traces clearly.',
     'coffeeStepSaucerTitle': '2/3 · Cup Saucer',
@@ -299,7 +300,7 @@ class LocalizationService {
     'coffeeAddPhoto': 'Add Photo',
     'coffeeCaptureCompleted': 'This photo is ready.',
     'coffeeAllPhotosReady':
-        'All three photos are ready. Madam Aris is beginning to read the symbols.',
+        'All three photos are ready. Tap the button below when you want Madam Aris to interpret them.',
     'coffeeProgressHint':
         '{count}/3 photos ready. Complete all three steps to analyze.',
     'coffeeContinue': 'Continue',
@@ -311,7 +312,42 @@ class LocalizationService {
     'coffeeWeakImageWarning':
         'The photo looks a little unclear, but you can continue.',
     'coffeeStartMadamAris': 'Ask Madam Aris',
-    'coffeeRetakePhoto': 'Choose Again',
+    'coffeeStartMadamArisWithCredits': 'Ask Madam Aris · 20 Tokens',
+    'coffeeReadingCostInfo':
+        'A coffee reading costs 20 tokens. Tokens are deducted only after a successful reading.',
+    'coffeeRetakePhoto': 'Retake',
+    'coffeeReselectPhoto': 'Choose Again',
+    'coffeeAskMadamAris': 'Ask Madam Aris · 20 Tokens',
+    'coffeeMadamArisPreparing': 'Madam Aris is preparing...',
+    'coffeeNotEnoughCredits': 'You do not have enough tokens.',
+    'coffeeReadyToAnalyze':
+        'All three photos are ready. Your reading starts only when you ask.',
+    'coffeeCreditInfo': '20 tokens · deducted only after a successful reading',
+    'coffeePhotoReady': 'Photo ready',
+    'coffeePhotoNeedsRetry': 'Replace this photo',
+    'coffeePhotoValidating': 'Validating photo',
+    'coffeeImageSourceCamera': 'Camera',
+    'coffeeImageSourceGallery': 'Gallery',
+    'coffeeLoadingTriangleTitle': 'THREE TRACES · ONE READING',
+    'coffeeLoadingTriangleSubtitle':
+        'Madam Aris is reading all three sides of your cup together.',
+    'coffeeLoadingPhaseValidationTitle': 'Validating your photos...',
+    'coffeeLoadingPhaseValidationSubtitle':
+        'The cup interior, saucer, and outer view are being prepared securely.',
+    'coffeeLoadingPhaseCombiningTitle':
+        'The three traces are coming together...',
+    'coffeeLoadingPhaseCombiningSubtitle':
+        'The signs in the grounds are matching across each side of the cup.',
+    'coffeeLoadingPhaseReadingTitle': 'Madam Aris is reading the symbols...',
+    'coffeeLoadingPhaseReadingSubtitle':
+        'The cup interior, saucer, and outer traces are being interpreted together.',
+    'coffeeLoadingPhaseLongWaitTitle': 'Finishing the finer details...',
+    'coffeeLoadingPhaseLongWaitSubtitle':
+        'This can take a few more seconds. Please wait.',
+    'coffeeRetake': 'Retake',
+    'coffeeRetry': 'Try Again',
+    'coffeeCamera': 'Take with Camera',
+    'coffeeGallery': 'Choose from Gallery',
     'coffeeAnalyzingSymbols':
         'Madam Aris is decoding the symbols in the grounds...',
     'coffeeAnalyzingSubtitle':
@@ -330,12 +366,66 @@ class LocalizationService {
     'coffeeCompressionFailed':
         'The photo could not be prepared. Please try again.',
     'coffeeValidationFailed': 'Coffee photo could not be validated',
+    'coffeeValidationNoCup': 'No cup detected. Please show the cup clearly.',
+    'coffeeValidationWrongStep': 'This photo is not suitable for this step.',
+    'coffeeValidationNoResidue':
+        'Coffee residue is not clear. Please capture the grounds more closely.',
+    'coffeeValidationNoSaucer':
+        'No saucer detected. Please show the saucer and residue clearly.',
+    'coffeeValidationEmptyCup':
+        'No coffee grounds or traces are visible inside the cup. Please use a cup with residue marks.',
+    'coffeeValidationBlurry':
+        'The photo looks blurry. Please take a sharper picture.',
+    'coffeeValidationTooDark':
+        'The photo is too dark. Please shoot in a brighter place.',
+    'coffeeValidationTooBright':
+        'The photo is too bright. Please reduce the light and try again.',
+    'coffeeValidationDuplicate':
+        'This photo looks too similar to one you already added. Please take a new angle.',
+    'coffeeValidationScreenshotOrStock':
+        'This image looks like a screenshot or stock photo. Please capture your real cup with the camera.',
+    'coffeeValidationScreenSpoofing':
+        'This cup appears to be photographed from another screen. Please use a physical cup.',
+    'coffeeValidationInappropriateContent':
+        'Inappropriate content detected. Please upload physical cup and saucer photos only.',
+    'coffeeValidationLowConfidence':
+        'We could not confidently validate this photo. Please try again.',
+    'coffeeValidationCameraRecommended':
+        'For the most accurate coffee reading, we recommend capturing your cup directly with the camera.',
+    'coffeeValidationPrivacyInfo':
+        'Your 3 selected photos are analyzed for your coffee reading. Successful reading photos are retained for up to 7 days and can be deleted immediately from the result screen.',
+    'coffeeValidationLocalInfo':
+        'Initial visual validation runs on your device.',
+    'coffeeValidationBackendInfo':
+        'To create your reading, photos may be sent securely to the analysis service.',
+    'coffeeValidationParseError':
+        'Something went wrong while validating the photos. Please try again.',
+    'coffeePhotosRetentionInfo':
+        'Your reading photos are retained for up to 7 days. You can delete them now if you prefer.',
+    'coffeeDeletePhotos': 'Delete My Photos Now',
+    'coffeeDeletePhotosSuccess': 'Your photos were deleted.',
+    'coffeeDeletePhotosFailed':
+        'Your photos could not be deleted. Please try again.',
+    'coffeeAnalysisInProgress':
+        'A coffee reading is already being prepared for you.',
+    'coffeeRateLimited':
+        'You have tried too many times in a short period. Please try again later.',
+    'coffeeReadingDisclaimer':
+        'This reading is for entertainment and personal awareness; it is not medical, financial, legal, or a definitive future prediction.',
+    'coffeeReadingGeneralEnergy': 'General Energy',
+    'coffeeReadingSymbols': 'Symbols in the Grounds',
+    'coffeeReadingSaucerSigns': 'Saucer Signs',
+    'coffeeReadingOuterCupMessage': 'Outer Cup Message',
+    'coffeeReadingPastTrace': 'Trace from the Past',
+    'coffeeReadingPresentMood': 'Present Mood',
+    'coffeeReadingNearFutureMessage': 'Near Future Message',
+    'coffeeReadingAdvice': 'Madam Aris Advice',
     'coffeeEntertainmentDisclaimer':
         'These readings are created for entertainment and personal awareness. They do not include medical, financial, legal, or definitive future predictions.',
     'coffeePhotoPrivacyNote':
-        'At this step, your photo is processed only on-device for cup validation. Real AI analysis will be connected securely through the backend in Sprint 3.',
+        'Initial cup validation runs on your device. When you request a reading, your photos are sent securely for analysis and retained for up to 7 days.',
     'coffeeChatWithMadamAris': 'Chat with Madam Aris',
-    'coffeeMessageNote': 'MVP trial mode · No tokens are spent in this Sprint',
+    'coffeeMessageNote': 'A coffee reading costs 20 tokens.',
     'coffeeQuestionHint': 'Ask about the symbols in the grounds...',
     'coffeeLoadingChatSubtitle': 'Listening to the symbols in the grounds.',
     'coffeeMockOpening':
@@ -611,7 +701,7 @@ class LocalizationService {
     'arisQuestionHint': 'Bilgeye bir soru fısılda...',
     'coffeeTitle': 'Kahve Falı',
     'coffeeDescription':
-        'Madam Aris için 3 farklı fotoğraf toplayacağız: fincanın içi, tabağı ve dış görünümü.',
+        'Madam Aris fincanın içini, tabağını ve dış görünümünü birlikte yorumlayacak.',
     'coffeeOpenCamera': 'Kamerayı Aç',
     'coffeeChooseGallery': 'Galeriden Seç',
     'coffeeCropTitle': 'Fincanı Ortala',
@@ -619,6 +709,7 @@ class LocalizationService {
     'coffeeCropSaucerTitle': 'Tabağı Ortala',
     'coffeeCropCupSideTitle': 'Fincanın Dışını Ortala',
     'coffeePreparingPhoto': 'Fotoğraf hazırlanıyor...',
+    'coffeeValidatingPhoto': 'Fotoğraf doğrulanıyor...',
     'coffeeStepInsideTitle': '1/3 · Fincanın İçi',
     'coffeeStepInsideDesc': 'Telveyi ve fincanın iç izlerini net göster.',
     'coffeeStepSaucerTitle': '2/3 · Fincan Tabağı',
@@ -628,7 +719,7 @@ class LocalizationService {
     'coffeeAddPhoto': 'Fotoğraf Ekle',
     'coffeeCaptureCompleted': 'Bu fotoğraf hazır.',
     'coffeeAllPhotosReady':
-        'Üç fotoğraf hazır. Madam Aris sembolleri okumaya başlıyor.',
+        'Üç fotoğraf hazır. Yorumlatmak için aşağıdaki butona dokun.',
     'coffeeProgressHint':
         '{count}/3 fotoğraf hazır. Analiz için üç adımı tamamla.',
     'coffeeContinue': 'Devam Et',
@@ -640,7 +731,41 @@ class LocalizationService {
     'coffeeWeakImageWarning':
         'Fotoğraf biraz belirsiz görünüyor ama devam edebilirsin.',
     'coffeeStartMadamAris': 'Madam Aris’e Yorumlat',
-    'coffeeRetakePhoto': 'Yeniden Seç',
+    'coffeeStartMadamArisWithCredits': 'Madam Aris’e Yorumlat · 20 Jeton',
+    'coffeeReadingCostInfo':
+        'Kahve falı yorumlaması 20 jetondur. Jeton yalnızca başarılı yorumda düşer.',
+    'coffeeRetakePhoto': 'Yeniden Çek',
+    'coffeeReselectPhoto': 'Yeniden Seç',
+    'coffeeAskMadamAris': 'Madam Aris’e Yorumlat · 20 Jeton',
+    'coffeeMadamArisPreparing': 'Madam Aris hazırlanıyor...',
+    'coffeeNotEnoughCredits': 'Yeterli jetonun yok.',
+    'coffeeReadyToAnalyze':
+        'Üç fotoğraf hazır. Yorum yalnızca sen başlattığında oluşturulur.',
+    'coffeeCreditInfo': '20 jeton · yalnızca başarılı yorumdan sonra düşer',
+    'coffeePhotoReady': 'Fotoğraf hazır',
+    'coffeePhotoNeedsRetry': 'Bu fotoğrafı yenile',
+    'coffeePhotoValidating': 'Fotoğraf doğrulanıyor',
+    'coffeeImageSourceCamera': 'Kamera',
+    'coffeeImageSourceGallery': 'Galeri',
+    'coffeeLoadingTriangleTitle': 'ÜÇ İZ · TEK YORUM',
+    'coffeeLoadingTriangleSubtitle':
+        'Madam Aris fincanın üç yüzünü birlikte okuyor.',
+    'coffeeLoadingPhaseValidationTitle': 'Fotoğraflar doğrulanıyor...',
+    'coffeeLoadingPhaseValidationSubtitle':
+        'Fincanın içi, tabağı ve dış görünümü güvenle hazırlanıyor.',
+    'coffeeLoadingPhaseCombiningTitle': 'Üç iz bir araya geliyor...',
+    'coffeeLoadingPhaseCombiningSubtitle':
+        'Telvenin işaretleri fincanın farklı yüzlerinde eşleşiyor.',
+    'coffeeLoadingPhaseReadingTitle': 'Madam Aris sembolleri okuyor...',
+    'coffeeLoadingPhaseReadingSubtitle':
+        'Fincanın içi, tabağı ve dış izleri birlikte yorumlanıyor.',
+    'coffeeLoadingPhaseLongWaitTitle': 'Yorumun incelikleri tamamlanıyor...',
+    'coffeeLoadingPhaseLongWaitSubtitle':
+        'Bu bazen birkaç saniye daha sürebilir. Lütfen bekle.',
+    'coffeeRetake': 'Yeniden çek',
+    'coffeeRetry': 'Tekrar dene',
+    'coffeeCamera': 'Kamera ile çek',
+    'coffeeGallery': 'Galeriden seç',
     'coffeeAnalyzingSymbols': 'Madam Aris telvedeki sembolleri çözümlüyor...',
     'coffeeAnalyzingSubtitle':
         'Fincanın içi, tabağı ve dış izleri birlikte okunuyor...',
@@ -656,12 +781,64 @@ class LocalizationService {
     'coffeeCropCancelled': 'Kırpma işlemi iptal edildi.',
     'coffeeCompressionFailed': 'Fotoğraf hazırlanamadı. Lütfen tekrar dene.',
     'coffeeValidationFailed': 'Kahve fotoğrafı doğrulanamadı',
+    'coffeeValidationNoCup':
+        'Fincan algılanamadı. Lütfen fincanı net şekilde göster.',
+    'coffeeValidationWrongStep': 'Bu fotoğraf bu adım için uygun değil.',
+    'coffeeValidationNoResidue':
+        'Telve izleri net görünmüyor. Lütfen kahve izlerini daha yakından çek.',
+    'coffeeValidationNoSaucer':
+        'Fincan tabağı algılanamadı. Lütfen tabağı ve telve izlerini net göster.',
+    'coffeeValidationEmptyCup':
+        'Fincanın içinde kahve telvesi veya izleri görünmüyor. Kahve falı için telve izleri olan fincanını çekmelisin.',
+    'coffeeValidationBlurry':
+        'Fotoğraf bulanık görünüyor. Lütfen daha net çek.',
+    'coffeeValidationTooDark':
+        'Fotoğraf çok karanlık. Lütfen daha aydınlık bir yerde çek.',
+    'coffeeValidationTooBright':
+        'Fotoğraf çok parlak. Lütfen ışığı biraz azaltıp tekrar dene.',
+    'coffeeValidationDuplicate':
+        'Bu fotoğraf daha önce eklediğin görsele çok benziyor. Lütfen farklı açıdan yeni bir fotoğraf çek.',
+    'coffeeValidationScreenshotOrStock':
+        'Bu görsel ekran görüntüsü veya internet görseli gibi görünüyor. Lütfen fincanını doğrudan kamerayla çek.',
+    'coffeeValidationScreenSpoofing':
+        'Bu fincan başka bir dijital ekrandan çekilmiş gibi görünüyor. Lütfen fiziksel, gerçek bir fincan fotoğrafı çek.',
+    'coffeeValidationInappropriateContent':
+        'Uygunsuz içerik algılandı. Lütfen kahve falı için fiziksel fincan ve tabak fotoğrafları yükle.',
+    'coffeeValidationLowConfidence':
+        'Bu fotoğraf güvenle doğrulanamadı. Lütfen tekrar dene.',
+    'coffeeValidationCameraRecommended':
+        'En doğru kahve falı için fincanını doğrudan kamerayla çekmeni öneririz.',
+    'coffeeValidationPrivacyInfo':
+        'Kahve falı yorumun için seçtiğin 3 fotoğraf analiz edilir. Başarılı analiz fotoğrafları en fazla 7 gün saklanır ve istersen sonuç ekranından hemen silebilirsin.',
+    'coffeeValidationLocalInfo': 'İlk görsel doğrulama cihazında yapılır.',
+    'coffeeValidationBackendInfo':
+        'Fal yorumunu oluşturmak için fotoğrafların güvenli şekilde analiz servisine gönderilebilir.',
+    'coffeeValidationParseError':
+        'Fotoğraflar doğrulanırken bir sorun oluştu. Lütfen tekrar dene.',
+    'coffeePhotosRetentionInfo':
+        'Yorum fotoğrafların en fazla 7 gün saklanır. Dilersen şimdi silebilirsin.',
+    'coffeeDeletePhotos': 'Fotoğraflarımı Şimdi Sil',
+    'coffeeDeletePhotosSuccess': 'Fotoğrafların silindi.',
+    'coffeeDeletePhotosFailed': 'Fotoğraflar silinemedi. Lütfen tekrar dene.',
+    'coffeeAnalysisInProgress': 'Bir kahve falı yorumun zaten hazırlanıyor.',
+    'coffeeRateLimited':
+        'Kısa sürede çok fazla deneme yaptın. Lütfen biraz sonra tekrar dene.',
+    'coffeeReadingDisclaimer':
+        'Bu yorum eğlence ve kişisel farkındalık amacıyla hazırlanmıştır; tıbbi, finansal, hukuki veya kesin gelecek tahmini içermez.',
+    'coffeeReadingGeneralEnergy': 'Genel Enerji',
+    'coffeeReadingSymbols': 'Telvedeki Semboller',
+    'coffeeReadingSaucerSigns': 'Tabak İzleri',
+    'coffeeReadingOuterCupMessage': 'Fincanın Dış Mesajı',
+    'coffeeReadingPastTrace': 'Geçmişten Gelen İz',
+    'coffeeReadingPresentMood': 'Şu Anki Ruh Hali',
+    'coffeeReadingNearFutureMessage': 'Yakın Dönem Mesajı',
+    'coffeeReadingAdvice': 'Madam Aris’in Tavsiyesi',
     'coffeeEntertainmentDisclaimer':
         'Bu yorumlar eğlence ve kişisel farkındalık amacıyla hazırlanmıştır. Tıbbi, finansal, hukuki veya kesin gelecek tahmini içermez.',
     'coffeePhotoPrivacyNote':
-        'Fotoğrafın bu adımda yalnızca cihaz içinde fincan doğrulaması için işlenir. Gerçek AI analizi Sprint 3’te backend üzerinden güvenli şekilde bağlanacaktır.',
+        'İlk fincan doğrulaması cihazında yapılır. Yorumlatmayı seçtiğinde fotoğrafların güvenli analiz servisine gönderilir ve en fazla 7 gün saklanır.',
     'coffeeChatWithMadamAris': 'Madam Aris ile Sohbet Et',
-    'coffeeMessageNote': 'MVP deneme modu · Bu Sprint’te jeton harcanmaz',
+    'coffeeMessageNote': 'Kahve falı yorumlaması 20 jetondur.',
     'coffeeQuestionHint': 'Telvedeki sembolleri sor...',
     'coffeeLoadingChatSubtitle': 'Telvedeki sembolleri dinliyor.',
     'coffeeMockOpening':

@@ -7,14 +7,18 @@ import 'package:flutter_image_compress/flutter_image_compress.dart'
     as image_compress;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/coffee_image_pipeline_result.dart';
+import '../models/coffee_image_source.dart';
+import '../models/coffee_image_source_evidence.dart';
 import '../models/coffee_photo_step.dart';
 import '../models/coffee_validation_result.dart';
+import 'coffee_image_similarity_service.dart';
 import 'coffee_temp_file_cleaner.dart';
 import 'coffee_validation_service.dart';
 
@@ -37,22 +41,27 @@ class CoffeeImagePipelineService {
   CoffeeImagePipelineService({
     required CoffeeValidationService validationService,
     required CoffeeTempFileCleaner tempFileCleaner,
+    CoffeeImageSimilarityService? similarityService,
     ImagePicker? picker,
     ImageCropper? cropper,
   })  : _validationService = validationService,
         _tempFileCleaner = tempFileCleaner,
+        _similarityService =
+            similarityService ?? CoffeeImageSimilarityService(),
         _picker = picker ?? ImagePicker(),
         _cropper = cropper ?? ImageCropper();
 
   final CoffeeValidationService _validationService;
   final CoffeeTempFileCleaner _tempFileCleaner;
+  final CoffeeImageSimilarityService _similarityService;
   final ImagePicker _picker;
   final ImageCropper _cropper;
 
   Future<CoffeeImagePipelineResult?> processImage(
     ImageSource source,
-    CoffeePhotoStep step,
-  ) async {
+    CoffeePhotoStep step, {
+    List<String> previousFingerprints = const [],
+  }) async {
     final ownedTempFiles = <File>[];
 
     try {
@@ -61,7 +70,7 @@ class CoffeeImagePipelineService {
         maxWidth: 1600,
         maxHeight: 1600,
         imageQuality: 90,
-        requestFullMetadata: false,
+        requestFullMetadata: source == ImageSource.camera,
       );
       if (picked == null) {
         await _tempFileCleaner.cleanup(ownedTempFiles);
@@ -69,6 +78,10 @@ class CoffeeImagePipelineService {
       }
 
       final pickedFile = File(picked.path);
+      final sourceEvidence = await _extractSourceEvidence(
+        pickedFile,
+        fromGallery: source == ImageSource.gallery,
+      );
       if (source == ImageSource.camera) {
         ownedTempFiles.add(pickedFile);
       }
@@ -89,21 +102,31 @@ class CoffeeImagePipelineService {
       }
       ownedTempFiles.add(compressedFile);
 
-      final validationResult =
-          await _validationService.validate(compressedFile, step);
+      final validationResult = await _validationService.validate(
+        image: compressedFile,
+        step: step,
+        source: source,
+        sourceEvidence: sourceEvidence,
+        previousFingerprints: previousFingerprints,
+      );
       if (!validationResult.isValid) {
         await _tempFileCleaner.cleanup(ownedTempFiles);
         throw CoffeePipelineException(
-          'coffeeInvalidImage',
+          validationResult.failureReason?.messageKey ?? 'coffeeInvalidImage',
           validationResult: validationResult,
         );
       }
+
+      final fingerprint = await _similarityService.fingerprint(compressedFile);
 
       return CoffeeImagePipelineResult(
         step: step,
         compressedImage: compressedFile,
         validationResult: validationResult,
         tempFiles: List<File>.unmodifiable(ownedTempFiles),
+        fingerprint: fingerprint,
+        source: CoffeeImageSource.fromPicker(source),
+        sourceEvidence: sourceEvidence,
       );
     } on PlatformException catch (e, st) {
       await _tempFileCleaner.cleanup(ownedTempFiles);
@@ -124,6 +147,40 @@ class CoffeeImagePipelineService {
         debugPrintStack(stackTrace: st);
       }
       throw const CoffeePipelineException('coffeeValidationFailed');
+    }
+  }
+
+  Future<CoffeeImageSourceEvidence> _extractSourceEvidence(
+    File file, {
+    required bool fromGallery,
+  }) async {
+    try {
+      final decoded = img.decodeImage(await file.readAsBytes());
+      if (decoded == null) {
+        return CoffeeImageSourceEvidence(
+          originalWidth: 0,
+          originalHeight: 0,
+          originalAspectRatio: 0,
+          hasExifMetadata: false,
+          fromGallery: fromGallery,
+        );
+      }
+      return CoffeeImageSourceEvidence(
+        originalWidth: decoded.width,
+        originalHeight: decoded.height,
+        originalAspectRatio:
+            decoded.height == 0 ? 0 : decoded.width / decoded.height,
+        hasExifMetadata: decoded.hasExif,
+        fromGallery: fromGallery,
+      );
+    } catch (_) {
+      return CoffeeImageSourceEvidence(
+        originalWidth: 0,
+        originalHeight: 0,
+        originalAspectRatio: 0,
+        hasExifMetadata: false,
+        fromGallery: fromGallery,
+      );
     }
   }
 

@@ -1,21 +1,28 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/app_locale.dart';
 import '../../../core/app_texts.dart';
+import '../../../core/function_error_codes.dart';
+import '../../../core/idempotency_key.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../home/ai_chat_context.dart';
-import '../../home/chat_page.dart';
 import '../models/coffee_image_pipeline_result.dart';
 import '../models/coffee_photo_step.dart';
+import '../services/backend_coffee_reading_service.dart';
 import '../services/coffee_image_pipeline_service.dart';
+import '../services/coffee_reading_service.dart';
 import '../services/coffee_temp_file_cleaner.dart';
 import '../widgets/coffee_capture_card.dart';
 import '../widgets/coffee_capture_progress.dart';
 import '../widgets/coffee_source_bottom_sheet.dart';
+import '../widgets/coffee_sticky_cta.dart';
+import '../widgets/coffee_validation_error_dialog.dart';
 import 'coffee_loading_screen.dart';
+import 'coffee_result_screen.dart';
 
 class CoffeeCaptureFlowScreen extends StatefulWidget {
   const CoffeeCaptureFlowScreen({
@@ -32,43 +39,59 @@ class CoffeeCaptureFlowScreen extends StatefulWidget {
 
 class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
   final Map<CoffeePhotoStep, CoffeeImagePipelineResult> _completedSteps = {};
+  final List<String> _fingerprints = [];
+  final Set<CoffeePhotoStep> _backendRetrySteps = {};
 
   CoffeePhotoStep _activeStep = CoffeePhotoStep.cupInside;
   bool _isProcessing = false;
-  bool _isNavigating = false;
-  bool _ownershipTransferred = false;
+  bool _isAnalyzing = false;
+  String _overlayMessageKey = 'coffeePreparingPhoto';
 
   CoffeeImagePipelineService get _pipeline =>
       GetIt.I<CoffeeImagePipelineService>();
+  CoffeeReadingService get _readingService => GetIt.I<CoffeeReadingService>();
   CoffeeTempFileCleaner get _cleaner => GetIt.I<CoffeeTempFileCleaner>();
+  bool get _isComplete =>
+      _completedSteps.length == CoffeePhotoStep.values.length;
 
   @override
   void dispose() {
-    if (!_ownershipTransferred) {
-      unawaited(
-        _cleaner.cleanup(
-          _completedSteps.values.expand((result) => result.tempFiles),
-        ),
-      );
-    }
+    unawaited(
+      _cleaner.cleanup(
+        _completedSteps.values.expand((result) => result.tempFiles),
+      ),
+    );
     super.dispose();
   }
 
   Future<void> _chooseSourceForStep(CoffeePhotoStep step) async {
-    if (_isProcessing || _isNavigating) return;
-    setState(() => _activeStep = step);
+    if (_isProcessing || _isAnalyzing) return;
+    var shouldRetry = false;
+    setState(() {
+      _activeStep = step;
+      _overlayMessageKey = 'coffeePreparingPhoto';
+    });
 
     final source = await CoffeeSourceBottomSheet.show(context);
     if (source == null || !mounted) return;
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _overlayMessageKey = 'coffeeValidatingPhoto';
+    });
 
     try {
-      final result = await _pipeline.processImage(source, step);
+      final result = await _pipeline.processImage(
+        source,
+        step,
+        previousFingerprints: List<String>.from(_fingerprints),
+      );
       if (result == null || !mounted) return;
 
       final previous = _completedSteps[step];
       if (previous != null) {
+        final oldIndex = _fingerprints.indexOf(previous.fingerprint);
+        if (oldIndex >= 0) _fingerprints.removeAt(oldIndex);
         await _cleaner.cleanup(previous.tempFiles);
       }
 
@@ -80,29 +103,29 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
       if (!mounted) return;
       setState(() {
         _completedSteps[step] = result;
+        _fingerprints.add(result.fingerprint);
+        _backendRetrySteps.remove(step);
         _activeStep = _nextIncompleteStep() ?? step;
       });
-
-      if (_completedSteps.length == CoffeePhotoStep.values.length) {
-        await _openMadamAris();
-      }
     } on CoffeePipelineException catch (error) {
       if (!mounted) return;
-      setState(() => _isProcessing = false);
-      if (error.messageKey == 'coffeeInvalidImage') {
-        await _showInvalidImageDialog(step);
-      } else {
-        _showSnack(AppTexts.t(error.messageKey));
-      }
+      shouldRetry = await CoffeeValidationErrorDialog.show(
+            context,
+            step: step,
+            validationResult: error.validationResult,
+          ) ==
+          true;
     } catch (_) {
       if (mounted) {
-        setState(() => _isProcessing = false);
         _showSnack(AppTexts.t('coffeeValidationFailed'));
       }
     } finally {
-      if (mounted && !_isNavigating) {
+      if (mounted) {
         setState(() => _isProcessing = false);
       }
+    }
+    if (shouldRetry && mounted) {
+      await _chooseSourceForStep(step);
     }
   }
 
@@ -113,101 +136,83 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
     return null;
   }
 
-  Future<void> _showInvalidImageDialog(CoffeePhotoStep step) async {
-    final retry = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.surfaceHigh,
-          title: Text(
-            AppTexts.t('coffeeValidationFailed'),
-            style: GoogleFonts.spaceGrotesk(
-              color: AppColors.onSurface,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          content: Text(
-            AppTexts.t('coffeeInvalidImageDetailed'),
-            style: GoogleFonts.manrope(
-              color: AppColors.secondaryLavender,
-              height: 1.45,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(AppTexts.t('common.close')),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(AppTexts.t('coffeeRetakePhoto')),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (retry == true && mounted) {
-      await _chooseSourceForStep(step);
-    }
-  }
-
-  Future<void> _openMadamAris() async {
-    if (_isNavigating ||
-        _completedSteps.length != CoffeePhotoStep.values.length) {
+  Future<void> _submitForReading() async {
+    if (_isAnalyzing || !_isComplete) {
       return;
     }
 
-    // TODO Sprint 3:
-    // Before Gemini analysis, call backend CreditService.
-    // Deduct CoffeeFortuneAnalysis cost with Firestore transaction / backend API.
-    // If analysis fails, backend should refund credits.
-    // Never store API keys in Flutter.
-
-    final imageFiles = CoffeePhotoStep.values
-        .map((step) => _completedSteps[step]!.compressedImage)
-        .toList(growable: false);
-    final validations = {
-      for (final entry in _completedSteps.entries)
-        entry.key: entry.value.validationResult,
-    };
-    final contextData = AiChatContext.coffeeReadingMadamAris(
-      imageFiles: imageFiles,
-      validations: validations,
-    );
-
     setState(() {
-      _isNavigating = true;
-      _ownershipTransferred = true;
+      _isAnalyzing = true;
+      _overlayMessageKey = 'coffeeAnalyzingSymbols';
     });
 
-    if (!mounted) return;
-    await Navigator.of(context).pushReplacement<void, void>(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, animation, __) {
-          return FadeTransition(
-            opacity: animation,
-            child: _CoffeeLoadingBridge(
-              uid: widget.uid,
-              chatContext: contextData,
-            ),
-          );
-        },
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      ),
-    );
+    try {
+      final result = await _readingService.analyzeCoffee(
+        uid: widget.uid,
+        photos: Map<CoffeePhotoStep, CoffeeImagePipelineResult>.from(
+          _completedSteps,
+        ),
+        idempotencyKey: createIdempotencyKey(),
+        languageCode: AppLocale.current,
+      );
+
+      await _cleaner.cleanup(
+        _completedSteps.values.expand((photo) => photo.tempFiles),
+      );
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement<void, void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CoffeeResultScreen(
+            uid: widget.uid,
+            result: result,
+          ),
+        ),
+      );
+    } on CoffeeReadingValidationException catch (error) {
+      if (!mounted) return;
+      final failureStep = error.response.validation.failureStep;
+      setState(() {
+        _isAnalyzing = false;
+        if (failureStep != null) {
+          _activeStep = failureStep;
+          _backendRetrySteps.add(failureStep);
+        }
+      });
+      final retry = await CoffeeValidationErrorDialog.show(
+        context,
+        step: error.response.validation.failureStep,
+        validationResult: null,
+        backendMessage: error.response.validation.userMessage ??
+            AppTexts.t('coffeeValidationParseError'),
+      );
+      if (retry == true && mounted && failureStep != null) {
+        await _chooseSourceForStep(failureStep);
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isAnalyzing = false;
+      });
+      if (error.message == FunctionErrorCodes.insufficientCredits) {
+        _showSnack(AppTexts.t('home.cta.insufficient_credits_message'));
+        return;
+      }
+      if (error.message == FunctionErrorCodes.coffeeAnalysisInProgress) {
+        _showSnack(AppTexts.t('coffeeAnalysisInProgress'));
+        return;
+      }
+      if (error.message == FunctionErrorCodes.coffeeRateLimited) {
+        _showSnack(AppTexts.t('coffeeRateLimited'));
+        return;
+      }
+      _showSnack(AppTexts.t('coffeeValidationParseError'));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isAnalyzing = false;
+      });
+      _showSnack(AppTexts.t('coffeeValidationParseError'));
+    }
   }
 
   void _showSnack(String message) {
@@ -225,139 +230,162 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_isProcessing && !_isNavigating,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: Stack(
-          children: [
-            const _CoffeeCaptureBackground(),
-            SafeArea(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: _isProcessing || _isNavigating
-                            ? null
-                            : () => Navigator.of(context).maybePop(),
-                        icon: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: AppColors.primaryPink,
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          AppTexts.t('coffeeTitle'),
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.newsreader(
-                            color: AppColors.primaryPink,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w700,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 48),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    AppTexts.t('coffeeDescription'),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.manrope(
-                      color:
-                          AppColors.secondaryLavender.withValues(alpha: 0.84),
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-                  CoffeeCaptureProgress(
-                    activeStep: _activeStep,
-                    completedSteps: _completedSteps,
-                  ),
-                  const SizedBox(height: 24),
-                  CoffeeCaptureCard(
-                    step: _activeStep,
-                    result: _completedSteps[_activeStep],
-                    isProcessing: _isProcessing,
-                    onAddPhoto: () => _chooseSourceForStep(_activeStep),
-                  ),
-                  const SizedBox(height: 18),
-                  _CompletedSummary(completedCount: _completedSteps.length),
-                ],
-              ),
-            ),
-            if (_isProcessing) const _PreparingOverlay(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CoffeeLoadingBridge extends StatefulWidget {
-  const _CoffeeLoadingBridge({
-    required this.uid,
-    required this.chatContext,
-  });
-
-  final String uid;
-  final AiChatContext chatContext;
-
-  @override
-  State<_CoffeeLoadingBridge> createState() => _CoffeeLoadingBridgeState();
-}
-
-class _CoffeeLoadingBridgeState extends State<_CoffeeLoadingBridge> {
-  @override
-  void initState() {
-    super.initState();
-    _continueToChat();
-  }
-
-  Future<void> _continueToChat() async {
-    await Future<void>.delayed(const Duration(milliseconds: 1350));
-    if (!mounted) return;
-    await Navigator.of(context).pushReplacement<void, void>(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, animation, __) {
+      canPop: !_isProcessing && !_isAnalyzing,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 460),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
           return FadeTransition(
             opacity: animation,
-            child: KozmikBilgePage(
-              uid: widget.uid,
-              chatContext: widget.chatContext,
-            ),
-          );
-        },
-        transitionsBuilder: (_, animation, __, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
             child: SlideTransition(
               position: Tween<Offset>(
-                begin: const Offset(0, 0.03),
+                begin: const Offset(0, 0.025),
                 end: Offset.zero,
-              ).animate(curved),
+              ).animate(animation),
               child: ScaleTransition(
-                scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+                scale: Tween<double>(begin: 0.975, end: 1).animate(animation),
                 child: child,
               ),
             ),
           );
         },
+        child: _isAnalyzing
+            ? CoffeeLoadingScreen(
+                key: const ValueKey('coffee-loading'),
+                photos: Map<CoffeePhotoStep, CoffeeImagePipelineResult>.from(
+                  _completedSteps,
+                ),
+              )
+            : Scaffold(
+                key: const ValueKey('coffee-capture'),
+                backgroundColor: AppColors.background,
+                body: Stack(
+                  children: [
+                    const _CoffeeCaptureBackground(),
+                    SafeArea(
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          18,
+                          24,
+                          _isComplete ? 188 : 32,
+                        ),
+                        children: [
+                          Row(
+                            children: [
+                              IconButton(
+                                onPressed: _isProcessing
+                                    ? null
+                                    : () => Navigator.of(context).maybePop(),
+                                icon: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  color: AppColors.primaryPink,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  AppTexts.t('coffeeTitle'),
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.newsreader(
+                                    color: AppColors.primaryPink,
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w700,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 48),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            AppTexts.t('coffeeDescription'),
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                              color: AppColors.secondaryLavender.withValues(
+                                alpha: 0.84,
+                              ),
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            AppTexts.t('coffeeValidationCameraRecommended'),
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                              color: AppColors.tertiaryGold
+                                  .withValues(alpha: 0.88),
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            AppTexts.t('coffeeValidationPrivacyInfo'),
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                              color: AppColors.secondaryLavender.withValues(
+                                alpha: 0.68,
+                              ),
+                              fontSize: 11,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${AppTexts.t('coffeeValidationLocalInfo')} ${AppTexts.t('coffeeValidationBackendInfo')}',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                              color: AppColors.secondaryLavender.withValues(
+                                alpha: 0.62,
+                              ),
+                              fontSize: 11,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          CoffeeCaptureProgress(
+                            activeStep: _activeStep,
+                            completedSteps: _completedSteps,
+                            retrySteps: _backendRetrySteps,
+                            onStepTap: (step) {
+                              if (_isProcessing) return;
+                              setState(() => _activeStep = step);
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          CoffeeCaptureCard(
+                            step: _activeStep,
+                            result: _completedSteps[_activeStep],
+                            isProcessing: _isProcessing,
+                            needsRetry:
+                                _backendRetrySteps.contains(_activeStep),
+                            onAddPhoto: () => _chooseSourceForStep(_activeStep),
+                          ),
+                          const SizedBox(height: 18),
+                          _CompletedSummary(
+                            completedCount: _completedSteps.length,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isComplete)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: CoffeeStickyCta(
+                          onPressed: _isProcessing ? null : _submitForReading,
+                          isLoading: false,
+                        ),
+                      ),
+                    if (_isProcessing)
+                      _PreparingOverlay(messageKey: _overlayMessageKey),
+                  ],
+                ),
+              ),
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const PopScope(
-      canPop: false,
-      child: CoffeeLoadingScreen(),
     );
   }
 }
@@ -407,7 +435,9 @@ class _CompletedSummary extends StatelessWidget {
 }
 
 class _PreparingOverlay extends StatelessWidget {
-  const _PreparingOverlay();
+  const _PreparingOverlay({required this.messageKey});
+
+  final String messageKey;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +467,7 @@ class _PreparingOverlay extends StatelessWidget {
                 const SizedBox(width: 12),
                 Flexible(
                   child: Text(
-                    AppTexts.t('coffeePreparingPhoto'),
+                    AppTexts.t(messageKey),
                     style: GoogleFonts.manrope(
                       color: AppColors.onSurface,
                       fontWeight: FontWeight.w700,

@@ -16,6 +16,7 @@ export type UserConsents = {
 export type UserWallet = {
   credits: number;
   isFirstFreeUsed: boolean;
+  coffeeReservedCredits?: number;
 };
 
 export type UserDoc = {

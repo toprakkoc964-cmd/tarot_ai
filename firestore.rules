@@ -9,17 +9,26 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function walletUnchanged() {
-      return !('wallet' in request.resource.data) ||
-        (resource != null &&
-         'wallet' in resource.data &&
-         request.resource.data.wallet.credits == resource.data.wallet.credits);
+    function doesNotCreateProtectedFields() {
+      return !request.resource.data.keys().hasAny([
+        'wallet',
+        'entitlements',
+        'coffeeAnalysis'
+      ]);
+    }
+
+    function doesNotChangeProtectedFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'wallet',
+        'entitlements',
+        'coffeeAnalysis'
+      ]);
     }
 
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid);
-      allow update: if isOwner(uid) && walletUnchanged();
+      allow create: if isOwner(uid) && doesNotCreateProtectedFields();
+      allow update: if isOwner(uid) && doesNotChangeProtectedFields();
       allow delete: if isOwner(uid);
 
       match /readings/{readingId} {
@@ -36,6 +45,15 @@ service cloud.firestore {
       match /idempotency/{key} {
         allow read: if isOwner(uid);
         allow write: if false;
+      }
+
+      match /coffee_readings/{readingId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      match /coffee_reservations/{reservationId} {
+        allow read, write: if false;
       }
 
       match /iap_transactions/{txId} {
