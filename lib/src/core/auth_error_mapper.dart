@@ -12,23 +12,65 @@ String mapAuthError(Object error) {
     return _mapPlatformError(error);
   }
 
-  return AppTexts.t('error.default');
+  return AppTexts.t('auth.login.generic_error');
+}
+
+String mapRegisterError(Object error) {
+  if (error is FirebaseAuthException) {
+    switch (error.code) {
+      case 'email-already-in-use':
+        return AppTexts.t('auth.register.email_in_use');
+      case 'invalid-email':
+        return AppTexts.t('auth.register.invalid_email');
+      case 'weak-password':
+        return AppTexts.t('auth.register.weak_password');
+      case 'network-request-failed':
+        return AppTexts.t('auth.register.network_error');
+      case 'too-many-requests':
+        return AppTexts.t('auth.register.too_many_requests');
+      case 'operation-not-allowed':
+        return AppTexts.t('auth.register.operation_not_allowed');
+      case 'social-auth-cancelled':
+        return AppTexts.t('error.social_cancelled');
+      case 'apple-signin-not-supported':
+        return AppTexts.t('error.apple_not_supported');
+      case 'google-sign-in-config':
+      case 'google-id-token-missing':
+        return AppTexts.t('error.google_sign_in_config');
+      default:
+        return AppTexts.t('auth.register.generic_error');
+    }
+  }
+
+  if (error is PlatformException) {
+    final code = error.code.toLowerCase();
+    final message = (error.message ?? '').toLowerCase();
+    if (code.contains('network') || message.contains('network')) {
+      return AppTexts.t('auth.register.network_error');
+    }
+  }
+
+  return AppTexts.t('auth.register.generic_error');
 }
 
 String _mapFirebaseAuthError(FirebaseAuthException error) {
   switch (error.code) {
     case 'invalid-email':
-      return AppTexts.t('error.email_required');
+      return AppTexts.t('auth.login.invalid_email');
     case 'user-not-found':
     case 'wrong-password':
     case 'invalid-credential':
-      return AppTexts.t('error.invalid_credentials');
+      return AppTexts.t('auth.login.invalid_credentials');
     case 'email-already-in-use':
       return AppTexts.t('error.email_in_use');
     case 'weak-password':
-      return AppTexts.t('error.password_short');
+      return AppTexts.t('auth.login.password_too_short');
     case 'network-request-failed':
-      return AppTexts.t('error.network');
+      return AppTexts.t('auth.login.network_error');
+    case 'too-many-requests':
+      return AppTexts.t('auth.login.too_many_requests');
+    case 'user-disabled':
+      return AppTexts.t('auth.login.user_disabled');
     case 'social-auth-cancelled':
       return AppTexts.t('error.social_cancelled');
     case 'apple-signin-not-supported':
@@ -37,9 +79,9 @@ String _mapFirebaseAuthError(FirebaseAuthException error) {
     case 'google-id-token-missing':
       return AppTexts.t('error.google_sign_in_config');
     case 'google-sign-in-failed':
-      return error.message ?? AppTexts.t('error.google_sign_in_failed');
+      return AppTexts.t('error.google_sign_in_failed');
     default:
-      return error.message ?? AppTexts.t('error.default');
+      return AppTexts.t('auth.login.generic_error');
   }
 }
 
@@ -48,7 +90,7 @@ String _mapPlatformError(PlatformException error) {
   final message = (error.message ?? '').toLowerCase();
 
   if (code.contains('network') || message.contains('network')) {
-    return AppTexts.t('error.network');
+    return AppTexts.t('auth.login.network_error');
   }
 
   if (code == 'sign_in_failed' ||
@@ -57,5 +99,5 @@ String _mapPlatformError(PlatformException error) {
     return AppTexts.t('error.google_sign_in_config');
   }
 
-  return error.message ?? AppTexts.t('error.default');
+  return AppTexts.t('auth.login.generic_error');
 }

@@ -10,6 +10,7 @@ import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import 'cosmic_personalization_screen.dart';
 
 const _kBg = Color(0xFF17081C);
 const _kPrimary = Color(0xFFFF5ED6);
@@ -47,10 +48,10 @@ class _ProfilePageState extends State<ProfilePage> {
   String _language = 'Turkce';
   bool _profileLoading = true;
 
-  DocumentReference<Map<String, dynamic>> get _userDocRef =>
-      FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(widget.uid);
+  DocumentReference<Map<String, dynamic>> get _userDocRef => FirebaseFirestore
+      .instance
+      .collection(UserProfileContract.usersCollection)
+      .doc(widget.uid);
 
   @override
   void initState() {
@@ -80,11 +81,13 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted || data == null) return;
 
       final storedName = UserProfileContract.normalizeName(
-          (data[UserProfileContract.name] as String?) ?? '');
+        (data[UserProfileContract.name] as String?) ?? '',
+      );
       final storedEmail =
           (data[UserProfileContract.email] as String?)?.trim() ?? '';
-      final storedBirthDate =
-          _parseStoredBirthDate(data[UserProfileContract.birthDate] as String?);
+      final storedBirthDate = _parseStoredBirthDate(
+        data[UserProfileContract.birthDate] as String?,
+      );
       final settings = data['settings'] as Map<String, dynamic>?;
       final storedNotificationsEnabled =
           settings?['notificationsEnabled'] as bool?;
@@ -105,20 +108,15 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _updateProfileFields(Map<String, dynamic> fields) async {
-    await _userDocRef.set(
-      {
-        ...fields,
-        UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _userDocRef.set({
+      ...fields,
+      UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> _updateNotificationPreference(bool value) async {
     await _updateProfileFields({
-      'settings': {
-        'notificationsEnabled': value,
-      },
+      'settings': {'notificationsEnabled': value},
     });
   }
 
@@ -217,18 +215,21 @@ class _ProfilePageState extends State<ProfilePage> {
                 counterText: '',
                 hintText: 'Ad Soyad',
                 hintStyle: GoogleFonts.manrope(
-                    color: _kOnSurface.withValues(alpha: 0.4)),
+                  color: _kOnSurface.withValues(alpha: 0.4),
+                ),
                 filled: true,
                 fillColor: Colors.black.withValues(alpha: 0.28),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
-                  borderSide:
-                      BorderSide(color: _kSecondary.withValues(alpha: 0.15)),
+                  borderSide: BorderSide(
+                    color: _kSecondary.withValues(alpha: 0.15),
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
-                  borderSide:
-                      BorderSide(color: _kSecondary.withValues(alpha: 0.2)),
+                  borderSide: BorderSide(
+                    color: _kSecondary.withValues(alpha: 0.2),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(999),
@@ -302,9 +303,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _editEmailPage() async {
     final updated = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => _EmailEditPage(initialEmail: _email),
-      ),
+      MaterialPageRoute(builder: (_) => _EmailEditPage(initialEmail: _email)),
     );
 
     final normalized = updated?.trim() ?? '';
@@ -366,6 +365,16 @@ class _ProfilePageState extends State<ProfilePage> {
     _showSnack('Dil "$selected" olarak guncellendi');
   }
 
+  Future<void> _openCosmicPersonalization() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CosmicPersonalizationScreen(uid: widget.uid),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    _showSnack(AppTexts.t('personalizationSaved'));
+  }
+
   Future<void> _confirmLogout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -382,8 +391,10 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child:
-                Text('Iptal', style: GoogleFonts.manrope(color: _kSecondary)),
+            child: Text(
+              'Iptal',
+              style: GoogleFonts.manrope(color: _kSecondary),
+            ),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -422,8 +433,10 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child:
-                Text('Vazgec', style: GoogleFonts.manrope(color: _kSecondary)),
+            child: Text(
+              'Vazgec',
+              style: GoogleFonts.manrope(color: _kSecondary),
+            ),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -610,6 +623,12 @@ class _ProfilePageState extends State<ProfilePage> {
                       }
                     },
                   ),
+                ),
+                _ActionRow(
+                  icon: Icons.auto_awesome_rounded,
+                  title: AppTexts.t('profileCosmicPersonalizationTitle'),
+                  subtitle: AppTexts.t('profileCosmicPersonalizationSubtitle'),
+                  onTap: _openCosmicPersonalization,
                   isLast: true,
                 ),
               ],
@@ -674,12 +693,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ],
         ),
-        const Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: _ProfileTopBar(),
-        ),
+        const Positioned(top: 0, left: 0, right: 0, child: _ProfileTopBar()),
       ],
     );
   }
@@ -897,8 +911,10 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
       initialItem: _loopingInitialItem(itemCount: 31, selectedIndex: _day - 1),
     );
     _monthCtrl = FixedExtentScrollController(
-      initialItem:
-          _loopingInitialItem(itemCount: 12, selectedIndex: _month - 1),
+      initialItem: _loopingInitialItem(
+        itemCount: 12,
+        selectedIndex: _month - 1,
+      ),
     );
     _yearCtrl = FixedExtentScrollController(initialItem: _year - 1900);
   }
@@ -962,8 +978,9 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
                         label(realIndex),
                         maxLines: 1,
                         style: GoogleFonts.newsreader(
-                          color:
-                              sel ? _gold : _onSurface.withValues(alpha: 0.3),
+                          color: sel
+                              ? _gold
+                              : _onSurface.withValues(alpha: 0.3),
                           fontSize: sel ? 20 : 16,
                           fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                         ),
@@ -993,7 +1010,9 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
                   decoration: BoxDecoration(
                     border: Border.symmetric(
                       horizontal: BorderSide(
-                          color: _gold.withValues(alpha: 0.35), width: 1),
+                        color: _gold.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
                     ),
                     color: _gold.withValues(alpha: 0.05),
                   ),
@@ -1026,9 +1045,10 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
         border: Border.all(color: _secondary.withValues(alpha: 0.12)),
         boxShadow: [
           BoxShadow(
-              color: _primary.withValues(alpha: 0.08),
-              blurRadius: 40,
-              spreadRadius: 10),
+            color: _primary.withValues(alpha: 0.08),
+            blurRadius: 40,
+            spreadRadius: 10,
+          ),
         ],
       ),
       child: SafeArea(
@@ -1050,8 +1070,11 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.auto_awesome,
-                      color: Color(0xFFFF5ED6), size: 14),
+                  const Icon(
+                    Icons.auto_awesome,
+                    color: Color(0xFFFF5ED6),
+                    size: 14,
+                  ),
                   const SizedBox(width: 7),
                   Text(
                     AppTexts.t('onboarding.drum.title'),
@@ -1081,10 +1104,11 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
                     }),
                   ),
                   Container(
-                      width: 1,
-                      height: 60,
-                      color: _secondary.withValues(alpha: 0.15),
-                      margin: const EdgeInsets.symmetric(horizontal: 6)),
+                    width: 1,
+                    height: 60,
+                    color: _secondary.withValues(alpha: 0.15),
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
                   _drum(
                     count: 12,
                     label: (i) => _months[i],
@@ -1097,10 +1121,11 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
                     }),
                   ),
                   Container(
-                      width: 1,
-                      height: 60,
-                      color: _secondary.withValues(alpha: 0.15),
-                      margin: const EdgeInsets.symmetric(horizontal: 6)),
+                    width: 1,
+                    height: 60,
+                    color: _secondary.withValues(alpha: 0.15),
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
                   _drum(
                     count: DateTime.now().year - 1900 + 2,
                     label: (i) => '${1900 + i}',
@@ -1122,10 +1147,9 @@ class _BirthDatePickerSheetState extends State<_BirthDatePickerSheet> {
                 child: Container(
                   height: 54,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [
-                      Color(0xFFFF5ED6),
-                      Color(0xFFFF00D4),
-                    ]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF5ED6), Color(0xFFFF00D4)],
+                    ),
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(
@@ -1165,8 +1189,9 @@ class _EmailEditPage extends StatefulWidget {
 }
 
 class _EmailEditPageState extends State<_EmailEditPage> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialEmail);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialEmail,
+  );
 
   @override
   void dispose() {
@@ -1203,18 +1228,21 @@ class _EmailEditPageState extends State<_EmailEditPage> {
               decoration: InputDecoration(
                 hintText: 'ornek@email.com',
                 hintStyle: GoogleFonts.manrope(
-                    color: _kOnSurface.withValues(alpha: 0.4)),
+                  color: _kOnSurface.withValues(alpha: 0.4),
+                ),
                 filled: true,
                 fillColor: Colors.black.withValues(alpha: 0.25),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      BorderSide(color: _kSecondary.withValues(alpha: 0.25)),
+                  borderSide: BorderSide(
+                    color: _kSecondary.withValues(alpha: 0.25),
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      BorderSide(color: _kSecondary.withValues(alpha: 0.25)),
+                  borderSide: BorderSide(
+                    color: _kSecondary.withValues(alpha: 0.25),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -1395,10 +1423,7 @@ class _ProfileInfoRow extends StatelessWidget {
           ),
         ),
         if (!isLast)
-          Divider(
-            color: _kOutlineVariant.withValues(alpha: 0.2),
-            height: 1,
-          ),
+          Divider(color: _kOutlineVariant.withValues(alpha: 0.2), height: 1),
       ],
     );
   }
@@ -1430,37 +1455,41 @@ class _ActionRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(icon, color: _kTertiary, size: 22),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.manrope(
-                            fontSize: 14,
-                            color: _kOnSurface,
-                          ),
-                        ),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle!,
-                            style: GoogleFonts.manrope(
-                              fontSize: 11,
-                              color: _kSecondary.withValues(alpha: 0.58),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(icon, color: _kTertiary, size: 22),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: GoogleFonts.manrope(
+                                fontSize: 14,
+                                color: _kOnSurface,
+                              ),
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                            if (subtitle != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle!,
+                                style: GoogleFonts.manrope(
+                                  fontSize: 11,
+                                  color: _kSecondary.withValues(alpha: 0.58),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 12),
                 trailing ??
                     const Icon(
                       Icons.chevron_right_rounded,
@@ -1471,10 +1500,7 @@ class _ActionRow extends StatelessWidget {
           ),
         ),
         if (!isLast)
-          Divider(
-            color: _kOutlineVariant.withValues(alpha: 0.2),
-            height: 1,
-          ),
+          Divider(color: _kOutlineVariant.withValues(alpha: 0.2), height: 1),
       ],
     );
   }

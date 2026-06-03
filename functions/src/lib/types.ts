@@ -23,6 +23,11 @@ export type UserDoc = {
   uid: string;
   isProfileComplete: boolean;
   birthDate?: string;
+  relationshipStatus?: string;
+  lifeSpace?: string;
+  interpretationTone?: string;
+  focusAreas?: string[];
+  personalizationEnabled?: boolean;
   profile?: UserProfile;
   consents?: UserConsents;
   wallet: UserWallet;

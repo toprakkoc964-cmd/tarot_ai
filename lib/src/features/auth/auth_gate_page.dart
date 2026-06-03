@@ -9,6 +9,7 @@ import 'login_page.dart';
 import 'onboarding_page.dart';
 import 'register_page.dart';
 import 'user_profile_contract.dart';
+import 'widgets/registration_portal_transition_overlay.dart';
 
 class AuthGatePage extends StatefulWidget {
   const AuthGatePage({super.key});
@@ -24,9 +25,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
   Future<bool>? _sessionCheckFuture;
 
   Widget _buildLoading() {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 
   Widget _buildAuthEntry() {
@@ -70,74 +69,91 @@ class _AuthGatePageState extends State<AuthGatePage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<String>(
-      valueListenable: AppLocale.notifier,
-      builder: (context, _, __) {
-        return StreamBuilder<User?>(
-          stream: _authService.authChanges(),
-          builder: (context, authSnapshot) {
-            if (authSnapshot.connectionState == ConnectionState.waiting) {
-              return _buildLoading();
-            }
-
-            final user = authSnapshot.data;
-            if (user == null) {
-              return _buildAuthEntry();
-            }
-
-            return FutureBuilder<bool>(
-              future: _sessionFutureFor(user),
-              builder: (context, sessionSnapshot) {
-                if (sessionSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return _buildLoading();
-                }
-                if (sessionSnapshot.data != true) {
-                  return _buildAuthEntry();
-                }
-
-                return ValueListenableBuilder<bool>(
-                  valueListenable: _authService.accountDeletionInProgress,
-                  builder: (context, deletingAccount, _) {
-                    if (deletingAccount) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _authService.registrationPortalActive,
+      builder: (context, registrationPortalActive, _) {
+        return Stack(
+          children: [
+            ValueListenableBuilder<String>(
+              valueListenable: AppLocale.notifier,
+              builder: (context, _, __) {
+                return StreamBuilder<User?>(
+                  stream: _authService.authChanges(),
+                  builder: (context, authSnapshot) {
+                    if (authSnapshot.connectionState ==
+                        ConnectionState.waiting) {
                       return _buildLoading();
                     }
 
-                    return StreamBuilder<
-                        DocumentSnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection(UserProfileContract.usersCollection)
-                          .doc(user.uid)
-                          .snapshots(),
-                      builder: (context, profileSnapshot) {
-                        if (profileSnapshot.connectionState ==
+                    final user = authSnapshot.data;
+                    if (user == null) {
+                      return _buildAuthEntry();
+                    }
+
+                    return FutureBuilder<bool>(
+                      future: _sessionFutureFor(user),
+                      builder: (context, sessionSnapshot) {
+                        if (sessionSnapshot.connectionState ==
                             ConnectionState.waiting) {
                           return _buildLoading();
                         }
-
-                        final data = profileSnapshot.data?.data();
-                        final isProfileComplete =
-                            data?[UserProfileContract.isProfileComplete] ==
-                                true;
-
-                        if (!isProfileComplete) {
-                          return OnboardingPage(
-                            authService: _authService,
-                            uid: user.uid,
-                          );
+                        if (sessionSnapshot.data != true) {
+                          return _buildAuthEntry();
                         }
 
-                        return HomePage(
-                          authService: _authService,
-                          uid: user.uid,
+                        return ValueListenableBuilder<bool>(
+                          valueListenable:
+                              _authService.accountDeletionInProgress,
+                          builder: (context, deletingAccount, _) {
+                            if (deletingAccount) {
+                              return _buildLoading();
+                            }
+
+                            return StreamBuilder<
+                              DocumentSnapshot<Map<String, dynamic>>
+                            >(
+                              stream: FirebaseFirestore.instance
+                                  .collection(
+                                    UserProfileContract.usersCollection,
+                                  )
+                                  .doc(user.uid)
+                                  .snapshots(),
+                              builder: (context, profileSnapshot) {
+                                if (profileSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return _buildLoading();
+                                }
+
+                                final data = profileSnapshot.data?.data();
+                                final isProfileComplete =
+                                    data?[UserProfileContract
+                                        .isProfileComplete] ==
+                                    true;
+
+                                if (!isProfileComplete) {
+                                  return OnboardingPage(
+                                    authService: _authService,
+                                    uid: user.uid,
+                                  );
+                                }
+
+                                return HomePage(
+                                  authService: _authService,
+                                  uid: user.uid,
+                                );
+                              },
+                            );
+                          },
                         );
                       },
                     );
                   },
                 );
               },
-            );
-          },
+            ),
+            if (registrationPortalActive)
+              const RegistrationPortalTransitionOverlay(),
+          ],
         );
       },
     );

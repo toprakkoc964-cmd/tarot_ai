@@ -184,7 +184,17 @@ function newArisSessionId(): string {
   return `aris_${stamp}_${rand}`.slice(0, 48);
 }
 
-function buildArisProfileContext(user: UserDoc & Record<string, unknown>): string[] {
+function shouldUseSoftPersonalization(message?: string): boolean {
+  if (!message) return true;
+  const normalized = message.trim().toLowerCase();
+  return !/\b(genel yorum|genel bir yorum|baskasi icin|başkası için|arkadasim icin|arkadaşım için|general reading|for someone else|for my friend)\b/i
+    .test(normalized);
+}
+
+function buildArisProfileContext(
+  user: UserDoc & Record<string, unknown>,
+  options: { includeSoftPersonalization?: boolean } = {}
+): string[] {
   const birthDate = resolveUserBirthDate(user);
   const context: string[] = [
     `Name: ${resolveUserDisplayName(user)}`
@@ -197,6 +207,10 @@ function buildArisProfileContext(user: UserDoc & Record<string, unknown>): strin
     } catch {
       // Keep the remaining context if legacy data contains an invalid date.
     }
+  }
+
+  if (user.personalizationEnabled === false || options.includeSoftPersonalization === false) {
+    return context;
   }
 
   const relationshipStatus = sanitizeShortText(user.relationshipStatus, 40);
@@ -480,7 +494,9 @@ function buildArisConversationPrompt(input: {
       'Keep the response between 85 and 140 words unless it is a short acknowledgement.'
     ].join(' '),
     userPrompt: [
-      ...buildArisProfileContext(input.user),
+      ...buildArisProfileContext(input.user, {
+        includeSoftPersonalization: shouldUseSoftPersonalization(input.userMessage)
+      }),
       cardsLine,
       `Opening reflection: ${input.openingMessage}`,
       transcript ? `Recent conversation:\n${transcript}` : '',

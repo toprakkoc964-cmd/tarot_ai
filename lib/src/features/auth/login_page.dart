@@ -1,12 +1,23 @@
-import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
 import '../../core/auth_error_mapper.dart';
 import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
+import '../../core/theme/app_colors.dart';
 import 'auth_service.dart';
+import 'legal_pages.dart';
+import 'widgets/forgot_password_bottom_sheet.dart';
+import 'widgets/login_legal_footer.dart';
+import 'widgets/mystic_primary_button.dart';
+import 'widgets/mystic_social_button.dart';
+import 'widgets/mystic_text_field.dart';
+import 'widgets/mystic_toast.dart';
+
+enum _LoginAction { email, google, apple }
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -25,313 +36,223 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _loading = false;
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+
+  _LoginAction? _activeAction;
+  bool _obscurePassword = true;
+  String? _emailError;
+  String? _passwordError;
+
+  bool get _isBusy => _activeAction != null;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _signIn() async {
-    if (_emailController.text.trim().isEmpty) {
-      _showError(AppTexts.t('error.email_required'));
-      return;
-    }
-    if (_passwordController.text.isEmpty) {
-      _showError(AppTexts.t('error.password_required'));
-      return;
-    }
+  bool _isValidEmail(String value) {
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
+  }
 
-    setState(() => _loading = true);
+  bool _validateCredentials() {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final emailError = email.isEmpty
+        ? AppTexts.t('auth.login.email_required')
+        : !_isValidEmail(email)
+        ? AppTexts.t('auth.login.invalid_email')
+        : null;
+    final passwordError = password.isEmpty
+        ? AppTexts.t('auth.login.password_required')
+        : password.length < 6
+        ? AppTexts.t('auth.login.password_too_short')
+        : null;
+
+    setState(() {
+      _emailError = emailError;
+      _passwordError = passwordError;
+    });
+    return emailError == null && passwordError == null;
+  }
+
+  Future<void> _signIn() async {
+    if (_isBusy || !_validateCredentials()) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _activeAction = _LoginAction.email);
+
     try {
       await widget.authService.signIn(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-    } catch (e) {
-      _showError(mapAuthError(e));
+    } catch (error) {
+      _showError(mapAuthError(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _activeAction = null);
     }
   }
 
   Future<void> _resetPassword() async {
+    if (_isBusy) return;
+    FocusScope.of(context).unfocus();
     final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      _showError(AppTexts.t('error.email_required'));
+
+    if (email.isEmpty || !_isValidEmail(email)) {
+      final sent = await showForgotPasswordBottomSheet(
+        context: context,
+        authService: widget.authService,
+        initialEmail: email,
+      );
+      if (sent == true && mounted) {
+        MysticToast.showSuccess(
+          context,
+          AppTexts.t('auth.forgot_password.success'),
+        );
+      }
       return;
     }
 
     try {
       await widget.authService.sendResetEmail(email);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppTexts.t('toast.reset_sent'))),
-      );
-    } catch (e) {
-      _showError(mapAuthError(e));
+      if (mounted) {
+        MysticToast.showSuccess(
+          context,
+          AppTexts.t('auth.forgot_password.success'),
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'user-not-found') {
+        if (mounted) {
+          MysticToast.showSuccess(
+            context,
+            AppTexts.t('auth.forgot_password.success'),
+          );
+        }
+        return;
+      }
+      _showError(AppTexts.t('auth.forgot_password.error'));
+    } catch (_) {
+      _showError(AppTexts.t('auth.forgot_password.error'));
     }
   }
 
   Future<void> _signInWithGoogle() async {
-    setState(() => _loading = true);
+    if (_isBusy) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _activeAction = _LoginAction.google);
     try {
       await widget.authService.signInWithGoogle();
-    } catch (e) {
-      _showError(mapAuthError(e));
+    } catch (error) {
+      _showError(mapAuthError(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _activeAction = null);
     }
   }
 
   Future<void> _signInWithApple() async {
-    setState(() => _loading = true);
+    if (_isBusy) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _activeAction = _LoginAction.apple);
     try {
       await widget.authService.signInWithApple();
-    } catch (e) {
-      _showError(mapAuthError(e));
+    } catch (error) {
+      _showError(mapAuthError(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _activeAction = null);
     }
   }
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    MysticToast.showError(context, message);
+  }
+
+  void _openLegalPage(Widget page) {
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
   }
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFD4AF37);
-    const bg = Color(0xFF1A1022);
-    const violet = Color(0xFF690DAB);
-
-    InputDecoration inputStyle(String hint) {
-      return InputDecoration(
-        hintText: hint,
-        hintStyle: GoogleFonts.spaceGrotesk(
-            color: const Color(0xFF64748B),
-            fontSize: 18,
-            fontWeight: FontWeight.w500),
-        filled: true,
-        fillColor: const Color(0x1F690DAB),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: gold.withValues(alpha: 0.2)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: gold.withValues(alpha: 0.2)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color(0x80FF00FF)),
-        ),
-      );
-    }
-
     return ValueListenableBuilder<int>(
       valueListenable: LocalizationService.instance.revision,
       builder: (context, _, __) {
+        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
         return Scaffold(
-          backgroundColor: bg,
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.topLeft,
-                radius: 1.25,
-                colors: [Color(0xFF311044), bg],
-              ),
-            ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: gold, width: 1.5),
-                                image: const DecorationImage(
-                                  image: AssetImage('images/chatgpt_logo.png'),
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              AppTexts.t('auth.login.guide'),
-                              style: GoogleFonts.spaceGrotesk(
-                                  color: gold,
-                                  fontSize: 11,
-                                  letterSpacing: 1.7,
-                                  fontWeight: FontWeight.w700),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            LanguagePickerButton(
-                              iconColor: const Color(0xFFFF00FF),
-                              onSelected: (lang) async {
-                                await LocalizationService.instance
-                                    .setLanguage(lang);
-                                if (mounted) setState(() {});
-                              },
-                            ),
-                            const Icon(Icons.auto_awesome,
-                                color: Color(0xFFFF00FF), size: 20),
-                          ],
-                        )
-                      ],
-                    ),
-                    const SizedBox(height: 54),
-                    Image.asset(
-                      'images/chatgpt_logo.png',
-                      height: 78,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppTexts.t('auth.login.subtitle'),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
-                          color: const Color(0xFF94A3B8), fontSize: 14),
-                    ),
-                    const SizedBox(height: 28),
-                    _label(AppTexts.t('auth.login.email_label'), gold),
-                    TextField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.login.email_hint')),
-                      style: GoogleFonts.spaceGrotesk(
-                          color: const Color(0xFFE2E8F0), fontSize: 17),
-                    ),
-                    const SizedBox(height: 16),
-                    _label(AppTexts.t('auth.login.password_label'), gold),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.login.password_hint')),
-                      style: GoogleFonts.spaceGrotesk(
-                          color: const Color(0xFFE2E8F0), fontSize: 17),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _resetPassword,
-                        child: Text(AppTexts.t('auth.login.forgot_password'),
-                            style: GoogleFonts.spaceGrotesk(
-                                color: gold,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: const [
-                          BoxShadow(
-                              color: Color(0x66FF00FF),
-                              blurRadius: 24,
-                              spreadRadius: 1)
-                        ],
-                      ),
-                      child: FilledButton(
-                        onPressed: _loading ? null : _signIn,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: violet,
-                          minimumSize: const Size.fromHeight(58),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
-                        ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : Text(AppTexts.t('auth.login.submit'),
-                                style: GoogleFonts.cinzel(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    letterSpacing: 1.2,
-                                    fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    Text(
-                      AppTexts.t('auth.login.social_title'),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
-                        color: const Color(0xFF94A3B8),
-                        fontSize: 12,
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (!kIsWeb &&
-                            defaultTargetPlatform == TargetPlatform.iOS) ...[
-                          OutlinedButton.icon(
-                            onPressed: _loading ? null : _signInWithApple,
-                            icon: const Icon(Icons.apple),
-                            label: Text(AppTexts.t('auth.login.apple_button')),
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        OutlinedButton.icon(
-                          onPressed: _loading ? null : _signInWithGoogle,
-                          icon: const Icon(Icons.g_mobiledata, size: 22),
-                          label: Text(AppTexts.t('auth.login.google_button')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 4,
-                      children: [
-                        Text(
-                          AppTexts.t('auth.login.switch_prefix'),
-                          style: GoogleFonts.spaceGrotesk(
-                              color: const Color(0xFF94A3B8), fontSize: 16),
-                        ),
-                        InkWell(
-                          onTap: widget.onSwitchToRegister,
-                          child: Text(
-                            AppTexts.t('auth.login.switch_action'),
-                            style: GoogleFonts.spaceGrotesk(
-                                color: const Color(0xFFFF00FF),
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+          resizeToAvoidBottomInset: true,
+          backgroundColor: AppColors.background,
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppColors.cosmicGradientTop,
+                    AppColors.background,
+                    AppColors.background,
                   ],
+                ),
+              ),
+              child: CustomPaint(
+                painter: const _CosmicLoginBackgroundPainter(),
+                child: SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: AnimatedPadding(
+                          duration: const Duration(milliseconds: 180),
+                          padding: EdgeInsets.only(
+                            top: 14,
+                            bottom: keyboardInset > 0 ? 18 : 26,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight:
+                                  constraints.maxHeight -
+                                  (keyboardInset > 0 ? 32 : 40),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildTopBar(),
+                                const SizedBox(height: 28),
+                                _buildHero(),
+                                const SizedBox(height: 24),
+                                _buildForm(),
+                                const SizedBox(height: 22),
+                                _buildSocialArea(),
+                                const SizedBox(height: 18),
+                                _buildRegisterLink(),
+                                const SizedBox(height: 22),
+                                LoginLegalFooter(
+                                  onTermsPressed: () => _openLegalPage(
+                                    const TermsOfServicePage(),
+                                  ),
+                                  onPrivacyPressed: () =>
+                                      _openLegalPage(const PrivacyPolicyPage()),
+                                  onAiNoticePressed: () =>
+                                      _openLegalPage(const AiUsageNoticePage()),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -341,18 +262,270 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _label(String text, Color gold) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        text,
-        style: GoogleFonts.spaceGrotesk(
-          color: gold,
-          fontSize: 12,
-          letterSpacing: 1.8,
-          fontWeight: FontWeight.w700,
+  Widget _buildTopBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.tertiaryGold.withValues(alpha: 0.85),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.tertiaryGold.withValues(alpha: 0.18),
+                    blurRadius: 14,
+                  ),
+                ],
+                image: const DecorationImage(
+                  image: AssetImage('images/chatgpt_logo.png'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            Text(
+              AppTexts.t('auth.login.guide'),
+              style: GoogleFonts.inter(
+                color: AppColors.tertiaryGold,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
+        LanguagePickerButton(
+          iconColor: AppColors.primaryPink,
+          onSelected: (lang) async {
+            await LocalizationService.instance.setLanguage(lang);
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHero() {
+    return Column(
+      children: [
+        Container(
+          width: 88,
+          height: 88,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryNeonPink.withValues(alpha: 0.28),
+                blurRadius: 28,
+              ),
+              BoxShadow(
+                color: AppColors.tertiaryGold.withValues(alpha: 0.16),
+                blurRadius: 42,
+              ),
+            ],
+          ),
+          child: Image.asset('images/chatgpt_logo.png', fit: BoxFit.contain),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          AppTexts.t('auth.login.title'),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.cormorantGaramond(
+            color: AppColors.onSurface,
+            fontSize: 38,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          AppTexts.t('auth.login.subtitle'),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: AppColors.secondaryLavender.withValues(alpha: 0.84),
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildForm() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.glassBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MysticTextField(
+            controller: _emailController,
+            focusNode: _emailFocusNode,
+            label: AppTexts.t('auth.login.email_label'),
+            hint: AppTexts.t('auth.login.email_hint'),
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            errorText: _emailError,
+            onSubmitted: (_) => _passwordFocusNode.requestFocus(),
+          ),
+          const SizedBox(height: 15),
+          MysticTextField(
+            controller: _passwordController,
+            focusNode: _passwordFocusNode,
+            label: AppTexts.t('auth.login.password_label'),
+            hint: AppTexts.t('auth.login.password_hint'),
+            textInputAction: TextInputAction.done,
+            errorText: _passwordError,
+            obscureText: _obscurePassword,
+            enableSuggestions: false,
+            suffixIcon: IconButton(
+              tooltip: AppTexts.t(
+                _obscurePassword
+                    ? 'auth.login.show_password'
+                    : 'auth.login.hide_password',
+              ),
+              onPressed: () {
+                setState(() => _obscurePassword = !_obscurePassword);
+              },
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: AppColors.secondaryLavender,
+              ),
+            ),
+            onSubmitted: (_) => _signIn(),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _isBusy ? null : _resetPassword,
+              child: Text(
+                AppTexts.t('auth.login.forgot_password'),
+                style: GoogleFonts.inter(
+                  color: AppColors.tertiaryGold,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          MysticPrimaryButton(
+            label: AppTexts.t(
+              _activeAction == _LoginAction.email
+                  ? 'auth.login.submit_loading'
+                  : 'auth.login.submit',
+            ),
+            loading: _activeAction == _LoginAction.email,
+            onPressed: _isBusy ? null : _signIn,
+          ),
+        ],
       ),
     );
   }
+
+  Widget _buildSocialArea() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          AppTexts.t('auth.login.social_title'),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: AppColors.secondaryLavender.withValues(alpha: 0.7),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+          MysticSocialButton(
+            icon: Icons.apple,
+            label: AppTexts.t('auth.login.apple_continue'),
+            loading: _activeAction == _LoginAction.apple,
+            onPressed: _isBusy ? null : _signInWithApple,
+          ),
+          const SizedBox(height: 9),
+        ],
+        MysticSocialButton(
+          icon: Icons.g_mobiledata_rounded,
+          label: AppTexts.t('auth.login.google_continue'),
+          loading: _activeAction == _LoginAction.google,
+          onPressed: _isBusy ? null : _signInWithGoogle,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegisterLink() {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 3,
+      children: [
+        Text(
+          AppTexts.t('auth.login.switch_prefix'),
+          style: GoogleFonts.inter(
+            color: AppColors.secondaryLavender,
+            fontSize: 13,
+          ),
+        ),
+        TextButton(
+          onPressed: _isBusy ? null : widget.onSwitchToRegister,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primaryPink,
+            minimumSize: const Size(44, 44),
+          ),
+          child: Text(
+            AppTexts.t('auth.login.switch_action'),
+            style: GoogleFonts.inter(
+              color: AppColors.primaryPink,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CosmicLoginBackgroundPainter extends CustomPainter {
+  const _CosmicLoginBackgroundPainter();
+
+  static const _stars = <Offset>[
+    Offset(0.08, 0.14),
+    Offset(0.18, 0.34),
+    Offset(0.86, 0.13),
+    Offset(0.73, 0.27),
+    Offset(0.91, 0.47),
+    Offset(0.11, 0.63),
+    Offset(0.82, 0.72),
+    Offset(0.26, 0.84),
+    Offset(0.65, 0.92),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = AppColors.primaryPink.withValues(alpha: 0.3);
+    for (var index = 0; index < _stars.length; index++) {
+      final star = _stars[index];
+      canvas.drawCircle(
+        Offset(star.dx * size.width, star.dy * size.height),
+        index.isEven ? 1.5 : 1,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

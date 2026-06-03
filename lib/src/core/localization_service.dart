@@ -11,9 +11,7 @@ class LocalizationService {
 
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
   final ValueNotifier<List<String>> supportedLanguages =
-      ValueNotifier<List<String>>(
-    const ['tr', 'en'],
-  );
+      ValueNotifier<List<String>>(const ['tr', 'en']);
 
   final Map<String, Map<String, String>> _cache = {};
 
@@ -71,9 +69,89 @@ class LocalizationService {
     'auth.login.social_title': 'OR CONTINUE WITH',
     'auth.login.apple_button': 'Apple',
     'auth.login.google_button': 'Google',
+    'auth.login.submit_loading': 'OPENING THE PORTAL...',
+    'auth.login.apple_continue': 'Continue with Apple',
+    'auth.login.google_continue': 'Continue with Google',
+    'auth.login.email_required': 'Email is required.',
+    'auth.login.password_required': 'Password is required.',
+    'auth.login.invalid_email': 'Enter a valid email address.',
+    'auth.login.password_too_short': 'Password must be at least 6 characters.',
+    'auth.login.invalid_credentials': 'Invalid email or password.',
+    'auth.login.network_error': 'Check your connection and try again.',
+    'auth.login.too_many_requests':
+        'Too many attempts. Please try again later.',
+    'auth.login.generic_error': 'Something went wrong. Please try again.',
+    'auth.login.user_disabled': 'This account is currently unavailable.',
+    'auth.login.show_password': 'Show password',
+    'auth.login.hide_password': 'Hide password',
+    'auth.login.legal_prefix': 'By continuing, you agree to the following:',
+    'auth.login.legal_terms': 'Terms of Service',
+    'auth.login.legal_privacy': 'Privacy Policy',
+    'auth.login.legal_ai_notice': 'AI Usage Notice',
+    'auth.login.legal_suffix': 'These links apply to all sign-in methods.',
+    'auth.login.ai_disclaimer_short':
+        'AI readings are for entertainment and personal reflection; they are not certain predictions.',
+    'auth.forgot_password.title': 'Reset Your Password',
+    'auth.forgot_password.description':
+        'Enter your email. If the account is eligible, we will send a password reset link.',
+    'auth.forgot_password.email_hint': 'your@email.com',
+    'auth.forgot_password.send': 'SEND RESET LINK',
+    'auth.forgot_password.sending': 'SENDING...',
+    'auth.forgot_password.success':
+        'If the email is eligible, a password reset link has been sent.',
+    'auth.forgot_password.error':
+        'The link could not be sent. Please try again.',
+    'auth.forgot_password.cancel': 'Cancel',
+    'toast.error_title': 'Something went wrong',
+    'toast.success_title': 'Done',
     'auth.register.button': 'Create My Destiny',
+    'auth.register.terms_accept_text':
+        'I accept the Terms of Service and Privacy Policy.',
+    'auth.register.terms_accept_suffix': '.',
+    'auth.register.ai_notice': 'AI Usage Notice',
+    'auth.register.ai_disclaimer_short':
+        'AI readings are provided for entertainment and personal reflection; they do not contain medical, financial, legal advice or certain predictions.',
+    'auth.register.social_legal_text':
+        'By continuing, you agree to the Terms of Service, Privacy Policy, and AI Usage Notice.',
+    'auth.register.button_loading': 'WEAVING YOUR DESTINY...',
+    'auth.register.or_continue_with': 'OR CONTINUE WITH',
+    'auth.register.apple_continue': 'Continue with Apple',
+    'auth.register.google_continue': 'Continue with Google',
+    'auth.register.name_required': 'Enter your name.',
+    'auth.register.name_too_short': 'Name must be at least 2 characters.',
+    'auth.register.email_required': 'Enter your email address.',
+    'auth.register.invalid_email': 'Enter a valid email address.',
+    'auth.register.password_required': 'Enter your password.',
+    'auth.register.password_too_short':
+        'Password must be at least 6 characters.',
+    'auth.register.confirm_required': 'Enter your password again.',
+    'auth.register.passwords_not_match': 'Passwords do not match.',
+    'auth.register.terms_required':
+        'Accept the Terms of Service and Privacy Policy to continue.',
+    'auth.register.email_in_use':
+        'An account already exists with this email address.',
+    'auth.register.weak_password': 'Choose a stronger password.',
+    'auth.register.network_error':
+        'Could not connect. Check your internet connection.',
+    'auth.register.too_many_requests':
+        'Too many attempts. Please try again later.',
+    'auth.register.operation_not_allowed':
+        'Registration is currently unavailable.',
+    'auth.register.generic_error':
+        'The account could not be created. Please try again.',
+    'auth.register.portal_title': 'Weaving your destiny...',
+    'auth.register.portal_subtitle':
+        'The circle opens and your journey begins.',
+    'auth.register.show_password': 'Show password',
+    'auth.register.hide_password': 'Hide password',
+    'auth.register.legal_link_error':
+        'The link could not be opened. Showing the in-app text instead.',
     'legal.terms.title': 'Terms of Service',
     'legal.privacy.title': 'Privacy Policy',
+    'legal.ai_notice.title': 'AI Usage Notice',
+    'legal.ai_notice.section_title': 'Entertainment and personal reflection',
+    'legal.ai_notice.body':
+        'Tarot, coffee reading, palm reading, and other AI interpretations in Tarot AI are provided for entertainment and personal reflection. They are not medical, financial, or legal advice and do not contain certain predictions.',
     'legal.last_updated': 'Last updated: March 10, 2026',
     'legal.view_terms': 'View Terms of Service',
     'legal.view_privacy': 'View Privacy Policy',
@@ -191,7 +269,8 @@ class LocalizationService {
         'This does not look like an open palm. Show your inner palm clearly.',
     'palmErrorUnreadable':
         'The photo could not be analyzed. Improve lighting and try again.',
-    'palmErrorInvalidImage': 'Invalid or oversized photo. Please capture again.',
+    'palmErrorInvalidImage':
+        'Invalid or oversized photo. Please capture again.',
     'palmErrorAuth':
         'Session could not be verified. Sign out and sign in again.',
     'palmErrorServerConfig':
@@ -494,6 +573,30 @@ class LocalizationService {
         'The lines rising toward the rim point to small but steady steps in work and money matters. This is not a promise, only a gentle reminder to gather your focus today.',
     'coffeeMockGeneralReply':
         'The overall energy of your cup is calm yet moving. Madam Aris suggests simplifying what is on your mind and noticing the small sign in front of you without magnifying it.',
+    'common.retry': 'Try Again',
+    'profileCosmicPersonalizationTitle': 'Cosmic Personalization',
+    'profileCosmicPersonalizationSubtitle':
+        'Make your readings feel more relevant to you',
+    'personalizationTitle': 'Cosmic Personalization',
+    'personalizationDescription':
+        'Madam Aris and Bilge Aris use these details to tailor their readings more closely to you.',
+    'personalizationPrivacyNote':
+        'These details are used only to personalize readings for entertainment and personal awareness.',
+    'personalizationEnabledTitle': 'Personalized readings',
+    'personalizationEnabledSubtitle':
+        'Allow my preferences to be used as gentle context in readings.',
+    'personalizationFocusAreasTitle': 'GUIDANCE AREAS',
+    'personalizationSave': 'Save Changes',
+    'personalizationSaving': 'Saving...',
+    'personalizationSaved': 'Your preferences have been updated.',
+    'personalizationSaveError':
+        'Your preferences could not be updated. Please try again.',
+    'personalizationLoadError':
+        'Your preferences could not be loaded. Please try again.',
+    'personalizationUnsavedTitle': 'Changes have not been saved',
+    'personalizationUnsavedMessage': 'If you leave, your changes will be lost.',
+    'personalizationCancel': 'Stay',
+    'personalizationExit': 'Leave',
   };
 
   static const Map<String, String> _fallbackTr = {
@@ -509,7 +612,8 @@ class LocalizationService {
     'error.social_cancelled': 'Giris islemi iptal edildi.',
     'error.google_sign_in_config':
         'Google girisi yapilandirilmamis. Firebase\'de SHA-1 ekleyip google-services.json dosyasini guncelleyin.',
-    'error.google_sign_in_failed': 'Google ile giris basarisiz. Tekrar deneyin.',
+    'error.google_sign_in_failed':
+        'Google ile giris basarisiz. Tekrar deneyin.',
     'tarot.spread.headline': 'Secimin hazir',
     'tarot.spread.pick_from_deck':
         'Dolasimdaki kartlardan birini sec ve bugunun rehberligini aciga cikar.',
@@ -527,7 +631,8 @@ class LocalizationService {
     'tarot.spread.draw_failed': 'Kart cekimi tamamlanamadi. Tekrar dene.',
     'tarot.spread.chat_title': 'Bilge Aris · Tarot Yayilimi',
     'tarot.spread.hero_title': 'Sectigin kartlar',
-    'tarot.spread.hero_subtitle': 'Bilge Aris bunlari tek bir yayilim olarak yorumlar',
+    'tarot.spread.hero_subtitle':
+        'Bilge Aris bunlari tek bir yayilim olarak yorumlar',
     'error.apple_not_supported': 'Bu cihazda Apple girisi desteklenmiyor.',
     'toast.reset_sent': 'Sifre sifirlama e-postasi gonderildi.',
     'toast.restore_pending': 'Restore icin satin alma gecmisi baglanmali.',
@@ -536,9 +641,86 @@ class LocalizationService {
     'auth.login.social_title': 'VEYA SUNUNLA DEVAM ET',
     'auth.login.apple_button': 'Apple',
     'auth.login.google_button': 'Google',
+    'auth.login.submit_loading': 'PORTAL AÇILIYOR...',
+    'auth.login.apple_continue': 'Apple ile devam et',
+    'auth.login.google_continue': 'Google ile devam et',
+    'auth.login.email_required': 'E-posta alanı zorunlu.',
+    'auth.login.password_required': 'Şifre alanı zorunlu.',
+    'auth.login.invalid_email': 'Geçerli bir e-posta adresi gir.',
+    'auth.login.password_too_short': 'Şifre en az 6 karakter olmalı.',
+    'auth.login.invalid_credentials': 'E-posta veya şifre hatalı.',
+    'auth.login.network_error': 'Bağlantını kontrol edip tekrar dene.',
+    'auth.login.too_many_requests':
+        'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.',
+    'auth.login.generic_error': 'Bir sorun oluştu. Lütfen tekrar dene.',
+    'auth.login.user_disabled': 'Bu hesap şu anda kullanılamıyor.',
+    'auth.login.show_password': 'Şifreyi göster',
+    'auth.login.hide_password': 'Şifreyi gizle',
+    'auth.login.legal_prefix':
+        'Devam ederek aşağıdaki metinleri kabul etmiş olursun:',
+    'auth.login.legal_terms': 'Kullanım Koşulları',
+    'auth.login.legal_privacy': 'Gizlilik Politikası',
+    'auth.login.legal_ai_notice': 'AI Kullanım Notu',
+    'auth.login.legal_suffix':
+        'Bu bağlantılar tüm giriş yöntemleri için geçerlidir.',
+    'auth.login.ai_disclaimer_short':
+        'AI yorumları eğlence ve kişisel farkındalık amaçlıdır; kesin gelecek tahmini değildir.',
+    'auth.forgot_password.title': 'Şifreni Sıfırla',
+    'auth.forgot_password.description':
+        'E-posta adresini gir. Hesabın uygunsa şifre yenileme bağlantısını göndereceğiz.',
+    'auth.forgot_password.email_hint': 'senin@adresin.com',
+    'auth.forgot_password.send': 'YENİLEME BAĞLANTISI GÖNDER',
+    'auth.forgot_password.sending': 'GÖNDERİLİYOR...',
+    'auth.forgot_password.success':
+        'E-posta adresi uygunsa şifre yenileme bağlantısı gönderildi.',
+    'auth.forgot_password.error': 'Bağlantı gönderilemedi. Lütfen tekrar dene.',
+    'auth.forgot_password.cancel': 'Vazgeç',
+    'toast.error_title': 'Bir sorun oluştu',
+    'toast.success_title': 'İşlem tamamlandı',
     'auth.register.button': 'Kaderimi Olustur',
+    'auth.register.terms_accept_text':
+        'Kullanım Koşulları’nı ve Gizlilik Politikası’nı kabul ediyorum.',
+    'auth.register.terms_accept_suffix': ' metinlerini kabul ediyorum.',
+    'auth.register.ai_notice': 'AI Kullanım Notu',
+    'auth.register.ai_disclaimer_short':
+        'AI yorumları eğlence ve kişisel farkındalık amacıyla sunulur; tıbbi, finansal, hukuki veya kesin gelecek tahmini içermez.',
+    'auth.register.social_legal_text':
+        'Devam ederek Kullanım Koşulları’nı, Gizlilik Politikası’nı ve AI Kullanım Notu’nu kabul etmiş olursun.',
+    'auth.register.button_loading': 'KADERİN ÖRÜLÜYOR...',
+    'auth.register.or_continue_with': 'VEYA ŞUNUNLA DEVAM ET',
+    'auth.register.apple_continue': 'Apple ile devam et',
+    'auth.register.google_continue': 'Google ile devam et',
+    'auth.register.name_required': 'Adını yazmalısın.',
+    'auth.register.name_too_short': 'Ad en az 2 karakter olmalı.',
+    'auth.register.email_required': 'E-posta adresini girmelisin.',
+    'auth.register.invalid_email': 'Geçerli bir e-posta adresi gir.',
+    'auth.register.password_required': 'Şifreni girmelisin.',
+    'auth.register.password_too_short': 'Şifre en az 6 karakter olmalı.',
+    'auth.register.confirm_required': 'Şifreni tekrar yazmalısın.',
+    'auth.register.passwords_not_match': 'Şifreler eşleşmiyor.',
+    'auth.register.terms_required':
+        'Devam etmek için Kullanım Koşulları ve Gizlilik Politikası’nı kabul etmelisin.',
+    'auth.register.email_in_use': 'Bu e-posta adresiyle zaten bir hesap var.',
+    'auth.register.weak_password': 'Şifren daha güçlü olmalı.',
+    'auth.register.network_error':
+        'Bağlantı kurulamadı. Lütfen internetini kontrol et.',
+    'auth.register.too_many_requests':
+        'Çok fazla deneme yapıldı. Lütfen biraz sonra tekrar dene.',
+    'auth.register.operation_not_allowed':
+        'Kayıt işlemi şu anda kullanılamıyor.',
+    'auth.register.generic_error': 'Kayıt oluşturulamadı. Lütfen tekrar dene.',
+    'auth.register.portal_title': 'Kaderin örülüyor...',
+    'auth.register.portal_subtitle': 'Çember açılıyor, yolculuğun başlıyor.',
+    'auth.register.show_password': 'Şifreyi göster',
+    'auth.register.hide_password': 'Şifreyi gizle',
+    'auth.register.legal_link_error':
+        'Bağlantı açılamadı. Uygulama içindeki metni gösteriyoruz.',
     'legal.terms.title': 'Kullanim Kosullari',
     'legal.privacy.title': 'Gizlilik Politikasi',
+    'legal.ai_notice.title': 'AI Kullanım Notu',
+    'legal.ai_notice.section_title': 'Eğlence ve kişisel farkındalık',
+    'legal.ai_notice.body':
+        'Tarot AI içindeki tarot, kahve falı, el falı ve diğer AI yorumları eğlence ve kişisel farkındalık amacıyla sunulur. Tıbbi, finansal veya hukuki tavsiye değildir ve kesin gelecek tahmini içermez.',
     'legal.last_updated': 'Son guncelleme: 10 Mart 2026',
     'legal.view_terms': 'Kullanim Kosullarini Gor',
     'legal.view_privacy': 'Gizlilik Politikasini Gor',
@@ -657,8 +839,7 @@ class LocalizationService {
         'Fotoğraf analiz edilemedi. Işığı artırıp avucunu sabit tutarak tekrar dene.',
     'palmErrorInvalidImage':
         'Fotoğraf geçersiz veya çok büyük. Tekrar çekmeyi dene.',
-    'palmErrorAuth':
-        'Oturumun doğrulanamadı. Çıkış yapıp tekrar giriş yap.',
+    'palmErrorAuth': 'Oturumun doğrulanamadı. Çıkış yapıp tekrar giriş yap.',
     'palmErrorServerConfig':
         'Sunucuda Gemini API anahtarı eksik. Geliştirici functions/.env dosyasını kontrol etmeli.',
     'palmScanningLoading': 'Evrensel çizgilerin kodları çözülüyor...',
@@ -953,6 +1134,29 @@ class LocalizationService {
         'Telvenin kenara doğru yükselen çizgileri iş ve para alanında küçük ama düzenli adımları işaret ediyor. Bu kesin bir vaat değil; sadece bugün odağını toparlaman için zarif bir hatırlatma.',
     'coffeeMockGeneralReply':
         'Fincanın genel enerjisi sakin ama hareketli. Madam Aris, bu dönemde içinden geçenleri sadeleştirmeni ve önündeki küçük işareti büyütmeden fark etmeni öneriyor.',
+    'common.retry': 'Tekrar Dene',
+    'profileCosmicPersonalizationTitle': 'Kozmik Kişiselleştirme',
+    'profileCosmicPersonalizationSubtitle':
+        'Yorumlarını sana daha uygun hale getir',
+    'personalizationTitle': 'Kozmik Kişiselleştirme',
+    'personalizationDescription':
+        'Madam Aris ve Bilge Aris yorumlarını sana daha uygun hale getirmek için bu bilgileri kullanır.',
+    'personalizationPrivacyNote':
+        'Bu bilgiler yalnızca eğlence ve kişisel farkındalık amaçlı yorumları kişiselleştirmek için kullanılır.',
+    'personalizationEnabledTitle': 'Kişiselleştirilmiş yorumlar',
+    'personalizationEnabledSubtitle':
+        'Tercihlerimin yorumlarda yumuşak bir bağlam olarak kullanılmasına izin ver.',
+    'personalizationFocusAreasTitle': 'REHBERLİK ALANLARI',
+    'personalizationSave': 'Değişiklikleri Kaydet',
+    'personalizationSaving': 'Kaydediliyor...',
+    'personalizationSaved': 'Tercihlerin güncellendi.',
+    'personalizationSaveError': 'Tercihler güncellenemedi. Lütfen tekrar dene.',
+    'personalizationLoadError': 'Tercihlerin yüklenemedi. Lütfen tekrar dene.',
+    'personalizationUnsavedTitle': 'Değişiklikler kaydedilmedi',
+    'personalizationUnsavedMessage':
+        'Çıkarsan yaptığın değişiklikler kaybolacak.',
+    'personalizationCancel': 'Vazgeç',
+    'personalizationExit': 'Çık',
   };
 
   Future<void> initialize() async {
@@ -1019,11 +1223,13 @@ class LocalizationService {
       return;
     } catch (_) {
       try {
-        final fallbackRaw =
-            await rootBundle.loadString('assets/locales/en.json');
+        final fallbackRaw = await rootBundle.loadString(
+          'assets/locales/en.json',
+        );
         final fallback = jsonDecode(fallbackRaw) as Map<String, dynamic>;
-        _cache[lang] =
-            fallback.map((k, v) => MapEntry(k.toString(), v.toString()));
+        _cache[lang] = fallback.map(
+          (k, v) => MapEntry(k.toString(), v.toString()),
+        );
         return;
       } catch (_) {}
     }

@@ -1,15 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/app_legal_urls.dart';
 import '../../core/app_texts.dart';
 import '../../core/auth_error_mapper.dart';
 import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
+import '../../core/theme/app_colors.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
 import 'user_profile_contract.dart';
+import 'widgets/falling_mystic_symbols.dart';
+import 'widgets/mystic_legal_checkbox.dart';
+import 'widgets/mystic_primary_button.dart';
+import 'widgets/mystic_register_text_field.dart';
+import 'widgets/mystic_toast.dart';
+
+enum _RegisterAction { email }
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
@@ -30,8 +40,23 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
+
+  final _nameFocusNode = FocusNode();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _confirmFocusNode = FocusNode();
+
+  _RegisterAction? _activeAction;
   bool _acceptedTerms = false;
-  bool _loading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmation = true;
+  String? _nameError;
+  String? _emailError;
+  String? _passwordError;
+  String? _confirmationError;
+  String? _termsError;
+
+  bool get _isBusy => _activeAction != null;
 
   @override
   void dispose() {
@@ -39,40 +64,69 @@ class _RegisterPageState extends State<RegisterPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
+    _nameFocusNode.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _confirmFocusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _register() async {
-    final normalizedName =
-        UserProfileContract.normalizeName(_nameController.text);
-    if (normalizedName.isEmpty) {
-      _showError(AppTexts.t('error.name_required'));
-      return;
-    }
-    if (_emailController.text.trim().isEmpty) {
-      _showError(AppTexts.t('error.email_required'));
-      return;
-    }
-    if (_passwordController.text.isEmpty) {
-      _showError(AppTexts.t('error.password_required'));
-      return;
-    }
-    if (_passwordController.text.length < 6) {
-      _showError(AppTexts.t('error.password_short'));
-      return;
-    }
-    if (_passwordController.text != _confirmController.text) {
-      _showError(AppTexts.t('error.password_mismatch'));
-      return;
-    }
-    if (!_acceptedTerms) {
-      _showError(AppTexts.t('error.accept_terms'));
-      return;
-    }
+  bool _isValidEmail(String value) {
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
+  }
 
-    setState(() => _loading = true);
+  bool _validateForm() {
+    final name = UserProfileContract.normalizeName(_nameController.text);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirmation = _confirmController.text;
+
+    final nameError = name.isEmpty
+        ? AppTexts.t('auth.register.name_required')
+        : name.length < 2
+        ? AppTexts.t('auth.register.name_too_short')
+        : null;
+    final emailError = email.isEmpty
+        ? AppTexts.t('auth.register.email_required')
+        : !_isValidEmail(email)
+        ? AppTexts.t('auth.register.invalid_email')
+        : null;
+    final passwordError = password.isEmpty
+        ? AppTexts.t('auth.register.password_required')
+        : password.length < 6
+        ? AppTexts.t('auth.register.password_too_short')
+        : null;
+    final confirmationError = confirmation.isEmpty
+        ? AppTexts.t('auth.register.confirm_required')
+        : password != confirmation
+        ? AppTexts.t('auth.register.passwords_not_match')
+        : null;
+    final termsError = !_acceptedTerms
+        ? AppTexts.t('auth.register.terms_required')
+        : null;
+
+    setState(() {
+      _nameError = nameError;
+      _emailError = emailError;
+      _passwordError = passwordError;
+      _confirmationError = confirmationError;
+      _termsError = termsError;
+    });
+
+    return nameError == null &&
+        emailError == null &&
+        passwordError == null &&
+        confirmationError == null &&
+        termsError == null;
+  }
+
+  Future<void> _register() async {
+    if (_isBusy || !_validateForm()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _activeAction = _RegisterAction.email);
+
     try {
-      final name = normalizedName;
+      final name = UserProfileContract.normalizeName(_nameController.text);
       final email = _emailController.text.trim();
       await widget.authService.register(
         email: email,
@@ -81,284 +135,168 @@ class _RegisterPageState extends State<RegisterPage> {
 
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        throw FirebaseAuthException(
-          code: 'user-missing-after-register',
-          message: 'Kullanici olusturuldu ama oturum acik degil.',
-        );
+        throw FirebaseAuthException(code: 'user-missing-after-register');
       }
 
-      final userDocRef = FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(user.uid);
-      final existing = await userDocRef.get();
-      final includeCreatedAt = !existing.exists;
-
-      await userDocRef.set(
-        UserProfileWrite(
-          uid: user.uid,
-          email: user.email?.trim().isNotEmpty == true
-              ? user.email!.trim()
-              : email,
-          name: name,
-          isProfileComplete: false,
-          includeCreatedAt: includeCreatedAt,
-        ).toMap(),
-        SetOptions(merge: true),
+      await _persistProfile(
+        user: user,
+        fallbackEmail: email,
+        fallbackName: name,
       );
-    } catch (e) {
-      _showError(mapAuthError(e));
+      await _playPortalTransition();
+    } catch (error) {
+      _showError(mapRegisterError(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _activeAction = null);
     }
+  }
+
+  Future<void> _persistProfile({
+    required User user,
+    String fallbackName = '',
+    String fallbackEmail = '',
+  }) async {
+    final userDocRef = FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(user.uid);
+    final existing = await userDocRef.get();
+    final existingData = existing.data();
+    final existingName = UserProfileContract.normalizeName(
+      (existingData?[UserProfileContract.name] as String?) ?? '',
+    );
+    final resolvedName = UserProfileContract.normalizeName(
+      fallbackName.isNotEmpty
+          ? fallbackName
+          : existingName.isNotEmpty
+          ? existingName
+          : user.displayName ?? '',
+    );
+    final resolvedEmail = user.email?.trim().isNotEmpty == true
+        ? user.email!.trim()
+        : fallbackEmail;
+
+    await userDocRef.set(
+      UserProfileWrite(
+        uid: user.uid,
+        email: resolvedEmail,
+        name: resolvedName,
+        legalConsent: const UserLegalConsent(),
+        isProfileComplete: false,
+        includeCreatedAt: !existing.exists,
+      ).toMap(),
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> _playPortalTransition() async {
+    widget.authService.registrationPortalActive.value = true;
+    await HapticFeedback.mediumImpact();
+    await Future<void>.delayed(const Duration(milliseconds: 760));
+    widget.authService.registrationPortalActive.value = false;
+  }
+
+  Future<void> _openLegal(String url, Widget fallbackPage) async {
+    try {
+      if (await AppLegalUrls.launch(url)) return;
+    } catch (_) {
+      // Fall back to the bundled legal page so review links remain available.
+    }
+
+    if (!mounted) return;
+    MysticToast.showError(
+      context,
+      AppTexts.t('auth.register.legal_link_error'),
+    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => fallbackPage));
   }
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _openTerms() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const TermsOfServicePage()),
-    );
-  }
-
-  Future<void> _openPrivacy() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
-    );
+    MysticToast.showError(context, message);
   }
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFD4AF37);
-    const bg = Color(0xFF1A1022);
-    const violet = Color(0xFF690DAB);
-
-    InputDecoration inputStyle(String hint) {
-      return InputDecoration(
-        hintText: hint,
-        hintStyle: GoogleFonts.spaceGrotesk(
-          color: const Color(0xFF64748B),
-          fontSize: 18,
-          fontWeight: FontWeight.w500,
-        ),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(30),
-          borderSide: BorderSide.none,
-        ),
-      );
-    }
-
     return ValueListenableBuilder<int>(
       valueListenable: LocalizationService.instance.revision,
       builder: (context, _, __) {
+        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
         return Scaffold(
-          backgroundColor: bg,
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.topRight,
-                radius: 1.15,
-                colors: [Color(0xFF40104E), bg],
-              ),
-            ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        InkWell(
-                          onTap: widget.onSwitchToLogin,
-                          borderRadius: BorderRadius.circular(28),
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: gold.withValues(alpha: 0.25)),
-                            ),
-                            child: const Icon(Icons.arrow_back_ios_new,
-                                color: gold, size: 20),
+          resizeToAvoidBottomInset: true,
+          backgroundColor: AppColors.background,
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: Stack(
+              children: [
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.topRight,
+                      radius: 1.24,
+                      colors: [
+                        AppColors.cosmicGradientTop,
+                        AppColors.background,
+                      ],
+                    ),
+                  ),
+                  child: SizedBox.expand(),
+                ),
+                const FallingMysticSymbols(),
+                SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: AnimatedPadding(
+                          duration: const Duration(milliseconds: 180),
+                          padding: EdgeInsets.only(
+                            top: 12,
+                            bottom: keyboardInset > 0 ? 18 : 26,
                           ),
-                        ),
-                        Row(
-                          children: [
-                            LanguagePickerButton(
-                              iconColor: const Color(0xFFFF00FF),
-                              onSelected: (lang) async {
-                                await LocalizationService.instance
-                                    .setLanguage(lang);
-                                if (mounted) setState(() {});
-                              },
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight:
+                                  constraints.maxHeight -
+                                  (keyboardInset > 0 ? 30 : 38),
                             ),
-                            Column(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: gold, width: 2),
-                                    image: const DecorationImage(
-                                      image:
-                                          AssetImage('images/chatgpt_logo.png'),
-                                      fit: BoxFit.cover,
-                                    ),
+                                _buildTopBar(),
+                                const SizedBox(height: 16),
+                                _buildHero(),
+                                const SizedBox(height: 20),
+                                _buildForm(),
+                                const SizedBox(height: 16),
+                                _buildLegalArea(),
+                                const SizedBox(height: 18),
+                                MysticPrimaryButton(
+                                  label: AppTexts.t(
+                                    _activeAction == _RegisterAction.email
+                                        ? 'auth.register.button_loading'
+                                        : 'auth.register.button',
                                   ),
+                                  loading:
+                                      _activeAction == _RegisterAction.email,
+                                  onPressed: _isBusy ? null : _register,
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  AppTexts.t('auth.register.guide'),
-                                  style: GoogleFonts.spaceGrotesk(
-                                      color: gold,
-                                      letterSpacing: 2,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700),
-                                ),
+                                const SizedBox(height: 12),
+                                _buildLoginLink(),
                               ],
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 26),
-                    Text(
-                      AppTexts.t('auth.register.title'),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.cinzel(
-                          color: gold,
-                          fontSize: 27,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.7),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      AppTexts.t('auth.register.subtitle'),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.spaceGrotesk(
-                          color: const Color(0xFF94A3B8), fontSize: 16),
-                    ),
-                    const SizedBox(height: 28),
-                    _label(AppTexts.t('auth.register.name_label'), gold),
-                    TextField(
-                      controller: _nameController,
-                      maxLength: UserProfileContract.maxNameLength,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.register.name_hint')),
-                    ),
-                    const SizedBox(height: 16),
-                    _label(AppTexts.t('auth.register.email_label'), gold),
-                    TextField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.register.email_hint')),
-                    ),
-                    const SizedBox(height: 16),
-                    _label(AppTexts.t('auth.register.password_label'), gold),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.register.password_hint')),
-                    ),
-                    const SizedBox(height: 16),
-                    _label(AppTexts.t('auth.register.confirm_label'), gold),
-                    TextField(
-                      controller: _confirmController,
-                      obscureText: true,
-                      decoration:
-                          inputStyle(AppTexts.t('auth.register.confirm_hint')),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Checkbox(
-                          value: _acceptedTerms,
-                          onChanged: (v) =>
-                              setState(() => _acceptedTerms = v ?? false),
-                          side: BorderSide(color: gold.withValues(alpha: 0.5)),
-                          activeColor: violet,
-                          checkColor: Colors.white,
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _termsText(gold),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: const [
-                          BoxShadow(
-                              color: Color(0x66FF00FF),
-                              blurRadius: 24,
-                              spreadRadius: 1)
-                        ],
-                      ),
-                      child: FilledButton(
-                        onPressed: _loading ? null : _register,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(62),
-                          backgroundColor: violet,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : Text(AppTexts.t('auth.register.button'),
-                                style: GoogleFonts.cinzel(
-                                    color: Colors.white,
-                                    fontSize: 16.5,
-                                    letterSpacing: 2)),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          AppTexts.t('auth.register.switch_prefix'),
-                          style: GoogleFonts.spaceGrotesk(
-                              color: const Color(0xFF94A3B8), fontSize: 17),
-                        ),
-                        InkWell(
-                          onTap: widget.onSwitchToLogin,
-                          child: Text(
-                            AppTexts.t('auth.register.switch_action'),
-                            style: GoogleFonts.spaceGrotesk(
-                                color: const Color(0xFFFF00FF),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                  ],
+                      );
+                    },
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );
@@ -366,43 +304,214 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  Widget _termsText(Color gold) {
-    final baseStyle = GoogleFonts.spaceGrotesk(
-      color: const Color(0xFF94A3B8),
-      fontSize: 16,
-    );
-
-    return Wrap(
+  Widget _buildTopBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(AppTexts.t('auth.register.terms_prefix'), style: baseStyle),
-        GestureDetector(
-          onTap: _openTerms,
-          child: Text(
-            AppTexts.t('auth.register.terms_link'),
-            style: baseStyle.copyWith(color: gold),
+        IconButton(
+          tooltip: AppTexts.t('auth.register.switch_action'),
+          onPressed: _isBusy ? null : widget.onSwitchToLogin,
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.tertiaryGold,
+            size: 20,
           ),
         ),
-        Text(AppTexts.t('auth.register.terms_and'), style: baseStyle),
-        GestureDetector(
-          onTap: _openPrivacy,
-          child: Text(
-            AppTexts.t('auth.register.privacy_link'),
-            style: baseStyle.copyWith(color: gold),
+        Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.tertiaryGold),
+                image: const DecorationImage(
+                  image: AssetImage('images/chatgpt_logo.png'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              AppTexts.t('auth.register.guide'),
+              style: GoogleFonts.inter(
+                color: AppColors.tertiaryGold,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        LanguagePickerButton(
+          iconColor: AppColors.primaryPink,
+          onSelected: (lang) async {
+            await LocalizationService.instance.setLanguage(lang);
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHero() {
+    return Column(
+      children: [
+        const Icon(
+          Icons.auto_awesome_rounded,
+          color: AppColors.primaryPink,
+          size: 24,
+        ),
+        const SizedBox(height: 5),
+        Text(
+          AppTexts.t('auth.register.title'),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.cormorantGaramond(
+            color: AppColors.onSurface,
+            fontSize: 38,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          AppTexts.t('auth.register.subtitle'),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: AppColors.secondaryLavender,
+            fontSize: 13,
           ),
         ),
       ],
     );
   }
 
-  Widget _label(String text, Color gold) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(text,
-          style: GoogleFonts.spaceGrotesk(
-              color: gold,
+  Widget _buildForm() {
+    return Column(
+      children: [
+        MysticRegisterTextField(
+          controller: _nameController,
+          focusNode: _nameFocusNode,
+          label: AppTexts.t('auth.register.name_label'),
+          hint: AppTexts.t('auth.register.name_hint'),
+          errorText: _nameError,
+          textInputAction: TextInputAction.next,
+          maxLength: UserProfileContract.maxNameLength,
+          onSubmitted: (_) => _emailFocusNode.requestFocus(),
+        ),
+        const SizedBox(height: 10),
+        MysticRegisterTextField(
+          controller: _emailController,
+          focusNode: _emailFocusNode,
+          label: AppTexts.t('auth.register.email_label'),
+          hint: AppTexts.t('auth.register.email_hint'),
+          errorText: _emailError,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _passwordFocusNode.requestFocus(),
+        ),
+        const SizedBox(height: 10),
+        MysticRegisterTextField(
+          controller: _passwordController,
+          focusNode: _passwordFocusNode,
+          label: AppTexts.t('auth.register.password_label'),
+          hint: AppTexts.t('auth.register.password_hint'),
+          errorText: _passwordError,
+          obscureText: _obscurePassword,
+          enableSuggestions: false,
+          textInputAction: TextInputAction.next,
+          suffixIcon: _passwordToggle(
+            obscure: _obscurePassword,
+            onPressed: () {
+              setState(() => _obscurePassword = !_obscurePassword);
+            },
+          ),
+          onSubmitted: (_) => _confirmFocusNode.requestFocus(),
+        ),
+        const SizedBox(height: 10),
+        MysticRegisterTextField(
+          controller: _confirmController,
+          focusNode: _confirmFocusNode,
+          label: AppTexts.t('auth.register.confirm_label'),
+          hint: AppTexts.t('auth.register.confirm_hint'),
+          errorText: _confirmationError,
+          obscureText: _obscureConfirmation,
+          enableSuggestions: false,
+          textInputAction: TextInputAction.done,
+          suffixIcon: _passwordToggle(
+            obscure: _obscureConfirmation,
+            onPressed: () {
+              setState(() => _obscureConfirmation = !_obscureConfirmation);
+            },
+          ),
+          onSubmitted: (_) => _register(),
+        ),
+      ],
+    );
+  }
+
+  Widget _passwordToggle({
+    required bool obscure,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      tooltip: AppTexts.t(
+        obscure ? 'auth.register.show_password' : 'auth.register.hide_password',
+      ),
+      onPressed: onPressed,
+      icon: Icon(
+        obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+        color: AppColors.secondaryLavender,
+      ),
+    );
+  }
+
+  Widget _buildLegalArea() {
+    return MysticLegalCheckbox(
+      value: _acceptedTerms,
+      errorText: _termsError,
+      onChanged: (value) {
+        setState(() {
+          _acceptedTerms = value;
+          if (value) _termsError = null;
+        });
+      },
+      onTermsPressed: () =>
+          _openLegal(AppLegalUrls.terms, const TermsOfServicePage()),
+      onPrivacyPressed: () =>
+          _openLegal(AppLegalUrls.privacy, const PrivacyPolicyPage()),
+      onAiNoticePressed: () =>
+          _openLegal(AppLegalUrls.aiNotice, const AiUsageNoticePage()),
+    );
+  }
+
+  Widget _buildLoginLink() {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 3,
+      children: [
+        Text(
+          AppTexts.t('auth.register.switch_prefix'),
+          style: GoogleFonts.inter(
+            color: AppColors.secondaryLavender,
+            fontSize: 13,
+          ),
+        ),
+        TextButton(
+          onPressed: _isBusy ? null : widget.onSwitchToLogin,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primaryPink,
+            minimumSize: const Size(44, 44),
+          ),
+          child: Text(
+            AppTexts.t('auth.register.switch_action'),
+            style: GoogleFonts.inter(
+              color: AppColors.primaryPink,
               fontSize: 13,
-              letterSpacing: 2,
-              fontWeight: FontWeight.w700)),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

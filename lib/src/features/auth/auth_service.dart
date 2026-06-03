@@ -9,18 +9,20 @@ import 'user_profile_contract.dart';
 
 class AuthService {
   AuthService({FirebaseAuth? auth, GoogleSignIn? googleSignIn})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _googleSignIn = googleSignIn ?? _createGoogleSignIn();
+    : _auth = auth ?? FirebaseAuth.instance,
+      _googleSignIn = googleSignIn ?? _createGoogleSignIn();
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
   final ValueNotifier<bool> accountDeletionInProgress = ValueNotifier(false);
+  final ValueNotifier<bool> registrationPortalActive = ValueNotifier(false);
 
   static GoogleSignIn _createGoogleSignIn() {
     return GoogleSignIn(
       scopes: const ['email', 'profile'],
-      serverClientId:
-          GoogleAuthConfig.hasWebClientId ? GoogleAuthConfig.webClientId : null,
+      serverClientId: GoogleAuthConfig.hasWebClientId
+          ? GoogleAuthConfig.webClientId
+          : null,
     );
   }
 
@@ -45,10 +47,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    await Future.wait([
-      _auth.signOut(),
-      _googleSignIn.signOut(),
-    ]);
+    await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 
   Future<void> signInWithGoogle() async {
@@ -78,8 +77,9 @@ class AuthService {
 
       final result = await _auth.signInWithCredential(credential);
       final user = result.user;
-      final normalizedName =
-          UserProfileContract.normalizeName(user?.displayName ?? '');
+      final normalizedName = UserProfileContract.normalizeName(
+        user?.displayName ?? '',
+      );
       if (user != null &&
           normalizedName.isNotEmpty &&
           normalizedName != (user.displayName ?? '').trim()) {
@@ -131,7 +131,7 @@ class AuthService {
     final appleCredential = await SignInWithApple.getAppleIDCredential(
       scopes: [
         AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName
+        AppleIDAuthorizationScopes.fullName,
       ],
     );
 

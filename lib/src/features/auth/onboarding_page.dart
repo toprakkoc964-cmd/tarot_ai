@@ -13,6 +13,7 @@ import '../../core/localization_service.dart';
 import 'auth_service.dart';
 import 'onboarding_payload.dart';
 import 'onboarding_step_three_section.dart';
+import 'personalization_question_config.dart';
 import 'user_profile_contract.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,8 +232,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
         _nameController.text.trim().isNotEmpty
             ? _nameController.text.trim()
             : (existingName.isNotEmpty
-                ? existingName
-                : (currentUser.displayName?.trim() ?? '')),
+                  ? existingName
+                  : (currentUser.displayName?.trim() ?? '')),
       );
       final resolvedEmail = (currentUser.email?.trim().isNotEmpty ?? false)
           ? currentUser.email!.trim()
@@ -308,10 +309,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
           HapticFeedback.selectionClick();
         }
         if (_yearMode) {
-          final newYear =
-              (_selectedDate.year + units).clamp(1900, DateTime.now().year + 1);
-          _selectedDate = DateTime(newYear, _selectedDate.month,
-              _selectedDate.day, _selectedDate.hour, _selectedDate.minute);
+          final newYear = (_selectedDate.year + units).clamp(
+            1900,
+            DateTime.now().year + 1,
+          );
+          _selectedDate = DateTime(
+            newYear,
+            _selectedDate.month,
+            _selectedDate.day,
+            _selectedDate.hour,
+            _selectedDate.minute,
+          );
         } else {
           _selectedDate = _selectedDate.add(Duration(days: units));
         }
@@ -346,37 +354,37 @@ class _OnboardingPageState extends State<OnboardingPage> {
     required String label,
     String? hint,
     Widget? suffixIcon,
-  }) =>
-      InputDecoration(
-        labelText: label,
-        hintText: hint,
-        hintStyle: GoogleFonts.manrope(
-            color: _onSurface.withValues(alpha: 0.38), fontSize: 15),
-        labelStyle: GoogleFonts.spaceGrotesk(
-          color: _secondary.withValues(alpha: 0.82),
-          fontWeight: FontWeight.w700,
-          letterSpacing: 2.2,
-          fontSize: 11,
-        ),
-        filled: true,
-        fillColor: Colors.black.withValues(alpha: 0.36),
-        suffixIcon: suffixIcon,
-        counterText: '',
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
-          borderSide: BorderSide(color: _secondary.withValues(alpha: 0.08)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
-          borderSide: BorderSide(color: _secondary.withValues(alpha: 0.12)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
-          borderSide: const BorderSide(color: _primary, width: 1.2),
-        ),
-      );
+  }) => InputDecoration(
+    labelText: label,
+    hintText: hint,
+    hintStyle: GoogleFonts.manrope(
+      color: _onSurface.withValues(alpha: 0.38),
+      fontSize: 15,
+    ),
+    labelStyle: GoogleFonts.spaceGrotesk(
+      color: _secondary.withValues(alpha: 0.82),
+      fontWeight: FontWeight.w700,
+      letterSpacing: 2.2,
+      fontSize: 11,
+    ),
+    filled: true,
+    fillColor: Colors.black.withValues(alpha: 0.36),
+    suffixIcon: suffixIcon,
+    counterText: '',
+    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(999),
+      borderSide: BorderSide(color: _secondary.withValues(alpha: 0.08)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(999),
+      borderSide: BorderSide(color: _secondary.withValues(alpha: 0.12)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(999),
+      borderSide: const BorderSide(color: _primary, width: 1.2),
+    ),
+  );
 
   // ── Top shell ────────────────────────────────────────────────────────────
   Widget _buildTopShell() {
@@ -422,12 +430,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
             color: active
                 ? _primary
                 : done
-                    ? _primary.withValues(alpha: 0.2)
-                    : _surfaceHigh,
+                ? _primary.withValues(alpha: 0.2)
+                : _surfaceHigh,
             boxShadow: active
                 ? [
                     BoxShadow(
-                        color: _primary.withValues(alpha: 0.3), blurRadius: 15)
+                      color: _primary.withValues(alpha: 0.3),
+                      blurRadius: 15,
+                    ),
                   ]
                 : null,
           ),
@@ -438,210 +448,231 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   // ── Ghost ring helper ────────────────────────────────────────────────────
   Widget _ghostRing(double size, double opacity) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: _gold.withValues(alpha: opacity), width: 1),
-        ),
-      );
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: _gold.withValues(alpha: opacity), width: 1),
+    ),
+  );
 
   // ── Celestial dial ───────────────────────────────────────────────────────
   Widget _buildDial() {
-    return LayoutBuilder(builder: (context, constraints) {
-      final d = (constraints.maxWidth * 0.82).clamp(230.0, 325.0);
-      final half = d / 2;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final d = (constraints.maxWidth * 0.82).clamp(230.0, 325.0);
+        final half = d / 2;
 
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            AppTexts.t('onboarding.birth_section_title'),
-            style: GoogleFonts.spaceGrotesk(
-              color: _secondary.withValues(alpha: 0.8),
-              fontSize: 10,
-              letterSpacing: 5,
-              fontWeight: FontWeight.w600,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              AppTexts.t('onboarding.birth_section_title'),
+              style: GoogleFonts.spaceGrotesk(
+                color: _secondary.withValues(alpha: 0.8),
+                fontSize: 10,
+                letterSpacing: 5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _ModeChip(
-                label: AppTexts.t('onboarding.dial.mode_day'),
-                active: !_yearMode,
-                onTap: () => setState(() => _yearMode = false),
-              ),
-              const SizedBox(width: 10),
-              _ModeChip(
-                label: AppTexts.t('onboarding.dial.mode_year'),
-                active: _yearMode,
-                onTap: () => setState(() => _yearMode = true),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onPanStart: (e) => _onPanStart(e, half),
-            onPanUpdate: (e) => _onPanUpdate(e, half),
-            onTap: _openDrumPicker,
-            child: SizedBox(
-              width: d + 28,
-              height: d + 28,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  _ghostRing(d + 26, 0.06),
-                  _ghostRing(d + 12, 0.04),
-                  Transform.rotate(
-                    angle: _dialAngle,
-                    child: CustomPaint(
-                      size: Size(d, d),
-                      painter:
-                          _DialPainter(goldColor: _gold, yearMode: _yearMode),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _ModeChip(
+                  label: AppTexts.t('onboarding.dial.mode_day'),
+                  active: !_yearMode,
+                  onTap: () => setState(() => _yearMode = false),
+                ),
+                const SizedBox(width: 10),
+                _ModeChip(
+                  label: AppTexts.t('onboarding.dial.mode_year'),
+                  active: _yearMode,
+                  onTap: () => setState(() => _yearMode = true),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onPanStart: (e) => _onPanStart(e, half),
+              onPanUpdate: (e) => _onPanUpdate(e, half),
+              onTap: _openDrumPicker,
+              child: SizedBox(
+                width: d + 28,
+                height: d + 28,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    _ghostRing(d + 26, 0.06),
+                    _ghostRing(d + 12, 0.04),
+                    Transform.rotate(
+                      angle: _dialAngle,
+                      child: CustomPaint(
+                        size: Size(d, d),
+                        painter: _DialPainter(
+                          goldColor: _gold,
+                          yearMode: _yearMode,
+                        ),
+                      ),
                     ),
-                  ),
-                  Container(
+                    Container(
                       width: 1.2,
                       height: d * 0.84,
-                      color: _gold.withValues(alpha: 0.10)),
-                  Container(
+                      color: _gold.withValues(alpha: 0.10),
+                    ),
+                    Container(
                       width: d * 0.84,
                       height: 1.2,
-                      color: _gold.withValues(alpha: 0.10)),
-                  Container(
-                    width: d - 4,
-                    height: d - 4,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [
-                        Colors.transparent,
-                        _gold.withValues(alpha: 0.04),
-                      ]),
+                      color: _gold.withValues(alpha: 0.10),
                     ),
-                  ),
-                  if (_yearMode)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                      width: d - 4,
+                      height: d - 4,
                       decoration: BoxDecoration(
-                        border: Border.all(
-                            color: _gold.withValues(alpha: 0.45), width: 1),
-                        borderRadius: BorderRadius.circular(99),
-                        color: _gold.withValues(alpha: 0.07),
-                      ),
-                      child: Text(
-                        '${_selectedDate.year}',
-                        style: GoogleFonts.newsreader(
-                          color: _gold,
-                          fontSize: d * 0.15,
-                          fontWeight: FontWeight.w500,
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.transparent,
+                            _gold.withValues(alpha: 0.04),
+                          ],
                         ),
                       ),
-                    )
-                  else
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: d * 0.72,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              _displayDate(_selectedDate),
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.newsreader(
-                                color: _gold,
-                                fontSize: d * 0.135,
-                                fontWeight: FontWeight.w500,
-                                height: 1.15,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: _openDrumPicker,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 3),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: _timeSelected
-                                    ? _gold.withValues(alpha: 0.5)
-                                    : _secondary.withValues(alpha: 0.2),
-                                width: 1,
-                              ),
-                              borderRadius: BorderRadius.circular(99),
-                              color: _timeSelected
-                                  ? _gold.withValues(alpha: 0.07)
-                                  : Colors.transparent,
-                            ),
-                            child: Text(
-                              _timeSelected
-                                  ? _storeTime(_selectedDate)
-                                  : '+ ${AppTexts.t('onboarding.drum.add_time').toLowerCase()}',
-                              style: GoogleFonts.spaceGrotesk(
-                                color: _timeSelected
-                                    ? _gold.withValues(alpha: 0.85)
-                                    : _secondary.withValues(alpha: 0.4),
-                                fontSize: _timeSelected ? 13 : 10,
-                                letterSpacing: _timeSelected ? 2 : 0.8,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
-                  Positioned(
-                    top: 2,
-                    child: Container(
-                      width: 3,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(99),
-                        color: _gold,
-                        boxShadow: [
-                          BoxShadow(
-                              color: _gold.withValues(alpha: 0.7),
-                              blurRadius: 10),
+                    if (_yearMode)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: _gold.withValues(alpha: 0.45),
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(99),
+                          color: _gold.withValues(alpha: 0.07),
+                        ),
+                        child: Text(
+                          '${_selectedDate.year}',
+                          style: GoogleFonts.newsreader(
+                            color: _gold,
+                            fontSize: d * 0.15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: d * 0.72,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                _displayDate(_selectedDate),
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.newsreader(
+                                  color: _gold,
+                                  fontSize: d * 0.135,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap: _openDrumPicker,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: _timeSelected
+                                      ? _gold.withValues(alpha: 0.5)
+                                      : _secondary.withValues(alpha: 0.2),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.circular(99),
+                                color: _timeSelected
+                                    ? _gold.withValues(alpha: 0.07)
+                                    : Colors.transparent,
+                              ),
+                              child: Text(
+                                _timeSelected
+                                    ? _storeTime(_selectedDate)
+                                    : '+ ${AppTexts.t('onboarding.drum.add_time').toLowerCase()}',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: _timeSelected
+                                      ? _gold.withValues(alpha: 0.85)
+                                      : _secondary.withValues(alpha: 0.4),
+                                  fontSize: _timeSelected ? 13 : 10,
+                                  letterSpacing: _timeSelected ? 2 : 0.8,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                  ),
-                  if (_yearMode) ...[
                     Positioned(
-                      left: 0,
-                      child: Icon(Icons.chevron_left_rounded,
-                          color: _gold.withValues(alpha: 0.4), size: 20),
+                      top: 2,
+                      child: Container(
+                        width: 3,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(99),
+                          color: _gold,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.7),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    Positioned(
-                      right: 0,
-                      child: Icon(Icons.chevron_right_rounded,
-                          color: _gold.withValues(alpha: 0.4), size: 20),
-                    ),
+                    if (_yearMode) ...[
+                      Positioned(
+                        left: 0,
+                        child: Icon(
+                          Icons.chevron_left_rounded,
+                          color: _gold.withValues(alpha: 0.4),
+                          size: 20,
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          color: _gold.withValues(alpha: 0.4),
+                          size: 20,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _yearMode
-                ? AppTexts.t('onboarding.dial.caption_year')
-                : AppTexts.t('onboarding.dial.caption_day'),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.manrope(
-              color: _secondary.withValues(alpha: 0.45),
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              letterSpacing: 0.3,
+            const SizedBox(height: 8),
+            Text(
+              _yearMode
+                  ? AppTexts.t('onboarding.dial.caption_year')
+                  : AppTexts.t('onboarding.dial.caption_day'),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.manrope(
+                color: _secondary.withValues(alpha: 0.45),
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+                letterSpacing: 0.3,
+              ),
             ),
-          ),
-        ],
-      );
-    });
+          ],
+        );
+      },
+    );
   }
 
   // ── Pill chip helper (Step 2 selectors) ──────────────────────────────────
@@ -669,7 +700,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
           boxShadow: selected
               ? [
                   BoxShadow(
-                      color: _primary.withValues(alpha: 0.3), blurRadius: 15)
+                    color: _primary.withValues(alpha: 0.3),
+                    blurRadius: 15,
+                  ),
                 ]
               : null,
         ),
@@ -713,23 +746,27 @@ class _OnboardingPageState extends State<OnboardingPage> {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                        color: _primary.withValues(alpha: 0.3), blurRadius: 15)
+                      color: _primary.withValues(alpha: 0.3),
+                      blurRadius: 15,
+                    ),
                   ]
                 : null,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon,
-                  color:
-                      selected ? _primary : _secondary.withValues(alpha: 0.7),
-                  size: 28),
+              Icon(
+                icon,
+                color: selected ? _primary : _secondary.withValues(alpha: 0.7),
+                size: 28,
+              ),
               const SizedBox(height: 12),
               Text(
                 label,
                 style: GoogleFonts.manrope(
-                  color:
-                      selected ? _primary : _onSurface.withValues(alpha: 0.8),
+                  color: selected
+                      ? _primary
+                      : _onSurface.withValues(alpha: 0.8),
                   fontSize: 13,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 ),
@@ -821,22 +858,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.rel.single'),
-                selected: _relationshipStatus == 'single',
-                onTap: () => setState(() => _relationshipStatus = 'single'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.rel.taken'),
-                selected: _relationshipStatus == 'taken',
-                onTap: () => setState(() => _relationshipStatus = 'taken'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.rel.complicated'),
-                selected: _relationshipStatus == 'complicated',
-                onTap: () =>
-                    setState(() => _relationshipStatus = 'complicated'),
-              ),
+              for (final option
+                  in PersonalizationQuestions.relationshipStatus.options)
+                _pillChip(
+                  label: AppTexts.t(option.labelKey),
+                  selected: _relationshipStatus == option.value,
+                  onTap: () =>
+                      setState(() => _relationshipStatus = option.value),
+                ),
             ],
           ),
 
@@ -848,36 +877,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.student'),
-                selected: _lifeSpace == 'student',
-                onTap: () => setState(() => _lifeSpace = 'student'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.corporate'),
-                selected: _lifeSpace == 'corporate',
-                onTap: () => setState(() => _lifeSpace = 'corporate'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.creative'),
-                selected: _lifeSpace == 'creative',
-                onTap: () => setState(() => _lifeSpace = 'creative'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.entrepreneur'),
-                selected: _lifeSpace == 'entrepreneur',
-                onTap: () => setState(() => _lifeSpace = 'entrepreneur'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.freelance'),
-                selected: _lifeSpace == 'freelance',
-                onTap: () => setState(() => _lifeSpace = 'freelance'),
-              ),
-              _pillChip(
-                label: AppTexts.t('onboarding.step2.life.other'),
-                selected: _lifeSpace == 'other',
-                onTap: () => setState(() => _lifeSpace = 'other'),
-              ),
+              for (final option in PersonalizationQuestions.lifeSpace.options)
+                _pillChip(
+                  label: AppTexts.t(option.labelKey),
+                  selected: _lifeSpace == option.value,
+                  onTap: () => setState(() => _lifeSpace = option.value),
+                ),
             ],
           ),
 
@@ -887,26 +892,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
           _sectionLabel(AppTexts.t('onboarding.step2.tone')),
           Row(
             children: [
-              _toneCard(
-                icon: Icons.auto_awesome,
-                label: AppTexts.t('onboarding.step2.tone.soft'),
-                selected: _interpretationTone == 'soft',
-                onTap: () => setState(() => _interpretationTone = 'soft'),
-              ),
-              const SizedBox(width: 10),
-              _toneCard(
-                icon: Icons.bolt,
-                label: AppTexts.t('onboarding.step2.tone.direct'),
-                selected: _interpretationTone == 'direct',
-                onTap: () => setState(() => _interpretationTone = 'direct'),
-              ),
-              const SizedBox(width: 10),
-              _toneCard(
-                icon: Icons.temple_buddhist,
-                label: AppTexts.t('onboarding.step2.tone.spiritual'),
-                selected: _interpretationTone == 'spiritual',
-                onTap: () => setState(() => _interpretationTone = 'spiritual'),
-              ),
+              for (final option
+                  in PersonalizationQuestions.interpretationTone.options) ...[
+                _toneCard(
+                  icon: option.icon,
+                  label: AppTexts.t(option.labelKey),
+                  selected: _interpretationTone == option.value,
+                  onTap: () =>
+                      setState(() => _interpretationTone = option.value),
+                ),
+                if (option !=
+                    PersonalizationQuestions.interpretationTone.options.last)
+                  const SizedBox(width: 10),
+              ],
             ],
           ),
         ],
@@ -945,15 +943,20 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   child: OutlinedButton(
                     onPressed: _loading ? null : _previousStep,
                     style: OutlinedButton.styleFrom(
-                      side:
-                          BorderSide(color: _secondary.withValues(alpha: 0.45)),
+                      side: BorderSide(
+                        color: _secondary.withValues(alpha: 0.45),
+                      ),
                       foregroundColor: _secondary,
                       minimumSize: const Size.fromHeight(76),
                       shape: const StadiumBorder(),
                     ),
-                    child: Text(AppTexts.t('common.back'),
-                        style: GoogleFonts.spaceGrotesk(
-                            letterSpacing: 2, fontWeight: FontWeight.w700)),
+                    child: Text(
+                      AppTexts.t('common.back'),
+                      style: GoogleFonts.spaceGrotesk(
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               if (_currentStep > 0) const SizedBox(width: 10),
@@ -961,16 +964,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 child: _loading
                     ? const Center(
                         child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2)))
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
                     : GestureDetector(
                         onTap: isLast ? _submit : _nextStep,
                         child: Container(
                           height: 76,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                                colors: [_primary, _primaryDeep]),
+                              colors: [_primary, _primaryDeep],
+                            ),
                             borderRadius: BorderRadius.circular(999),
                             boxShadow: [
                               BoxShadow(
@@ -1192,10 +1198,14 @@ class _DialPainter extends CustomPainter {
       final angle = i * (2 * math.pi / ticks) - math.pi / 2;
       final isMain = i % mainEvery == 0;
       final innerR = isMain ? r - 13 : r - 9;
-      final inner = Offset(center.dx + innerR * math.cos(angle),
-          center.dy + innerR * math.sin(angle));
-      final outer = Offset(center.dx + (r - 2) * math.cos(angle),
-          center.dy + (r - 2) * math.sin(angle));
+      final inner = Offset(
+        center.dx + innerR * math.cos(angle),
+        center.dy + innerR * math.sin(angle),
+      );
+      final outer = Offset(
+        center.dx + (r - 2) * math.cos(angle),
+        center.dy + (r - 2) * math.sin(angle),
+      );
       paint
         ..color = goldColor.withValues(alpha: isMain ? 0.6 : 0.18)
         ..strokeWidth = isMain ? 1.4 : 0.7;
@@ -1206,8 +1216,10 @@ class _DialPainter extends CustomPainter {
     for (int i = 0; i < 4; i++) {
       final angle = i * (math.pi / 2) - math.pi / 2;
       dotPaint.color = goldColor.withValues(alpha: i == 2 ? 0.55 : 0.82);
-      final pos = Offset(center.dx + (r - 7) * math.cos(angle),
-          center.dy + (r - 7) * math.sin(angle));
+      final pos = Offset(
+        center.dx + (r - 7) * math.cos(angle),
+        center.dy + (r - 7) * math.sin(angle),
+      );
       canvas.drawCircle(pos, yearMode ? 5 : 4, dotPaint);
     }
   }
@@ -1367,8 +1379,10 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
       initialItem: _loopingInitialItem(itemCount: 31, selectedIndex: _day - 1),
     );
     _monthCtrl = FixedExtentScrollController(
-      initialItem:
-          _loopingInitialItem(itemCount: 12, selectedIndex: _month - 1),
+      initialItem: _loopingInitialItem(
+        itemCount: 12,
+        selectedIndex: _month - 1,
+      ),
     );
     _yearCtrl = FixedExtentScrollController(initialItem: _year - 1900);
     _hourCtrl = FixedExtentScrollController(initialItem: _hour);
@@ -1436,8 +1450,9 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                         label(realIndex),
                         maxLines: 1,
                         style: GoogleFonts.newsreader(
-                          color:
-                              sel ? _gold : _onSurface.withValues(alpha: 0.3),
+                          color: sel
+                              ? _gold
+                              : _onSurface.withValues(alpha: 0.3),
                           fontSize: sel ? 20 : 16,
                           fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                         ),
@@ -1467,7 +1482,9 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                   decoration: BoxDecoration(
                     border: Border.symmetric(
                       horizontal: BorderSide(
-                          color: _gold.withValues(alpha: 0.35), width: 1),
+                        color: _gold.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
                     ),
                     color: _gold.withValues(alpha: 0.05),
                   ),
@@ -1500,9 +1517,10 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
         border: Border.all(color: _secondary.withValues(alpha: 0.12)),
         boxShadow: [
           BoxShadow(
-              color: _primary.withValues(alpha: 0.08),
-              blurRadius: 40,
-              spreadRadius: 10),
+            color: _primary.withValues(alpha: 0.08),
+            blurRadius: 40,
+            spreadRadius: 10,
+          ),
         ],
       ),
       child: SafeArea(
@@ -1524,8 +1542,11 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.auto_awesome,
-                      color: Color(0xFFFF5ED6), size: 14),
+                  const Icon(
+                    Icons.auto_awesome,
+                    color: Color(0xFFFF5ED6),
+                    size: 14,
+                  ),
                   const SizedBox(width: 7),
                   Text(
                     AppTexts.t('onboarding.drum.title'),
@@ -1544,44 +1565,49 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   _drum(
-                      count: 31,
-                      label: (i) => '${i + 1}',
-                      ctrl: _dayCtrl,
-                      width: 52,
-                      looping: true,
-                      onChanged: (i) => setState(() {
-                            _day = i + 1;
-                            _clampDay();
-                          })),
+                    count: 31,
+                    label: (i) => '${i + 1}',
+                    ctrl: _dayCtrl,
+                    width: 52,
+                    looping: true,
+                    onChanged: (i) => setState(() {
+                      _day = i + 1;
+                      _clampDay();
+                    }),
+                  ),
                   Container(
-                      width: 1,
-                      height: 60,
-                      color: _secondary.withValues(alpha: 0.15),
-                      margin: const EdgeInsets.symmetric(horizontal: 6)),
+                    width: 1,
+                    height: 60,
+                    color: _secondary.withValues(alpha: 0.15),
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
                   _drum(
-                      count: 12,
-                      label: (i) => _months[i],
-                      ctrl: _monthCtrl,
-                      width: 132,
-                      looping: true,
-                      onChanged: (i) => setState(() {
-                            _month = i + 1;
-                            _clampDay();
-                          })),
+                    count: 12,
+                    label: (i) => _months[i],
+                    ctrl: _monthCtrl,
+                    width: 132,
+                    looping: true,
+                    onChanged: (i) => setState(() {
+                      _month = i + 1;
+                      _clampDay();
+                    }),
+                  ),
                   Container(
-                      width: 1,
-                      height: 60,
-                      color: _secondary.withValues(alpha: 0.15),
-                      margin: const EdgeInsets.symmetric(horizontal: 6)),
+                    width: 1,
+                    height: 60,
+                    color: _secondary.withValues(alpha: 0.15),
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
                   _drum(
-                      count: DateTime.now().year - 1900 + 2,
-                      label: (i) => '${1900 + i}',
-                      ctrl: _yearCtrl,
-                      width: 72,
-                      onChanged: (i) => setState(() {
-                            _year = 1900 + i;
-                            _clampDay();
-                          })),
+                    count: DateTime.now().year - 1900 + 2,
+                    label: (i) => '${1900 + i}',
+                    ctrl: _yearCtrl,
+                    width: 72,
+                    onChanged: (i) => setState(() {
+                      _year = 1900 + i;
+                      _clampDay();
+                    }),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1594,8 +1620,9 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                       _showTime
                           ? Icons.access_time_filled_rounded
                           : Icons.access_time_rounded,
-                      color:
-                          _showTime ? _gold : _secondary.withValues(alpha: 0.4),
+                      color: _showTime
+                          ? _gold
+                          : _secondary.withValues(alpha: 0.4),
                       size: 15,
                     ),
                     const SizedBox(width: 7),
@@ -1617,8 +1644,9 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                       _showTime
                           ? Icons.expand_less_rounded
                           : Icons.expand_more_rounded,
-                      color:
-                          _showTime ? _gold : _secondary.withValues(alpha: 0.4),
+                      color: _showTime
+                          ? _gold
+                          : _secondary.withValues(alpha: 0.4),
                       size: 15,
                     ),
                   ],
@@ -1634,24 +1662,31 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             _drum(
-                                count: 24,
-                                label: (i) => i.toString().padLeft(2, '0'),
-                                ctrl: _hourCtrl,
-                                width: 52,
-                                onChanged: (i) => setState(() => _hour = i)),
+                              count: 24,
+                              label: (i) => i.toString().padLeft(2, '0'),
+                              ctrl: _hourCtrl,
+                              width: 52,
+                              onChanged: (i) => setState(() => _hour = i),
+                            ),
                             Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(':',
-                                  style: GoogleFonts.newsreader(
-                                      color: _gold, fontSize: 28)),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: Text(
+                                ':',
+                                style: GoogleFonts.newsreader(
+                                  color: _gold,
+                                  fontSize: 28,
+                                ),
+                              ),
                             ),
                             _drum(
-                                count: 60,
-                                label: (i) => i.toString().padLeft(2, '0'),
-                                ctrl: _minCtrl,
-                                width: 52,
-                                onChanged: (i) => setState(() => _minute = i)),
+                              count: 60,
+                              label: (i) => i.toString().padLeft(2, '0'),
+                              ctrl: _minCtrl,
+                              width: 52,
+                              onChanged: (i) => setState(() => _minute = i),
+                            ),
                           ],
                         ),
                       )
@@ -1671,10 +1706,9 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
                 child: Container(
                   height: 54,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [
-                      Color(0xFFFF5ED6),
-                      Color(0xFFFF00D4),
-                    ]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF5ED6), Color(0xFFFF00D4)],
+                    ),
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(

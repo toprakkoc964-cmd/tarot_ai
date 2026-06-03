@@ -16,6 +16,7 @@ class UserProfileContract {
   static const String lifeSpace = 'lifeSpace';
   static const String interpretationTone = 'interpretationTone';
   static const String focusAreas = 'focusAreas';
+  static const String personalizationEnabled = 'personalizationEnabled';
 
   static const String isProfileComplete = 'isProfileComplete';
   static const String createdAt = 'createdAt';
@@ -25,6 +26,7 @@ class UserProfileContract {
   static const String walletLastFreeDrawAt = 'lastFreeDrawAt';
   static const String fcmTokens = 'fcmTokens';
   static const String fcmTokenUpdatedAt = 'fcmTokenUpdatedAt';
+  static const String legalConsent = 'legalConsent';
 
   static const int maxNameLength = 25;
 
@@ -47,6 +49,8 @@ class UserProfileWrite {
     this.lifeSpace,
     this.interpretationTone,
     this.focusAreas,
+    this.personalizationEnabled = true,
+    this.legalConsent,
     required this.isProfileComplete,
     this.includeCreatedAt = false,
   });
@@ -60,6 +64,8 @@ class UserProfileWrite {
   final String? lifeSpace;
   final String? interpretationTone;
   final List<String>? focusAreas;
+  final bool personalizationEnabled;
+  final UserLegalConsent? legalConsent;
   final bool isProfileComplete;
   final bool includeCreatedAt;
 
@@ -77,10 +83,31 @@ class UserProfileWrite {
       if (interpretationTone != null)
         UserProfileContract.interpretationTone: interpretationTone,
       if (focusAreas != null) UserProfileContract.focusAreas: focusAreas,
+      UserProfileContract.personalizationEnabled: personalizationEnabled,
+      if (legalConsent != null)
+        UserProfileContract.legalConsent: legalConsent!.toMap(),
       UserProfileContract.isProfileComplete: isProfileComplete,
       if (includeCreatedAt)
         UserProfileContract.createdAt: FieldValue.serverTimestamp(),
       UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+    };
+  }
+}
+
+class UserLegalConsent {
+  const UserLegalConsent();
+
+  static const String currentVersion = '2026-06-01';
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'termsAccepted': true,
+      'privacyAccepted': true,
+      'aiDisclaimerAccepted': true,
+      'termsVersion': currentVersion,
+      'privacyVersion': currentVersion,
+      'aiDisclaimerVersion': currentVersion,
+      'acceptedAt': FieldValue.serverTimestamp(),
     };
   }
 }

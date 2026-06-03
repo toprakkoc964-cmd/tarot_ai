@@ -31,11 +31,25 @@ class PrivacyPolicyPage extends StatelessWidget {
   }
 }
 
+class AiUsageNoticePage extends StatelessWidget {
+  const AiUsageNoticePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return _LegalScaffold(
+      title: AppTexts.t('legal.ai_notice.title'),
+      sections: [
+        _LegalSection(
+          AppTexts.t('legal.ai_notice.section_title'),
+          AppTexts.t('legal.ai_notice.body'),
+        ),
+      ],
+    );
+  }
+}
+
 class _LegalScaffold extends StatelessWidget {
-  const _LegalScaffold({
-    required this.title,
-    required this.sections,
-  });
+  const _LegalScaffold({required this.title, required this.sections});
 
   final String title;
   final List<_LegalSection> sections;
@@ -61,15 +75,12 @@ class _LegalScaffold extends StatelessWidget {
             children: [
               Text(
                 section.title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
-              Text(
-                section.body,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              Text(section.body, style: Theme.of(context).textTheme.bodyMedium),
             ],
           );
         },

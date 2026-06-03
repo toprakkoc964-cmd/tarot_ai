@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
+import 'personalization_question_config.dart';
 
 class OnboardingStepThreeSection extends StatelessWidget {
   const OnboardingStepThreeSection({
@@ -51,24 +52,12 @@ class OnboardingStepThreeSection extends StatelessWidget {
           mainAxisSpacing: 14,
           childAspectRatio: 0.95,
           children: [
-            _focusCard('love', Icons.favorite,
-                AppTexts.t('onboarding.step3.area.love')),
-            _focusCard(
-              'career',
-              Icons.work_history,
-              AppTexts.t('onboarding.step3.area.career'),
-            ),
-            _focusCard(
-                'money', Icons.toll, AppTexts.t('onboarding.step3.area.money')),
-            _focusCard(
-              'spiritual',
-              Icons.self_improvement,
-              AppTexts.t('onboarding.step3.area.spiritual'),
-            ),
-            _focusCard('family', Icons.diversity_3,
-                AppTexts.t('onboarding.step3.area.family')),
-            _focusCard('general', Icons.all_inclusive,
-                AppTexts.t('onboarding.step3.area.general')),
+            for (final option in PersonalizationQuestions.focusAreas.options)
+              _focusCard(
+                option.value,
+                option.icon,
+                AppTexts.t(option.labelKey),
+              ),
           ],
         ),
         const SizedBox(height: 16),
@@ -81,8 +70,9 @@ class OnboardingStepThreeSection extends StatelessWidget {
                 height: 72,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  gradient:
-                      const LinearGradient(colors: [_primary, _primaryDeep]),
+                  gradient: const LinearGradient(
+                    colors: [_primary, _primaryDeep],
+                  ),
                   borderRadius: BorderRadius.circular(999),
                   boxShadow: [
                     BoxShadow(
@@ -115,8 +105,11 @@ class OnboardingStepThreeSection extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Icon(Icons.auto_awesome,
-                              color: Color(0xFF430036), size: 20),
+                          const Icon(
+                            Icons.auto_awesome,
+                            color: Color(0xFF430036),
+                            size: 20,
+                          ),
                         ],
                       ),
               ),
@@ -180,8 +173,9 @@ class OnboardingStepThreeSection extends StatelessWidget {
                           label,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.spaceGrotesk(
-                            color:
-                                selected ? const Color(0xFFFADCFF) : _secondary,
+                            color: selected
+                                ? const Color(0xFFFADCFF)
+                                : _secondary,
                             letterSpacing: 2.8,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w500,
