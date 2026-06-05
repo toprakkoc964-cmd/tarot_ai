@@ -251,6 +251,7 @@ class AuthService {
       final result = await _auth.signInWithCredential(oauth);
       final user = result.user;
       if (user != null) {
+        await _registerAppleAuthorization(appleCredential.authorizationCode);
         final appleName = UserProfileContract.normalizeName(
           [
             appleCredential.givenName,
@@ -283,6 +284,26 @@ class AuthService {
       }
     } finally {
       socialProfileSyncInProgress.value = false;
+    }
+  }
+
+  Future<void> _registerAppleAuthorization(String authorizationCode) async {
+    final normalizedCode = authorizationCode.trim();
+    if (normalizedCode.isEmpty) return;
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'registerAppleAuthorization',
+      );
+      await callable.call(<String, dynamic>{
+        'authorizationCode': normalizedCode,
+      });
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Apple authorization register skipped: $error');
+      }
+      // Do not block sign-in. If this best-effort registration fails, the
+      // existing onboarding name fallback still keeps the account usable.
     }
   }
 

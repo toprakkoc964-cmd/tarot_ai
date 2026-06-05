@@ -9,6 +9,7 @@ import { onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/fire
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as functionsV1 from 'firebase-functions/v1';
 import * as logger from 'firebase-functions/logger';
+import jwt from 'jsonwebtoken';
 
 loadEnv({ path: resolve(__dirname, '../../.env') });
 
@@ -59,6 +60,12 @@ const coffeeMaxImageBytes = 5 * 1024 * 1024;
 const coffeeTenMinuteAttemptLimit = 3;
 const coffeeDailyAttemptLimit = 10;
 const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
+const appleAuthSecretNames = [
+  'APPLE_TEAM_ID',
+  'APPLE_KEY_ID',
+  'APPLE_CLIENT_ID',
+  'APPLE_PRIVATE_KEY',
+];
 
 type CoffeeStep = typeof coffeeRequiredSteps[number];
 type CoffeeImageRefs = Record<CoffeeStep, string>;
@@ -80,6 +87,12 @@ type CoffeeAnalysisState = {
   windowCount?: number;
   dayKey?: string;
   dayCount?: number;
+};
+
+type AppleRevokeResult = {
+  attempted: boolean;
+  success: boolean;
+  errorCode?: string;
 };
 
 function requireAppCheckIfEnabled(request: { app?: unknown }) {
@@ -169,6 +182,143 @@ function errorCode(error: unknown): string {
     : '';
 }
 
+function normalizeApplePrivateKey(value: string): string {
+  return value.trim().replace(/\\n/g, '\n');
+}
+
+function requireAppleEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`APPLE_CONFIG_MISSING:${name}`);
+  }
+  return value;
+}
+
+function buildAppleClientSecret(): string {
+  const teamId = requireAppleEnv('APPLE_TEAM_ID');
+  const keyId = requireAppleEnv('APPLE_KEY_ID');
+  const clientId = requireAppleEnv('APPLE_CLIENT_ID');
+  const privateKey = normalizeApplePrivateKey(requireAppleEnv('APPLE_PRIVATE_KEY'));
+  const now = Math.floor(Date.now() / 1000);
+
+  return jwt.sign(
+    {
+      iss: teamId,
+      iat: now,
+      exp: now + 5 * 60,
+      aud: 'https://appleid.apple.com',
+      sub: clientId,
+    },
+    privateKey,
+    {
+      algorithm: 'ES256',
+      keyid: keyId,
+    },
+  );
+}
+
+function safeAppleError(error: unknown): string {
+  if (error instanceof Error) return error.message.slice(0, 180);
+  if (typeof error === 'string') return error.slice(0, 180);
+  return 'UNKNOWN_APPLE_ERROR';
+}
+
+async function parseAppleResponse(response: Awaited<ReturnType<typeof fetch>>): Promise<Record<string, unknown>> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { error: text.slice(0, 180) };
+  }
+}
+
+async function exchangeAppleAuthorizationCode(authorizationCode: string): Promise<string> {
+  const clientId = requireAppleEnv('APPLE_CLIENT_ID');
+  const clientSecret = buildAppleClientSecret();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    code: authorizationCode,
+    grant_type: 'authorization_code',
+  });
+
+  const response = await fetch('https://appleid.apple.com/auth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+  const data = await parseAppleResponse(response);
+
+  if (!response.ok) {
+    const appleError = typeof data.error === 'string' ? data.error : `HTTP_${response.status}`;
+    throw new Error(`APPLE_TOKEN_EXCHANGE_FAILED:${appleError}`);
+  }
+
+  const refreshToken = typeof data.refresh_token === 'string'
+    ? data.refresh_token.trim()
+    : '';
+  if (!refreshToken) {
+    throw new Error('APPLE_REFRESH_TOKEN_MISSING');
+  }
+
+  return refreshToken;
+}
+
+async function revokeAppleRefreshToken(refreshToken: string): Promise<void> {
+  const clientId = requireAppleEnv('APPLE_CLIENT_ID');
+  const clientSecret = buildAppleClientSecret();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    token: refreshToken,
+    token_type_hint: 'refresh_token',
+  });
+
+  const response = await fetch('https://appleid.apple.com/auth/revoke', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const data = await parseAppleResponse(response);
+    const appleError = typeof data.error === 'string' ? data.error : `HTTP_${response.status}`;
+    throw new Error(`APPLE_REVOKE_FAILED:${appleError}`);
+  }
+}
+
+async function revokeAppleAuthorizationForUid(uid: string): Promise<AppleRevokeResult> {
+  const appleAuthRef = db.collection('apple_auth').doc(uid);
+  const appleAuthSnap = await appleAuthRef.get();
+  const refreshToken = typeof appleAuthSnap.get('refreshToken') === 'string'
+    ? String(appleAuthSnap.get('refreshToken')).trim()
+    : '';
+
+  if (!refreshToken) {
+    return {
+      attempted: false,
+      success: false,
+      errorCode: 'APPLE_REFRESH_TOKEN_NOT_FOUND',
+    };
+  }
+
+  try {
+    await revokeAppleRefreshToken(refreshToken);
+    return { attempted: true, success: true };
+  } catch (error) {
+    return {
+      attempted: true,
+      success: false,
+      errorCode: safeAppleError(error),
+    };
+  }
+}
+
 async function callerIsAdmin(uid: string, token: Record<string, unknown> | undefined): Promise<boolean> {
   if (token?.admin === true) return true;
 
@@ -244,6 +394,7 @@ async function deleteUserArtifacts(uid: string): Promise<{
 
   await Promise.allSettled([
     db.recursiveDelete(userRef),
+    db.recursiveDelete(db.collection('apple_auth').doc(uid)),
     db.recursiveDelete(db.collection('notificationPreferences').doc(uid)),
     db.recursiveDelete(db.collection('userNotificationPreferences').doc(uid)),
   ]);
@@ -768,7 +919,46 @@ export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async 
   }
 });
 
-export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (request) => {
+export const registerAppleAuthorization = onCall(
+  { enforceAppCheck: false, secrets: appleAuthSecretNames },
+  async (request) => {
+    try {
+      if (!request.auth?.uid) {
+        throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+      }
+
+      const authorizationCode = typeof request.data?.authorizationCode === 'string'
+        ? request.data.authorizationCode.trim()
+        : '';
+      if (!authorizationCode) {
+        throw new HttpsError('invalid-argument', 'APPLE_AUTHORIZATION_CODE_REQUIRED');
+      }
+
+      const refreshToken = await exchangeAppleAuthorizationCode(authorizationCode);
+      await db.collection('apple_auth').doc(request.auth.uid).set({
+        refreshToken,
+        provider: 'apple.com',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      logger.info('registerAppleAuthorization completed', {
+        uid: request.auth.uid,
+        refreshTokenStored: true,
+      });
+
+      return { success: true, refreshTokenStored: true };
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      logger.error('registerAppleAuthorization failed', {
+        uid: request.auth?.uid ?? null,
+        error: safeAppleError(err),
+      });
+      throw new HttpsError('internal', 'APPLE_AUTHORIZATION_REGISTER_FAILED');
+    }
+  },
+);
+
+export const deleteUserCompletely = onCall({ enforceAppCheck: false, secrets: appleAuthSecretNames }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -796,6 +986,7 @@ export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (re
     const targetData = targetSnap.data() as Partial<UserDoc> | undefined;
     const targetEmail = typeof targetData?.email === 'string' ? targetData.email : undefined;
 
+    const appleRevoke = await revokeAppleAuthorizationForUid(targetUid);
     const authDeleted = await deleteAuthUserIfExists(targetUid);
     const cleanup = await deleteUserArtifacts(targetUid);
 
@@ -805,6 +996,9 @@ export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (re
       adminUid,
       targetEmail: targetEmail ?? cleanup.targetEmail ?? null,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
+      appleRevokeError: appleRevoke.errorCode ?? null,
       userDocExisted: cleanup.userDocExisted,
       deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
       deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
@@ -815,10 +1009,12 @@ export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (re
       targetUid,
       adminUid,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
       userDocExisted: cleanup.userDocExisted,
     });
 
-    return { success: true, authDeleted };
+    return { success: true, authDeleted, appleRevoked: appleRevoke.success };
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     logger.error('deleteUserCompletely failed', {
@@ -830,7 +1026,7 @@ export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (re
   }
 });
 
-export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false }, async (request) => {
+export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false, secrets: appleAuthSecretNames }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -845,6 +1041,7 @@ export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false }, as
     const userData = userSnap.data() as Partial<UserDoc> | undefined;
     const targetEmail = typeof userData?.email === 'string' ? userData.email : undefined;
 
+    const appleRevoke = await revokeAppleAuthorizationForUid(uid);
     const authDeleted = await deleteAuthUserIfExists(uid);
     const cleanup = await deleteUserArtifacts(uid);
 
@@ -854,6 +1051,9 @@ export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false }, as
       actorUid: uid,
       targetEmail: targetEmail ?? cleanup.targetEmail ?? null,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
+      appleRevokeError: appleRevoke.errorCode ?? null,
       userDocExisted: cleanup.userDocExisted,
       deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
       deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
@@ -863,10 +1063,12 @@ export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false }, as
     logger.info('deleteCurrentUserCompletely completed', {
       uid,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
       userDocExisted: cleanup.userDocExisted,
     });
 
-    return { success: true, authDeleted };
+    return { success: true, authDeleted, appleRevoked: appleRevoke.success };
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     logger.error('deleteCurrentUserCompletely failed', {

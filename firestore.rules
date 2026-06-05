@@ -72,6 +72,10 @@ service cloud.firestore {
       }
     }
 
+    match /apple_auth/{document=**} {
+      allow read, write: if false;
+    }
+
     match /app_localization/{lang} {
       allow read: if true;
       allow write: if false;
