@@ -41,11 +41,7 @@ const _kGlassBorder = HomePalette.glassBorder;
 const _kPaidDrawCost = 5;
 
 class HomePage extends StatefulWidget {
-  const HomePage({
-    super.key,
-    required this.authService,
-    required this.uid,
-  });
+  const HomePage({super.key, required this.authService, required this.uid});
 
   final AuthService authService;
   final String uid;
@@ -116,11 +112,9 @@ class _HomePageState extends State<HomePage> {
     await NotificationService.instance.reloadInbox();
     if (!mounted) return;
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const _NotificationsPage(),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const _NotificationsPage()));
 
     if (!mounted) return;
     setState(() => _flashNotification = false);
@@ -175,15 +169,9 @@ class _HomePageState extends State<HomePage> {
           if (!isCosmicPage && !isCreditPage && !isProfilePage)
             const _NebulaBackground(),
           if (isCosmicPage)
-            CosmicPage(
-              bottomInset: bottomBarHeight,
-              uid: widget.uid,
-            ),
+            CosmicPage(bottomInset: bottomBarHeight, uid: widget.uid),
           if (isCreditPage)
-            CreditPage(
-              bottomInset: bottomBarHeight,
-              uid: widget.uid,
-            ),
+            CreditPage(bottomInset: bottomBarHeight, uid: widget.uid),
           if (isProfilePage)
             ProfilePage(
               bottomInset: bottomBarHeight,
@@ -362,8 +350,10 @@ class _TopBar extends StatelessWidget {
                   final creditsText = credits?.toString() ?? '--';
 
                   return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: _kSurfaceContainerHigh.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(9999),
@@ -381,8 +371,11 @@ class _TopBar extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.payments_rounded,
-                            color: _kPrimary, size: 14),
+                        Icon(
+                          Icons.payments_rounded,
+                          color: _kPrimary,
+                          size: 14,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           '$creditsText ${AppTexts.t('home.top.token_unit')}',
@@ -460,10 +453,7 @@ class _TopBar extends StatelessWidget {
 // HERO SECTION — TAROT REVEAL
 // ═════════════════════════════════════════════════════════════════
 class _HeroSection extends StatefulWidget {
-  const _HeroSection({
-    required this.uid,
-    required this.authService,
-  });
+  const _HeroSection({required this.uid, required this.authService});
 
   final String uid;
   final AuthService authService;
@@ -479,30 +469,9 @@ class _HeroSectionState extends State<_HeroSection>
   static const _deckCardWidth = 224.0;
   static const _deckCardHeight = 348.0;
   static const _maxSpreadCards = 7;
-  static const List<String> _cardNames = <String>[
-    'the_fool',
-    'the_magician',
-    'the_high_priestess',
-    'the_empress',
-    'the_emperor',
-    'the_hierophant',
-    'the_lovers',
-    'the_chariot',
-    'strength',
-    'the_hermit',
-    'the_wheel_of_fortune',
-    'justice',
-    'the_hanged_man',
-    'death',
-    'temperance',
-    'the_devil',
-    'the_tower',
-    'the_star',
-    'the_moon',
-    'the_sun',
-    'judgement',
-    'the_world',
-  ];
+  static final List<String> _cardNames = TarotService.deck
+      .map((card) => card.name)
+      .toList(growable: false);
 
   late final AnimationController _flipController = AnimationController(
     vsync: this,
@@ -536,10 +505,7 @@ class _HeroSectionState extends State<_HeroSection>
   static const int _deckSpinMsPerPageNormal = 380;
   static const int _deckSpinMsPerPageFast = 115;
 
-  String _drawBadgeText({
-    required bool isLoading,
-    required int credits,
-  }) {
+  String _drawBadgeText({required bool isLoading, required int credits}) {
     if (isLoading) return AppTexts.t('common.loading');
     if (credits >= _kPaidDrawCost) {
       return AppTexts.t('home.daily_draw.paid_available');
@@ -547,10 +513,7 @@ class _HeroSectionState extends State<_HeroSection>
     return AppTexts.t('home.daily_draw.insufficient');
   }
 
-  String _ctaText({
-    required bool isLoading,
-    required int credits,
-  }) {
+  String _ctaText({required bool isLoading, required int credits}) {
     if (_awaitingSpreadAction) {
       return AppTexts.t('tarot.spread.continue_cta');
     }
@@ -567,9 +530,6 @@ class _HeroSectionState extends State<_HeroSection>
   @override
   void initState() {
     super.initState();
-    if (_cardNames.length != 22) {
-      throw StateError('Hero section card list must contain 22 cards.');
-    }
     _warmCardImageCache();
   }
 
@@ -583,12 +543,13 @@ class _HeroSectionState extends State<_HeroSection>
   }
 
   DrawnTarotCard _cardForIndex(int index) {
-    final path = _cardImageUrlByIndex[index] ??
+    final path =
+        _cardImageUrlByIndex[index] ??
         TarotService.cachedUrlForIndex(index) ??
         TarotService.assetPathForIndex(index);
     _cardImageUrlByIndex[index] = path;
     return DrawnTarotCard(
-      card: TarotService.majorArcana[index],
+      card: TarotService.cardForIndex(index),
       imageUrl: path,
     );
   }
@@ -640,7 +601,7 @@ class _HeroSectionState extends State<_HeroSection>
     final safeIndex = (index >= 0 && index < _cardNames.length)
         ? index
         : math.Random().nextInt(_cardNames.length);
-    return TarotService.majorArcana[safeIndex].displayName;
+    return TarotService.cardForIndex(safeIndex).displayName;
   }
 
   int _cardIndexForLoopPage(int loopPage) {
@@ -650,11 +611,14 @@ class _HeroSectionState extends State<_HeroSection>
 
   String _spreadSessionId(List<String> cardNames) {
     final slug = cardNames
-        .map((name) => name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_'))
+        .map(
+          (name) => name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_'),
+        )
         .where((part) => part.isNotEmpty)
         .join('_');
-    final compactSlug =
-        slug.length > 12 ? slug.substring(0, 12) : (slug.isEmpty ? 'spread' : slug);
+    final compactSlug = slug.length > 12
+        ? slug.substring(0, 12)
+        : (slug.isEmpty ? 'spread' : slug);
     return newArisSessionId(prefix: 'spread_$compactSlug');
   }
 
@@ -716,8 +680,7 @@ class _HeroSectionState extends State<_HeroSection>
   Future<void> _startDeckSpin({required bool fast}) async {
     _stopDeckSpin();
     final generation = _deckSpinGeneration;
-    final msPerPage =
-        fast ? _deckSpinMsPerPageFast : _deckSpinMsPerPageNormal;
+    final msPerPage = fast ? _deckSpinMsPerPageFast : _deckSpinMsPerPageNormal;
 
     while (mounted &&
         generation == _deckSpinGeneration &&
@@ -750,9 +713,7 @@ class _HeroSectionState extends State<_HeroSection>
         await _pageController
             .animateToPage(
               targetPage,
-              duration: Duration(
-                milliseconds: 140 * pageDelta.clamp(1, 4),
-              ),
+              duration: Duration(milliseconds: 140 * pageDelta.clamp(1, 4)),
               curve: Curves.easeOutCubic,
             )
             .timeout(const Duration(seconds: 2));
@@ -865,16 +826,15 @@ class _HeroSectionState extends State<_HeroSection>
         _isLoadingCard = false;
       });
 
-      await _flipController.forward(from: 0).timeout(const Duration(seconds: 2));
+      await _flipController
+          .forward(from: 0)
+          .timeout(const Duration(seconds: 2));
       if (!mounted) return;
 
       await Future<void>.delayed(const Duration(milliseconds: 900));
       if (!mounted) return;
 
-      _completeCardReveal(
-        cardIndex: cardIndex,
-        selectedCard: selectedCard,
-      );
+      _completeCardReveal(cardIndex: cardIndex, selectedCard: selectedCard);
 
       if (_selectedCards.length == 1) {
         unawaited(
@@ -932,8 +892,9 @@ class _HeroSectionState extends State<_HeroSection>
     if (_selectedCards.isEmpty) return;
     final spreadCards = _enrichSelectedCardsForSpread();
     if (!mounted) return;
-    final cardNames =
-        spreadCards.map((card) => card.card.displayName).toList(growable: false);
+    final cardNames = spreadCards
+        .map((card) => card.card.displayName)
+        .toList(growable: false);
     final sessionId = _spreadSessionId(cardNames);
     final chatResult = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
@@ -962,8 +923,9 @@ class _HeroSectionState extends State<_HeroSection>
   String _resolveDeviceLanguageCode() {
     final current = AppLocale.current.trim().toLowerCase();
     if (current == 'tr' || current == 'en') return current;
-    final localeCode =
-        Localizations.localeOf(context).languageCode.trim().toLowerCase();
+    final localeCode = Localizations.localeOf(
+      context,
+    ).languageCode.trim().toLowerCase();
     return localeCode == 'tr' ? 'tr' : 'en';
   }
 
@@ -979,7 +941,8 @@ class _HeroSectionState extends State<_HeroSection>
         );
         final credits =
             (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
-        final canDraw = !isLoading &&
+        final canDraw =
+            !isLoading &&
             !_isLoadingCard &&
             !_isDrawRequestInFlight &&
             credits >= _kPaidDrawCost;
@@ -987,25 +950,23 @@ class _HeroSectionState extends State<_HeroSection>
           isLoading: isLoading,
           credits: credits,
         );
-        final ctaText = _ctaText(
-          isLoading: isLoading,
-          credits: credits,
-        );
+        final ctaText = _ctaText(isLoading: isLoading, credits: credits);
         final selectedIndex =
             _selectedCardIndex ?? _cardIndexForLoopPage(_currentLoopPage);
         final headline = _awaitingSpreadAction
             ? AppTexts.t('tarot.spread.headline')
             : (_selectionLocked
-                ? _displayNameForIndex(selectedIndex)
-                : 'Gunun Rehberi');
+                  ? _displayNameForIndex(selectedIndex)
+                  : 'Gunun Rehberi');
         final subtitle = _awaitingSpreadAction
             ? AppTexts.t('tarot.spread.selection_hint')
-                .replaceAll('{count}', '${_selectedCards.length}')
-                .replaceAll('{max}', '$_maxSpreadCards')
+                  .replaceAll('{count}', '${_selectedCards.length}')
+                  .replaceAll('{max}', '$_maxSpreadCards')
             : (_isDrawing && _isDeckVisible
-                ? AppTexts.t('tarot.spread.tap_to_draw')
-                : '');
-        final canTapDeck = _isDrawing &&
+                  ? AppTexts.t('tarot.spread.tap_to_draw')
+                  : '');
+        final canTapDeck =
+            _isDrawing &&
             _isDeckVisible &&
             !_selectionLocked &&
             !_isLoadingCard &&
@@ -1079,9 +1040,7 @@ class _HeroSectionState extends State<_HeroSection>
                         children: [
                           if (_isDrawing)
                             const Positioned.fill(
-                              child: IgnorePointer(
-                                child: _RitualAuraOverlay(),
-                              ),
+                              child: IgnorePointer(child: _RitualAuraOverlay()),
                             ),
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 420),
@@ -1104,8 +1063,9 @@ class _HeroSectionState extends State<_HeroSection>
                                     key: const ValueKey('drawing_deck'),
                                     ignoring: !canTapDeck,
                                     child: AnimatedOpacity(
-                                      duration:
-                                          const Duration(milliseconds: 280),
+                                      duration: const Duration(
+                                        milliseconds: 280,
+                                      ),
                                       opacity: _awaitingSpreadAction
                                           ? 0.72
                                           : (_selectionLocked ? 0.16 : 1),
@@ -1129,8 +1089,7 @@ class _HeroSectionState extends State<_HeroSection>
                                                   cardWidth: _deckCardWidth,
                                                   cardHeight: _deckCardHeight,
                                                   onPageChanged: (loopPage) {
-                                                    _currentLoopPage =
-                                                        loopPage;
+                                                    _currentLoopPage = loopPage;
                                                   },
                                                 ),
                                               ),
@@ -1192,8 +1151,9 @@ class _HeroSectionState extends State<_HeroSection>
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed:
-                                  canPickAnother ? _pickAnotherCard : null,
+                              onPressed: canPickAnother
+                                  ? _pickAnotherCard
+                                  : null,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _kSecondary,
                                 side: BorderSide(
@@ -1287,8 +1247,7 @@ class _SelectedSpreadStrip extends StatelessWidget {
                     height: 88,
                     child: TarotCardView(
                       imageUrl: imageUrl,
-                      borderRadius:
-                          const BorderRadius.all(Radius.circular(12)),
+                      borderRadius: const BorderRadius.all(Radius.circular(12)),
                     ),
                   )
                 : Padding(
@@ -1422,10 +1381,7 @@ class _RitualAuraOverlay extends StatelessWidget {
         gradient: RadialGradient(
           center: Alignment.center,
           radius: 1.05,
-          colors: [
-            _kPrimary.withValues(alpha: 0.14),
-            Colors.transparent,
-          ],
+          colors: [_kPrimary.withValues(alpha: 0.14), Colors.transparent],
         ),
       ),
     );
@@ -1474,9 +1430,7 @@ class _GuideCardBack extends StatelessWidget {
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _kTertiary.withValues(alpha: 0.18),
-                ),
+                border: Border.all(color: _kTertiary.withValues(alpha: 0.18)),
               ),
             ),
           ),
@@ -1484,11 +1438,7 @@ class _GuideCardBack extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.auto_awesome_rounded,
-                  color: _kTertiary,
-                  size: 38,
-                ),
+                Icon(Icons.auto_awesome_rounded, color: _kTertiary, size: 38),
                 const SizedBox(height: 12),
                 Text(
                   'Tarot AI',
@@ -1523,10 +1473,7 @@ class _GuideCardBack extends StatelessWidget {
 }
 
 class _IdleGuideCard extends StatelessWidget {
-  const _IdleGuideCard({
-    this.compactGlow = true,
-    this.expanded = false,
-  });
+  const _IdleGuideCard({this.compactGlow = true, this.expanded = false});
 
   final bool compactGlow;
   final bool expanded;
@@ -1622,10 +1569,7 @@ class _SelectedGuideCard extends StatelessWidget {
 }
 
 class _SelectedGuideCardFace extends StatelessWidget {
-  const _SelectedGuideCardFace({
-    required this.title,
-    required this.imageUrl,
-  });
+  const _SelectedGuideCardFace({required this.title, required this.imageUrl});
 
   final String title;
   final String? imageUrl;
@@ -1829,13 +1773,14 @@ class _IdentityModuleState extends State<_IdentityModule>
         final data = snapshot.data?.data();
         final storedBirthDate = data?[UserProfileContract.birthDate] as String?;
         final birthDate = _parseBirthDate(storedBirthDate);
-        final birthDateText =
-            birthDate != null ? _formatBirthDate(birthDate) : '—';
+        final birthDateText = birthDate != null
+            ? _formatBirthDate(birthDate)
+            : '—';
         final currentLang = AppLocale.current == 'en' ? 'en' : 'tr';
         final zodiacText = birthDate != null
             ? (currentLang == 'en'
-                ? _zodiacEn(birthDate)
-                : _zodiacTr(birthDate))
+                  ? _zodiacEn(birthDate)
+                  : _zodiacTr(birthDate))
             : AppTexts.t('home.birth_frequency.sign');
 
         return _GlassCard(
@@ -1900,11 +1845,12 @@ class _IdentityModuleState extends State<_IdentityModule>
                     String bodyText;
                     if (commentSnapshot.connectionState ==
                         ConnectionState.waiting) {
-                      bodyText =
-                          AppTexts.t('home.birth_frequency.loading_comment');
+                      bodyText = AppTexts.t(
+                        'home.birth_frequency.loading_comment',
+                      );
                     } else {
-                      final dynamicComment =
-                          (commentSnapshot.data ?? '').trim();
+                      final dynamicComment = (commentSnapshot.data ?? '')
+                          .trim();
                       bodyText = dynamicComment.isNotEmpty
                           ? dynamicComment
                           : AppTexts.t(
@@ -1967,9 +1913,7 @@ class _BottomNavBar extends StatelessWidget {
             color: _kBg.withValues(alpha: 0.4),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
             border: Border(
-              top: BorderSide(
-                color: _kSecondary.withValues(alpha: 0.1),
-              ),
+              top: BorderSide(color: _kSecondary.withValues(alpha: 0.1)),
             ),
             boxShadow: [
               BoxShadow(
@@ -1999,43 +1943,43 @@ class _BottomNavBar extends StatelessWidget {
                   : (active ? activeColor : inactiveColor);
               return Expanded(
                 child: GestureDetector(
-                onTap: () => onTap(i),
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      active
-                          ? (i == 0 ? Icons.blur_circular_rounded : icon)
-                          : icon,
-                      size: 22,
-                      color: iconColor,
-                      shadows: (active || isFlashing)
-                          ? [
-                              Shadow(
-                                color: (isFlashing ? flashColor : activeColor)
-                                    .withValues(alpha: 0.65),
-                                blurRadius: isFlashing ? 16 : 12,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    const SizedBox(height: 4),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        label.toUpperCase(),
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 9,
-                          letterSpacing: 1.2,
-                          fontWeight: FontWeight.w600,
-                          color: iconColor,
+                  onTap: () => onTap(i),
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        active
+                            ? (i == 0 ? Icons.blur_circular_rounded : icon)
+                            : icon,
+                        size: 22,
+                        color: iconColor,
+                        shadows: (active || isFlashing)
+                            ? [
+                                Shadow(
+                                  color: (isFlashing ? flashColor : activeColor)
+                                      .withValues(alpha: 0.65),
+                                  blurRadius: isFlashing ? 16 : 12,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      const SizedBox(height: 4),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          label.toUpperCase(),
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w600,
+                            color: iconColor,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
               );
             }),
           ),
@@ -2172,13 +2116,15 @@ class _NotificationListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final presentation = _NotificationPresentation.fromItem(item);
-    final timestamp = '${item.receivedAt.day.toString().padLeft(2, '0')}.'
+    final timestamp =
+        '${item.receivedAt.day.toString().padLeft(2, '0')}.'
         '${item.receivedAt.month.toString().padLeft(2, '0')}.'
         '${item.receivedAt.year}  '
         '${item.receivedAt.hour.toString().padLeft(2, '0')}:'
         '${item.receivedAt.minute.toString().padLeft(2, '0')}';
-    final deleteLabel =
-        AppLocale.current == 'tr' ? 'Bildirimi sil' : 'Delete notification';
+    final deleteLabel = AppLocale.current == 'tr'
+        ? 'Bildirimi sil'
+        : 'Delete notification';
 
     Future<void> deleteItem() async {
       await NotificationService.instance.deleteNotification(item.id);
@@ -2199,7 +2145,8 @@ class _NotificationListCard extends StatelessWidget {
 
     return Dismissible(
       key: ValueKey(
-          'notification_${item.id}_${item.receivedAt.microsecondsSinceEpoch}'),
+        'notification_${item.id}_${item.receivedAt.microsecondsSinceEpoch}',
+      ),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
@@ -2211,10 +2158,7 @@ class _NotificationListCard extends StatelessWidget {
         ),
         child: Tooltip(
           message: deleteLabel,
-          child: const Icon(
-            Icons.delete_outline_rounded,
-            color: _kPrimary,
-          ),
+          child: const Icon(Icons.delete_outline_rounded, color: _kPrimary),
         ),
       ),
       onDismissed: (_) => deleteItem(),
@@ -2445,6 +2389,62 @@ class _NotificationPresentation {
     'The Sun': 'Güneş',
     'Judgement': 'Mahkeme',
     'The World': 'Dünya',
+    'Ace Of Wands': 'Değnek Ası',
+    'Two Of Wands': 'Değnek İkilisi',
+    'Three Of Wands': 'Değnek Üçlüsü',
+    'Four Of Wands': 'Değnek Dörtlüsü',
+    'Five Of Wands': 'Değnek Beşlisi',
+    'Six Of Wands': 'Değnek Altılısı',
+    'Seven Of Wands': 'Değnek Yedilisi',
+    'Eight Of Wands': 'Değnek Sekizlisi',
+    'Nine Of Wands': 'Değnek Dokuzlusu',
+    'Ten Of Wands': 'Değnek Onlusu',
+    'Page Of Wands': 'Değnek Prensi',
+    'Knight Of Wands': 'Değnek Şövalyesi',
+    'Queen Of Wands': 'Değnek Kraliçesi',
+    'King Of Wands': 'Değnek Kralı',
+    'Ace Of Cups': 'Kupa Ası',
+    'Two Of Cups': 'Kupa İkilisi',
+    'Three Of Cups': 'Kupa Üçlüsü',
+    'Four Of Cups': 'Kupa Dörtlüsü',
+    'Five Of Cups': 'Kupa Beşlisi',
+    'Six Of Cups': 'Kupa Altılısı',
+    'Seven Of Cups': 'Kupa Yedilisi',
+    'Eight Of Cups': 'Kupa Sekizlisi',
+    'Nine Of Cups': 'Kupa Dokuzlusu',
+    'Ten Of Cups': 'Kupa Onlusu',
+    'Page Of Cups': 'Kupa Prensi',
+    'Knight Of Cups': 'Kupa Şövalyesi',
+    'Queen Of Cups': 'Kupa Kraliçesi',
+    'King Of Cups': 'Kupa Kralı',
+    'Ace Of Swords': 'Kılıç Ası',
+    'Two Of Swords': 'Kılıç İkilisi',
+    'Three Of Swords': 'Kılıç Üçlüsü',
+    'Four Of Swords': 'Kılıç Dörtlüsü',
+    'Five Of Swords': 'Kılıç Beşlisi',
+    'Six Of Swords': 'Kılıç Altılısı',
+    'Seven Of Swords': 'Kılıç Yedilisi',
+    'Eight Of Swords': 'Kılıç Sekizlisi',
+    'Nine Of Swords': 'Kılıç Dokuzlusu',
+    'Ten Of Swords': 'Kılıç Onlusu',
+    'Page Of Swords': 'Kılıç Prensi',
+    'Knight Of Swords': 'Kılıç Şövalyesi',
+    'Queen Of Swords': 'Kılıç Kraliçesi',
+    'King Of Swords': 'Kılıç Kralı',
+    'Ace Of Pentacles': 'Tılsım Ası',
+    'Two Of Pentacles': 'Tılsım İkilisi',
+    'Three Of Pentacles': 'Tılsım Üçlüsü',
+    'Four Of Pentacles': 'Tılsım Dörtlüsü',
+    'Five Of Pentacles': 'Tılsım Beşlisi',
+    'Six Of Pentacles': 'Tılsım Altılısı',
+    'Seven Of Pentacles': 'Tılsım Yedilisi',
+    'Eight Of Pentacles': 'Tılsım Sekizlisi',
+    'Nine Of Pentacles': 'Tılsım Dokuzlusu',
+    'Ten Of Pentacles': 'Tılsım Onlusu',
+    'Page Of Pentacles': 'Tılsım Prensi',
+    'Knight Of Pentacles': 'Tılsım Şövalyesi',
+    'Queen Of Pentacles': 'Tılsım Kraliçesi',
+    'King Of Pentacles': 'Tılsım Kralı',
   };
 }
 
@@ -2452,10 +2452,7 @@ class _NotificationPresentation {
 // GLASS CARD (shared)
 // ═════════════════════════════════════════════════════════════════
 class _GlassCard extends StatelessWidget {
-  const _GlassCard({
-    required this.child,
-    this.borderRadius = 24,
-  });
+  const _GlassCard({required this.child, this.borderRadius = 24});
 
   final Widget child;
   final double borderRadius;

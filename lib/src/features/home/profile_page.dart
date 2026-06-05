@@ -1,7 +1,6 @@
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,6 +9,7 @@ import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import '../auth/widgets/mystic_toast.dart';
 import 'cosmic_personalization_screen.dart';
 
 const _kBg = Color(0xFF17081C);
@@ -148,15 +148,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF2E1537),
-        ),
-      );
+    MysticToast.showInfo(context, message);
   }
 
   Future<void> _editNameBottomSheet() async {
@@ -459,56 +451,17 @@ class _ProfilePageState extends State<ProfilePage> {
 
     widget.authService.accountDeletionInProgress.value = true;
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        _showSnack('Aktif oturum bulunamadi.');
-        await forceSignOut();
-        return;
+      await widget.authService.markPostDeletionRedirectPending();
+      await widget.authService.deleteCurrentUserCompletely();
+      if (mounted) {
+        _showSnack('Hesabin silindi.');
       }
-
-      final uid = user.uid;
-      final userRef = FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(uid);
-
-      Map<String, dynamic>? backupProfile;
-      try {
-        final snap = await userRef.get();
-        backupProfile = snap.data();
-      } catch (_) {}
-
-      // Firestore profilini aktif oturum varken sil.
-      await userRef.delete();
-
-      try {
-        // Ardindan Auth kullanicisini sil.
-        await user.delete();
-      } on FirebaseAuthException {
-        // Auth silinemezse (genelde requires-recent-login), profil verisini geri yukle.
-        if (backupProfile != null) {
-          try {
-            await userRef.set(backupProfile, SetOptions(merge: true));
-          } catch (_) {}
-        }
-        rethrow;
-      }
-
-      if (!mounted) return;
-      _showSnack('Hesabin silindi.');
-      await forceSignOut();
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      if (e.code == 'requires-recent-login') {
-        _showSnack('Guvenlik icin yeniden giris yapip tekrar dene.');
-        await forceSignOut();
-        return;
-      }
-      _showSnack('Hesap silinemedi: ${e.message ?? e.code}');
       await forceSignOut();
     } catch (e) {
-      if (!mounted) return;
-      _showSnack('Islem tamamlanamadi: $e');
-      await forceSignOut();
+      await widget.authService.clearPostDeletionRedirect();
+      if (mounted) {
+        _showSnack('Islem tamamlanamadi: $e');
+      }
     } finally {
       widget.authService.accountDeletionInProgress.value = false;
     }

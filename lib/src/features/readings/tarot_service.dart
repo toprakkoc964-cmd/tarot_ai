@@ -13,37 +13,47 @@ class MajorArcanaCard {
   const MajorArcanaCard({
     required this.index,
     required this.name,
+    this.assetSubfolder,
+    this.assetFileName,
   });
 
   final int index;
   final String name;
+  final String? assetSubfolder;
+  final String? assetFileName;
 
   static const String assetFolder = 'assets/card-images';
 
   String get snakeCaseName => name.trim().toLowerCase().replaceAll(' ', '_');
   String get fileName =>
+      assetFileName ??
       '${index.toString().padLeft(2, '0')}_$snakeCaseName.webp';
-  String get assetPath => '$assetFolder/$fileName';
+  String get assetPath {
+    final folder = assetSubfolder == null
+        ? assetFolder
+        : '$assetFolder/$assetSubfolder';
+    return '$folder/$fileName';
+  }
+
   String get displayName => name
       .split('_')
-      .map((part) =>
-          part.isEmpty ? part : '${part[0].toUpperCase()}${part.substring(1)}')
+      .map(
+        (part) => part.isEmpty
+            ? part
+            : '${part[0].toUpperCase()}${part.substring(1)}',
+      )
       .join(' ');
 }
 
 class DrawnTarotCard {
-  const DrawnTarotCard({
-    required this.card,
-    required this.imageUrl,
-  });
+  const DrawnTarotCard({required this.card, required this.imageUrl});
 
   final MajorArcanaCard card;
 
   /// Yerel asset yolu (`assets/card-images/00_the_fool.webp`) veya ag URL.
   final String imageUrl;
 
-  bool get hasLocalAsset =>
-      imageUrl.isNotEmpty && !imageUrl.startsWith('http');
+  bool get hasLocalAsset => imageUrl.isNotEmpty && !imageUrl.startsWith('http');
 }
 
 class TarotService {
@@ -79,21 +89,367 @@ class TarotService {
     MajorArcanaCard(index: 21, name: 'the_world'),
   ];
 
+  static const List<MajorArcanaCard> minorArcana = <MajorArcanaCard>[
+    MajorArcanaCard(
+      index: 22,
+      name: 'ace_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'ace_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 23,
+      name: 'two_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'two_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 24,
+      name: 'three_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'three_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 25,
+      name: 'four_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'four_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 26,
+      name: 'five_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'five_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 27,
+      name: 'six_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'six_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 28,
+      name: 'seven_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'seven_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 29,
+      name: 'eight_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'eight_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 30,
+      name: 'nine_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'nine_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 31,
+      name: 'ten_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'ten_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 32,
+      name: 'page_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'page_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 33,
+      name: 'knight_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'knight_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 34,
+      name: 'queen_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'queen_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 35,
+      name: 'king_of_wands',
+      assetSubfolder: 'wands',
+      assetFileName: 'king_of_wands.webp',
+    ),
+    MajorArcanaCard(
+      index: 36,
+      name: 'ace_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'ace_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 37,
+      name: 'two_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'two_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 38,
+      name: 'three_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'three_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 39,
+      name: 'four_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'four_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 40,
+      name: 'five_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'five_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 41,
+      name: 'six_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'six_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 42,
+      name: 'seven_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'seven_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 43,
+      name: 'eight_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'eight_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 44,
+      name: 'nine_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'nine_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 45,
+      name: 'ten_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'ten_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 46,
+      name: 'page_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'page_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 47,
+      name: 'knight_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'knight_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 48,
+      name: 'queen_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'queen_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 49,
+      name: 'king_of_cups',
+      assetSubfolder: 'cups',
+      assetFileName: 'king_of_cups.webp',
+    ),
+    MajorArcanaCard(
+      index: 50,
+      name: 'ace_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'ace_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 51,
+      name: 'two_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'two_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 52,
+      name: 'three_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'three_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 53,
+      name: 'four_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'four_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 54,
+      name: 'five_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'five_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 55,
+      name: 'six_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'six_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 56,
+      name: 'seven_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'seven_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 57,
+      name: 'eight_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'eight_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 58,
+      name: 'nine_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'nine_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 59,
+      name: 'ten_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'ten_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 60,
+      name: 'page_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'page_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 61,
+      name: 'knight_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'knight_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 62,
+      name: 'queen_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'queen_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 63,
+      name: 'king_of_swords',
+      assetSubfolder: 'swords',
+      assetFileName: 'king_of_swords.webp',
+    ),
+    MajorArcanaCard(
+      index: 64,
+      name: 'ace_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'ace_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 65,
+      name: 'two_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'two_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 66,
+      name: 'three_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'three_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 67,
+      name: 'four_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'four_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 68,
+      name: 'five_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'five_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 69,
+      name: 'six_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'six_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 70,
+      name: 'seven_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'seven_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 71,
+      name: 'eight_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'eight_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 72,
+      name: 'nine_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'nine_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 73,
+      name: 'ten_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'ten_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 74,
+      name: 'page_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'page_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 75,
+      name: 'knight_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'knight_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 76,
+      name: 'queen_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'queen_of_pentacles.webp',
+    ),
+    MajorArcanaCard(
+      index: 77,
+      name: 'king_of_pentacles',
+      assetSubfolder: 'pentacles',
+      assetFileName: 'king_of_pentacles.webp',
+    ),
+  ];
+
+  static const List<MajorArcanaCard> deck = <MajorArcanaCard>[
+    ...majorArcana,
+    ...minorArcana,
+  ];
+
+  static final Map<int, MajorArcanaCard> _cardByIndex = <int, MajorArcanaCard>{
+    for (final card in deck) card.index: card,
+  };
+
   static void ensureLocalAssetsCached() {
-    final cacheValid = _assetsReady &&
-        imageUrlByIndex.length == majorArcana.length &&
-        imageUrlByIndex.values
-            .every((path) => path.startsWith('${MajorArcanaCard.assetFolder}/'));
+    final cacheValid =
+        _assetsReady &&
+        imageUrlByIndex.length == deck.length &&
+        imageUrlByIndex.values.every(
+          (path) => path.startsWith('${MajorArcanaCard.assetFolder}/'),
+        );
     if (cacheValid) {
       return;
     }
     imageUrlByIndex
       ..clear()
-      ..addEntries(
-        majorArcana.map(
-          (card) => MapEntry(card.index, card.assetPath),
-        ),
-      );
+      ..addEntries(deck.map((card) => MapEntry(card.index, card.assetPath)));
     _assetsReady = true;
   }
 
@@ -116,19 +472,34 @@ class TarotService {
 
   static String assetPathForIndex(int index) {
     ensureLocalAssetsCached();
-    return imageUrlByIndex[index] ?? majorArcana[index].assetPath;
+    return imageUrlByIndex[index] ?? cardForIndex(index).assetPath;
+  }
+
+  static MajorArcanaCard cardForIndex(int index) {
+    final card = _cardByIndex[index];
+    if (card == null) {
+      throw RangeError.index(index, deck, 'index');
+    }
+    return card;
+  }
+
+  static MajorArcanaCard cardForDisplayName(String name) {
+    final normalized = name.trim().toLowerCase();
+    return deck.firstWhere(
+      (card) =>
+          card.name.toLowerCase() == normalized ||
+          card.displayName.toLowerCase() == normalized,
+      orElse: () => majorArcana.first,
+    );
   }
 
   Future<DrawnTarotCard> getCardByIndex(int index) async {
-    if (index < 0 || index >= majorArcana.length) {
-      throw RangeError.index(index, majorArcana, 'index');
-    }
-    final card = majorArcana[index];
+    final card = cardForIndex(index);
     final path = assetPathForIndex(index);
     return DrawnTarotCard(card: card, imageUrl: path);
   }
 
   Future<DrawnTarotCard> drawRandomCard() async {
-    return getCardByIndex(_random.nextInt(majorArcana.length));
+    return getCardByIndex(_random.nextInt(deck.length));
   }
 }

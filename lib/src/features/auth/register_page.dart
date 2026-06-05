@@ -19,7 +19,24 @@ import 'widgets/mystic_primary_button.dart';
 import 'widgets/mystic_register_text_field.dart';
 import 'widgets/mystic_toast.dart';
 
-enum _RegisterAction { email }
+enum RegisterSubmitState {
+  idle,
+  validating,
+  submitting,
+  successAnimating,
+  navigating,
+  error,
+}
+
+const _registrationPortalDuration = Duration(milliseconds: 1500);
+const _blockedEmailDomains = <String>{
+  '10minutemail.com',
+  'guerrillamail.com',
+  'mailinator.com',
+  'tempmail.com',
+  'temp-mail.org',
+  'yopmail.com',
+};
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
@@ -46,7 +63,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordFocusNode = FocusNode();
   final _confirmFocusNode = FocusNode();
 
-  _RegisterAction? _activeAction;
+  RegisterSubmitState _submitState = RegisterSubmitState.idle;
   bool _acceptedTerms = false;
   bool _obscurePassword = true;
   bool _obscureConfirmation = true;
@@ -56,7 +73,13 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _confirmationError;
   String? _termsError;
 
-  bool get _isBusy => _activeAction != null;
+  bool get _isBusy =>
+      _submitState == RegisterSubmitState.validating ||
+      _submitState == RegisterSubmitState.submitting ||
+      _submitState == RegisterSubmitState.successAnimating ||
+      _submitState == RegisterSubmitState.navigating;
+
+  bool get _isSubmitting => _submitState == RegisterSubmitState.submitting;
 
   @override
   void dispose() {
@@ -76,6 +99,10 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   bool _validateForm() {
+    if (mounted) {
+      setState(() => _submitState = RegisterSubmitState.validating);
+    }
+
     final name = UserProfileContract.normalizeName(_nameController.text);
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -90,6 +117,8 @@ class _RegisterPageState extends State<RegisterPage> {
         ? AppTexts.t('auth.register.email_required')
         : !_isValidEmail(email)
         ? AppTexts.t('auth.register.invalid_email')
+        : _isDisposableEmail(email)
+        ? AppTexts.t('auth.register.disposable_email')
         : null;
     final passwordError = password.isEmpty
         ? AppTexts.t('auth.register.password_required')
@@ -105,50 +134,86 @@ class _RegisterPageState extends State<RegisterPage> {
         ? AppTexts.t('auth.register.terms_required')
         : null;
 
+    final isValid =
+        nameError == null &&
+        emailError == null &&
+        passwordError == null &&
+        confirmationError == null &&
+        termsError == null;
+
     setState(() {
       _nameError = nameError;
       _emailError = emailError;
       _passwordError = passwordError;
       _confirmationError = confirmationError;
       _termsError = termsError;
+      _submitState = isValid
+          ? RegisterSubmitState.idle
+          : RegisterSubmitState.error;
     });
 
-    return nameError == null &&
-        emailError == null &&
-        passwordError == null &&
-        confirmationError == null &&
-        termsError == null;
+    return isValid;
   }
 
   Future<void> _register() async {
     if (_isBusy || !_validateForm()) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _activeAction = _RegisterAction.email);
+    setState(() => _submitState = RegisterSubmitState.submitting);
+    widget.authService.registrationRedirectSuppressed.value = true;
+    var createdAccount = false;
 
     try {
       final name = UserProfileContract.normalizeName(_nameController.text);
       final email = _emailController.text.trim();
-      await widget.authService.register(
+      final credential = await widget.authService.register(
         email: email,
         password: _passwordController.text,
       );
 
-      final user = FirebaseAuth.instance.currentUser;
+      final user = credential.user ?? FirebaseAuth.instance.currentUser;
       if (user == null) {
         throw FirebaseAuthException(code: 'user-missing-after-register');
       }
+      createdAccount = true;
 
       await _persistProfile(
         user: user,
         fallbackEmail: email,
         fallbackName: name,
       );
+
+      if (mounted) {
+        setState(() => _submitState = RegisterSubmitState.successAnimating);
+      }
       await _playPortalTransition();
+
+      if (mounted) {
+        setState(() => _submitState = RegisterSubmitState.navigating);
+      }
+      _releaseRegistrationTransitionGuards();
     } catch (error) {
+      widget.authService.registrationPortalActive.value = false;
+      if ((createdAccount || FirebaseAuth.instance.currentUser != null) &&
+          FirebaseAuth.instance.currentUser != null) {
+        try {
+          await widget.authService.deleteCurrentUserCompletely();
+        } catch (_) {
+          // Avoid masking the original registration failure.
+        }
+        try {
+          await widget.authService.signOut();
+        } catch (_) {}
+      }
+      widget.authService.registrationRedirectSuppressed.value = false;
+      if (!mounted) return;
+      setState(() => _submitState = RegisterSubmitState.error);
       _showError(mapRegisterError(error));
-    } finally {
-      if (mounted) setState(() => _activeAction = null);
     }
+  }
+
+  bool _isDisposableEmail(String email) {
+    final domain = email.split('@').last.trim().toLowerCase();
+    return _blockedEmailDomains.contains(domain);
   }
 
   Future<void> _persistProfile({
@@ -182,6 +247,21 @@ class _RegisterPageState extends State<RegisterPage> {
         name: resolvedName,
         legalConsent: const UserLegalConsent(),
         isProfileComplete: false,
+        onboardingCompleted: false,
+        accountStatus: UserProfileContract.statusPendingEmailVerification,
+        emailVerified: user.emailVerified,
+        provider: 'password',
+        providers: const ['password'],
+        providerVerified: false,
+        cleanupEligible: true,
+        verificationEmailSentAt: FieldValue.serverTimestamp(),
+        verificationDeadlineAt: Timestamp.fromDate(
+          DateTime.now().add(
+            const Duration(hours: AuthService.verificationTtlHours),
+          ),
+        ),
+        verificationResendCount: 0,
+        verificationResendWindowStartedAt: FieldValue.serverTimestamp(),
         includeCreatedAt: !existing.exists,
       ).toMap(),
       SetOptions(merge: true),
@@ -191,11 +271,21 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _playPortalTransition() async {
     widget.authService.registrationPortalActive.value = true;
     await HapticFeedback.mediumImpact();
-    await Future<void>.delayed(const Duration(milliseconds: 760));
+    await Future<void>.delayed(const Duration(milliseconds: 650));
+    await HapticFeedback.selectionClick();
+    await Future<void>.delayed(
+      _registrationPortalDuration - const Duration(milliseconds: 650),
+    );
     widget.authService.registrationPortalActive.value = false;
   }
 
+  void _releaseRegistrationTransitionGuards() {
+    widget.authService.registrationPortalActive.value = false;
+    widget.authService.registrationRedirectSuppressed.value = false;
+  }
+
   Future<void> _openLegal(String url, Widget fallbackPage) async {
+    if (_isBusy) return;
     try {
       if (await AppLegalUrls.launch(url)) return;
     } catch (_) {
@@ -278,12 +368,11 @@ class _RegisterPageState extends State<RegisterPage> {
                                 const SizedBox(height: 18),
                                 MysticPrimaryButton(
                                   label: AppTexts.t(
-                                    _activeAction == _RegisterAction.email
+                                    _isSubmitting
                                         ? 'auth.register.button_loading'
                                         : 'auth.register.button',
                                   ),
-                                  loading:
-                                      _activeAction == _RegisterAction.email,
+                                  loading: _isSubmitting,
                                   onPressed: _isBusy ? null : _register,
                                 ),
                                 const SizedBox(height: 12),
@@ -395,6 +484,7 @@ class _RegisterPageState extends State<RegisterPage> {
           errorText: _nameError,
           textInputAction: TextInputAction.next,
           maxLength: UserProfileContract.maxNameLength,
+          enabled: !_isBusy,
           onSubmitted: (_) => _emailFocusNode.requestFocus(),
         ),
         const SizedBox(height: 10),
@@ -406,6 +496,7 @@ class _RegisterPageState extends State<RegisterPage> {
           errorText: _emailError,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
+          enabled: !_isBusy,
           onSubmitted: (_) => _passwordFocusNode.requestFocus(),
         ),
         const SizedBox(height: 10),
@@ -418,6 +509,7 @@ class _RegisterPageState extends State<RegisterPage> {
           obscureText: _obscurePassword,
           enableSuggestions: false,
           textInputAction: TextInputAction.next,
+          enabled: !_isBusy,
           suffixIcon: _passwordToggle(
             obscure: _obscurePassword,
             onPressed: () {
@@ -436,6 +528,7 @@ class _RegisterPageState extends State<RegisterPage> {
           obscureText: _obscureConfirmation,
           enableSuggestions: false,
           textInputAction: TextInputAction.done,
+          enabled: !_isBusy,
           suffixIcon: _passwordToggle(
             obscure: _obscureConfirmation,
             onPressed: () {
@@ -456,7 +549,7 @@ class _RegisterPageState extends State<RegisterPage> {
       tooltip: AppTexts.t(
         obscure ? 'auth.register.show_password' : 'auth.register.hide_password',
       ),
-      onPressed: onPressed,
+      onPressed: _isBusy ? null : onPressed,
       icon: Icon(
         obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
         color: AppColors.secondaryLavender,
@@ -469,6 +562,7 @@ class _RegisterPageState extends State<RegisterPage> {
       value: _acceptedTerms,
       errorText: _termsError,
       onChanged: (value) {
+        if (_isBusy) return;
         setState(() {
           _acceptedTerms = value;
           if (value) _termsError = null;

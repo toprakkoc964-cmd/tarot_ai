@@ -24,7 +24,7 @@ class _RegistrationPortalTransitionOverlayState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 760),
+      duration: const Duration(milliseconds: 1500),
     )..forward();
   }
 
@@ -42,44 +42,60 @@ class _RegistrationPortalTransitionOverlayState
     );
 
     return Positioned.fill(
-      child: IgnorePointer(
-        child: FadeTransition(
-          opacity: curved,
-          child: ColoredBox(
-            color: AppColors.background.withValues(alpha: 0.9),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RepaintBoundary(
-                    child: SizedBox(
-                      width: 180,
-                      height: 180,
-                      child: CustomPaint(
-                        painter: _CosmicVortexPainter(animation: _controller),
+      child: Material(
+        type: MaterialType.transparency,
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(decoration: TextDecoration.none),
+          child: AbsorbPointer(
+            child: FadeTransition(
+              opacity: curved,
+              child: ColoredBox(
+                color: AppColors.background.withValues(alpha: 0.68),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      RepaintBoundary(
+                        child: ScaleTransition(
+                          scale: Tween<double>(
+                            begin: 0.72,
+                            end: 1.28,
+                          ).animate(curved),
+                          child: SizedBox(
+                            width: 180,
+                            height: 180,
+                            child: CustomPaint(
+                              painter: _CosmicVortexPainter(
+                                animation: _controller,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 16),
+                      Text(
+                        AppTexts.t('auth.register.portal_title'),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.cormorantGaramond(
+                          color: AppColors.onSurface,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        AppTexts.t('auth.register.portal_subtitle'),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          color: AppColors.secondaryLavender,
+                          fontSize: 13,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    AppTexts.t('auth.register.portal_title'),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.cormorantGaramond(
-                      color: AppColors.onSurface,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    AppTexts.t('auth.register.portal_subtitle'),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      color: AppColors.secondaryLavender,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

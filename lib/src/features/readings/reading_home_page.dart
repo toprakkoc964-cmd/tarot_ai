@@ -96,13 +96,9 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
         const <RestorePurchaseItem>[],
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            '${AppTexts.t('reading.restore_result')}: $response',
-          ),
+          content: Text('${AppTexts.t('reading.restore_result')}: $response'),
         ),
       );
     } catch (e) {
@@ -149,9 +145,12 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
               onSelected: (lang) async {
                 await LocalizationService.instance.setLanguage(lang);
                 try {
-                  await FirebaseFirestore.instance.collection('users').doc(widget.uid).set({
-                    'settings': {'lang': lang}
-                  }, SetOptions(merge: true));
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(widget.uid)
+                      .set({
+                        'settings': {'lang': lang},
+                      }, SetOptions(merge: true));
                 } catch (_) {}
                 if (mounted) setState(() {});
               },
@@ -173,8 +172,9 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
             children: [
               TextField(
                 controller: _intentController,
-                decoration:
-                    InputDecoration(labelText: AppTexts.t('reading.intent')),
+                decoration: InputDecoration(
+                  labelText: AppTexts.t('reading.intent'),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -192,7 +192,7 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Draw Random Major Arcana'),
+                    : const Text('Draw Random Tarot Card'),
               ),
               if (_drawnCard != null) ...[
                 const SizedBox(height: 16),
@@ -231,9 +231,7 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
               ),
               const SizedBox(height: 20),
               if (_lastResult != null) ...[
-                Text(
-                  '${AppTexts.t('reading.id')}: ${_lastResult!.readingId}',
-                ),
+                Text('${AppTexts.t('reading.id')}: ${_lastResult!.readingId}'),
                 Text(
                   '${AppTexts.t('reading.remaining_credits')}: ${_lastResult!.remainingCredits}',
                 ),
@@ -274,11 +272,15 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
                             Text(aiResponse),
                             if (audioUrl != null) ...[
                               const SizedBox(height: 8),
-                              Text('${AppTexts.t('reading.audio_url')}: $audioUrl'),
+                              Text(
+                                '${AppTexts.t('reading.audio_url')}: $audioUrl',
+                              ),
                             ],
                             if (shareUrl != null) ...[
                               const SizedBox(height: 8),
-                              Text('${AppTexts.t('reading.share_url')}: $shareUrl'),
+                              Text(
+                                '${AppTexts.t('reading.share_url')}: $shareUrl',
+                              ),
                             ],
                           ],
                         ),

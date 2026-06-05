@@ -57,3 +57,7 @@ flutter:
     - assets/translations/
     - images/
     - assets/card-images/
+    - assets/card-images/wands/
+    - assets/card-images/cups/
+    - assets/card-images/swords/
+    - assets/card-images/pentacles/

@@ -15,6 +15,7 @@ import 'onboarding_payload.dart';
 import 'onboarding_step_three_section.dart';
 import 'personalization_question_config.dart';
 import 'user_profile_contract.dart';
+import 'widgets/mystic_toast.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 class OnboardingPage extends StatefulWidget {
@@ -90,6 +91,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _nameController = TextEditingController();
   final _birthDateController = TextEditingController();
   bool _isNameLocked = false;
+  bool _appleNamePromptShown = false;
 
   // ── Flow state ───────────────────────────────────────────────────────────
   String _lang = 'tr';
@@ -141,6 +143,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
           .get();
 
       final data = snapshot.data();
+      final provider = (data?[UserProfileContract.provider] as String?) ?? '';
+      final providers =
+          (data?[UserProfileContract.providers] as List<dynamic>?)
+              ?.whereType<String>()
+              .toSet() ??
+          currentUser.providerData
+              .map((providerInfo) => providerInfo.providerId)
+              .toSet();
+      final isAppleUser =
+          provider == 'apple.com' || providers.contains('apple.com');
+      final firestoreDisplayName = UserProfileContract.normalizeName(
+        (data?[UserProfileContract.displayName] as String?) ?? '',
+      );
       final firestoreName = UserProfileContract.normalizeName(
         (data?[UserProfileContract.name] as String?) ?? '',
       );
@@ -148,15 +163,184 @@ class _OnboardingPageState extends State<OnboardingPage> {
         currentUser.displayName ?? '',
       );
 
-      final resolvedName = firestoreName.isNotEmpty ? firestoreName : authName;
+      final resolvedName = firestoreDisplayName.isNotEmpty
+          ? firestoreDisplayName
+          : firestoreName.isNotEmpty
+          ? firestoreName
+          : authName;
 
-      if (!mounted || resolvedName.isEmpty) return;
+      if (!mounted ||
+          resolvedName.isEmpty ||
+          _nameController.text.trim().isNotEmpty) {
+        if (mounted && resolvedName.isEmpty && isAppleUser) {
+          _promptForAppleDisplayName();
+        }
+        return;
+      }
       setState(() {
         _nameController.text = resolvedName;
         _isNameLocked = true;
       });
     } catch (_) {
       // Keep name editable if profile prefill fails.
+    }
+  }
+
+  Future<void> _promptForAppleDisplayName() async {
+    if (_appleNamePromptShown || _nameController.text.trim().isNotEmpty) {
+      return;
+    }
+    _appleNamePromptShown = true;
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted || _nameController.text.trim().isNotEmpty) return;
+
+    final controller = TextEditingController();
+    String? capturedName;
+    try {
+      capturedName = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          String? inputError;
+
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              void submitName() {
+                final normalized = UserProfileContract.normalizeName(
+                  controller.text,
+                );
+                if (normalized.isEmpty) {
+                  setDialogState(() {
+                    inputError = AppTexts.t('error.profile_required');
+                  });
+                  return;
+                }
+                Navigator.of(dialogContext).pop(normalized);
+              }
+
+              return PopScope(
+                canPop: false,
+                child: AlertDialog(
+                  backgroundColor: _surfaceHigh,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  title: Text(
+                    AppTexts.t('onboarding.apple_name_prompt_title'),
+                    style: GoogleFonts.newsreader(
+                      color: _onSurface,
+                      fontSize: 26,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        AppTexts.t('onboarding.apple_name_prompt_body'),
+                        style: GoogleFonts.manrope(
+                          color: _secondary.withValues(alpha: 0.9),
+                          fontSize: 14,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: controller,
+                        maxLength: UserProfileContract.maxNameLength,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.words,
+                        style: GoogleFonts.manrope(color: _onSurface),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: AppTexts.t('onboarding.name_hint'),
+                          hintStyle: GoogleFonts.manrope(
+                            color: _secondary.withValues(alpha: 0.5),
+                          ),
+                          errorText: inputError,
+                          errorStyle: GoogleFonts.manrope(color: _primary),
+                          filled: true,
+                          fillColor: Colors.black.withValues(alpha: 0.25),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: BorderSide(
+                              color: _secondary.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(
+                              color: _primary,
+                              width: 1.2,
+                            ),
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(color: _primary),
+                          ),
+                          focusedErrorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(
+                              color: _primary,
+                              width: 1.2,
+                            ),
+                          ),
+                        ),
+                        onChanged: (_) {
+                          if (inputError != null) {
+                            setDialogState(() => inputError = null);
+                          }
+                        },
+                        onSubmitted: (_) => submitName(),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    FilledButton(
+                      onPressed: submitName,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                        foregroundColor: const Color(0xFF430036),
+                      ),
+                      child: Text(
+                        AppTexts.t('onboarding.apple_name_prompt_cta'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+
+    final normalized = UserProfileContract.normalizeName(capturedName ?? '');
+    if (!mounted || normalized.isEmpty) return;
+
+    setState(() {
+      _nameController.text = normalized;
+      _isNameLocked = false;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(widget.uid)
+          .set({
+            UserProfileContract.displayName: normalized,
+            UserProfileContract.name: normalized,
+            UserProfileContract.profileSource: <String, dynamic>{
+              UserProfileContract.displayName: 'apple_manual_capture',
+            },
+            UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      await FirebaseAuth.instance.currentUser?.updateDisplayName(normalized);
+    } catch (_) {
+      // Onboarding submit will persist the typed name if this best-effort save fails.
     }
   }
 
@@ -222,17 +406,23 @@ class _OnboardingPageState extends State<OnboardingPage> {
       final existingDoc = await userDocRef.get();
       final existingData = existingDoc.data() ?? const <String, dynamic>{};
 
+      final existingDisplayName = UserProfileContract.normalizeName(
+        (existingData[UserProfileContract.displayName] as String?) ?? '',
+      );
       final existingName = UserProfileContract.normalizeName(
         (existingData[UserProfileContract.name] as String?) ?? '',
       );
+      final existingResolvedName = existingDisplayName.isNotEmpty
+          ? existingDisplayName
+          : existingName;
       final existingEmail =
           (existingData[UserProfileContract.email] as String?)?.trim() ?? '';
 
       final resolvedName = UserProfileContract.normalizeName(
         _nameController.text.trim().isNotEmpty
             ? _nameController.text.trim()
-            : (existingName.isNotEmpty
-                  ? existingName
+            : (existingResolvedName.isNotEmpty
+                  ? existingResolvedName
                   : (currentUser.displayName?.trim() ?? '')),
       );
       final resolvedEmail = (currentUser.email?.trim().isNotEmpty ?? false)
@@ -277,7 +467,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    MysticToast.showError(context, msg);
   }
 
   // ── Dial pan ─────────────────────────────────────────────────────────────

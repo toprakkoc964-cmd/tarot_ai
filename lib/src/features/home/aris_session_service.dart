@@ -8,10 +8,7 @@ import '../auth/user_profile_contract.dart';
 import '../readings/tarot_service.dart';
 
 class ArisChatHistoryEntry {
-  const ArisChatHistoryEntry({
-    required this.role,
-    required this.text,
-  });
+  const ArisChatHistoryEntry({required this.role, required this.text});
 
   final String role;
   final String text;
@@ -47,15 +44,15 @@ class ArisSessionRecord {
     if (openingMessage.trim().isNotEmpty) {
       return _clip(openingMessage, 140);
     }
-    final last = recentMessages.reversed
-        .firstWhere(
-          (m) => m.text.trim().isNotEmpty,
-          orElse: () => const ArisChatHistoryEntry(role: 'assistant', text: ''),
-        );
+    final last = recentMessages.reversed.firstWhere(
+      (m) => m.text.trim().isNotEmpty,
+      orElse: () => const ArisChatHistoryEntry(role: 'assistant', text: ''),
+    );
     return _clip(last.text, 140);
   }
 
-  int get messageCount => recentMessages.length + (openingMessage.isNotEmpty ? 1 : 0);
+  int get messageCount =>
+      recentMessages.length + (openingMessage.isNotEmpty ? 1 : 0);
 
   List<DrawnTarotCard> toDrawnCards() {
     final names = cardNames.isNotEmpty
@@ -65,11 +62,9 @@ class ArisSessionRecord {
   }
 
   static DrawnTarotCard _drawnCardForName(String name) {
-    final match = TarotService.majorArcana.where(
-      (card) => card.displayName.toLowerCase() == name.trim().toLowerCase(),
-    );
-    final card = match.isNotEmpty ? match.first : TarotService.majorArcana.first;
-    final cachedUrl = TarotService.cachedUrlForIndex(card.index) ??
+    final card = TarotService.cardForDisplayName(name);
+    final cachedUrl =
+        TarotService.cachedUrlForIndex(card.index) ??
         TarotService.assetPathForIndex(card.index);
     return DrawnTarotCard(card: card, imageUrl: cachedUrl);
   }
@@ -80,7 +75,9 @@ class ArisSessionRecord {
     return '${trimmed.substring(0, maxChars).trim()}…';
   }
 
-  factory ArisSessionRecord.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory ArisSessionRecord.fromDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
     return ArisSessionRecord.fromMap(
       sessionId: doc.id,
       data: doc.data() ?? const <String, dynamic>{},
@@ -93,7 +90,10 @@ class ArisSessionRecord {
   }) {
     final cardNamesRaw = data['cardNames'];
     final cardNames = cardNamesRaw is List
-        ? cardNamesRaw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+        ? cardNamesRaw
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
         : <String>[];
     final cardName = (data['cardName'] as String?)?.trim() ?? '';
     final openingMessage = (data['openingMessage'] as String?)?.trim() ?? '';
@@ -115,7 +115,8 @@ class ArisSessionRecord {
     if (updatedAtMs is num && updatedAtMs > 0) {
       updatedAt = DateTime.fromMillisecondsSinceEpoch(updatedAtMs.toInt());
     } else {
-      updatedAt = _timestamp(data['updatedAt']) ?? _timestamp(data['createdAt']);
+      updatedAt =
+          _timestamp(data['updatedAt']) ?? _timestamp(data['createdAt']);
     }
 
     return ArisSessionRecord(
@@ -129,8 +130,7 @@ class ArisSessionRecord {
     );
   }
 
-  bool get hasHistory =>
-      openingMessage.isNotEmpty || recentMessages.isNotEmpty;
+  bool get hasHistory => openingMessage.isNotEmpty || recentMessages.isNotEmpty;
 
   static DateTime? _timestamp(Object? value) {
     if (value is Timestamp) return value.toDate();
@@ -142,8 +142,8 @@ class ArisSessionService {
   ArisSessionService({
     FirebaseFirestore? firestore,
     TarotFunctionsClient? functionsClient,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _functionsClient = functionsClient ?? TarotFunctionsClient();
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functionsClient = functionsClient ?? TarotFunctionsClient();
 
   final FirebaseFirestore _firestore;
   final TarotFunctionsClient _functionsClient;
@@ -193,10 +193,10 @@ class ArisSessionService {
 
   /// Real-time list; client-side sort (no composite index).
   Stream<List<ArisSessionRecord>> watchSessions(String uid) {
-    return _sessionsRef(uid).limit(_sessionQueryLimit).snapshots().map((snapshot) {
-      return mapAndSortSessions(
-        snapshot.docs.map(ArisSessionRecord.fromDoc),
-      );
+    return _sessionsRef(uid).limit(_sessionQueryLimit).snapshots().map((
+      snapshot,
+    ) {
+      return mapAndSortSessions(snapshot.docs.map(ArisSessionRecord.fromDoc));
     });
   }
 
@@ -245,9 +245,7 @@ class ArisSessionService {
     } catch (error, stackTrace) {
       if (!_isCallableUnavailable(error)) rethrow;
       if (kDebugMode) {
-        debugPrint(
-          'listArisSessions unavailable, using Firestore: $error',
-        );
+        debugPrint('listArisSessions unavailable, using Firestore: $error');
         debugPrintStack(stackTrace: stackTrace);
       }
       return fetchSessionsFromFirestore(uid);
@@ -282,7 +280,9 @@ class ArisSessionService {
 /// Unique Firestore document id per card draw / spread.
 String newArisSessionId({String prefix = 'aris'}) {
   final stamp = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-  final micro = (DateTime.now().microsecondsSinceEpoch % 46656).toRadixString(36);
+  final micro = (DateTime.now().microsecondsSinceEpoch % 46656).toRadixString(
+    36,
+  );
   final raw = '${prefix}_${stamp}_$micro';
   return raw.length <= 48 ? raw : raw.substring(0, 48);
 }

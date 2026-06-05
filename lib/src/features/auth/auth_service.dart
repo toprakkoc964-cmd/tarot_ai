@@ -1,21 +1,54 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/google_auth_config.dart';
 import 'user_profile_contract.dart';
 
+class VerificationResendLimitException implements Exception {
+  const VerificationResendLimitException(
+    this.code, {
+    this.remainingSeconds = 0,
+  });
+
+  final String code;
+  final int remainingSeconds;
+}
+
 class AuthService {
   AuthService({FirebaseAuth? auth, GoogleSignIn? googleSignIn})
     : _auth = auth ?? FirebaseAuth.instance,
-      _googleSignIn = googleSignIn ?? _createGoogleSignIn();
+      _googleSignIn = googleSignIn ?? _createGoogleSignIn() {
+    _hydratePostDeletionRedirect();
+  }
 
   final FirebaseAuth _auth;
   final GoogleSignIn _googleSignIn;
   final ValueNotifier<bool> accountDeletionInProgress = ValueNotifier(false);
+  final ValueNotifier<bool> socialProfileSyncInProgress = ValueNotifier(false);
+  final ValueNotifier<bool> forceLoginAfterAccountDeletion = ValueNotifier(
+    false,
+  );
   final ValueNotifier<bool> registrationPortalActive = ValueNotifier(false);
+  final ValueNotifier<bool> registrationRedirectSuppressed = ValueNotifier(
+    false,
+  );
+  final ValueNotifier<String?> registrationCompletedOnboardingUid =
+      ValueNotifier(null);
+
+  static const int verificationTtlHours = 24;
+  static const int verificationResendCooldownSeconds = 60;
+  static const int verificationMaxResendPerWindow = 5;
+  static const Duration verificationResendWindow = Duration(hours: 24);
+  static const String _postDeletionRedirectKey =
+      'auth.post_deletion_redirect_to_login';
+
+  bool _disposed = false;
 
   static GoogleSignIn _createGoogleSignIn() {
     return GoogleSignIn(
@@ -32,14 +65,26 @@ class AuthService {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
-  Future<void> register({
+  Future<UserCredential> register({
     required String email,
     required String password,
   }) async {
-    await _auth.createUserWithEmailAndPassword(
+    final credential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
     );
+    await credential.user?.sendEmailVerification();
+    return credential;
+  }
+
+  void dispose() {
+    _disposed = true;
+    accountDeletionInProgress.dispose();
+    socialProfileSyncInProgress.dispose();
+    forceLoginAfterAccountDeletion.dispose();
+    registrationPortalActive.dispose();
+    registrationRedirectSuppressed.dispose();
+    registrationCompletedOnboardingUid.dispose();
   }
 
   Future<void> sendResetEmail(String email) async {
@@ -47,10 +92,58 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    registrationCompletedOnboardingUid.value = null;
+    registrationRedirectSuppressed.value = false;
+    registrationPortalActive.value = false;
     await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 
+  Future<void> markPostDeletionRedirectPending() async {
+    if (!_disposed) {
+      forceLoginAfterAccountDeletion.value = true;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_postDeletionRedirectKey, true);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Post deletion redirect marker could not be saved: $error');
+      }
+    }
+  }
+
+  Future<void> clearPostDeletionRedirect() async {
+    if (!_disposed) {
+      forceLoginAfterAccountDeletion.value = false;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_postDeletionRedirectKey);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint(
+          'Post deletion redirect marker could not be cleared: $error',
+        );
+      }
+    }
+  }
+
+  Future<void> _hydratePostDeletionRedirect() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shouldForceLogin = prefs.getBool(_postDeletionRedirectKey) ?? false;
+      if (!_disposed && shouldForceLogin) {
+        forceLoginAfterAccountDeletion.value = true;
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Post deletion redirect marker could not be read: $error');
+      }
+    }
+  }
+
   Future<void> signInWithGoogle() async {
+    socialProfileSyncInProgress.value = true;
     try {
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
@@ -85,10 +178,23 @@ class AuthService {
           normalizedName != (user.displayName ?? '').trim()) {
         await user.updateDisplayName(normalizedName);
       }
+      if (user != null) {
+        await upsertSocialUserProfile(
+          user: user,
+          providerId: 'google.com',
+          displayNameSource: normalizedName.isNotEmpty ? 'google' : null,
+          emailSource: (user.email ?? '').trim().isNotEmpty ? 'google' : null,
+          photoUrlSource: (user.photoURL ?? '').trim().isNotEmpty
+              ? 'google'
+              : null,
+        );
+      }
     } on FirebaseAuthException {
       rethrow;
     } on PlatformException catch (e) {
       throw _mapGooglePlatformException(e);
+    } finally {
+      socialProfileSyncInProgress.value = false;
     }
   }
 
@@ -120,26 +226,319 @@ class AuthService {
   }
 
   Future<void> signInWithApple() async {
-    final isAvailable = await SignInWithApple.isAvailable();
-    if (!isAvailable) {
-      throw FirebaseAuthException(
-        code: 'apple-signin-not-supported',
-        message: 'Apple Sign-In is not available on this device.',
+    socialProfileSyncInProgress.value = true;
+    try {
+      final isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) {
+        throw FirebaseAuthException(
+          code: 'apple-signin-not-supported',
+          message: 'Apple Sign-In is not available on this device.',
+        );
+      }
+
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
       );
+
+      final oauth = OAuthProvider('apple.com').credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      final result = await _auth.signInWithCredential(oauth);
+      final user = result.user;
+      if (user != null) {
+        final appleName = UserProfileContract.normalizeName(
+          [
+            appleCredential.givenName,
+            appleCredential.familyName,
+          ].whereType<String>().map((part) => part.trim()).join(' '),
+        );
+        if (kDebugMode) {
+          debugPrint(
+            'Apple Sign-In full name received: ${appleName.isNotEmpty}',
+          );
+        }
+        if (appleName.isNotEmpty && (user.displayName ?? '').trim().isEmpty) {
+          await user.updateDisplayName(appleName);
+          await user.reload();
+        }
+        await upsertSocialUserProfile(
+          user: _auth.currentUser ?? user,
+          providerId: 'apple.com',
+          fallbackName: appleName,
+          forcePendingOnboarding: result.additionalUserInfo?.isNewUser == true,
+          displayNameSource: appleName.isNotEmpty
+              ? 'apple_first_authorization'
+              : null,
+          emailSource:
+              ((_auth.currentUser ?? user).email ?? '').trim().isNotEmpty
+              ? 'apple'
+              : null,
+          appleFullNameCaptured: appleName.isNotEmpty,
+        );
+      }
+    } finally {
+      socialProfileSyncInProgress.value = false;
     }
+  }
 
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
+  bool requiresEmailVerification(User user) {
+    final providerIds = user.providerData
+        .map((provider) => provider.providerId)
+        .toSet();
+    final hasSocialProvider =
+        providerIds.contains('google.com') || providerIds.contains('apple.com');
+    final hasPasswordProvider = providerIds.contains('password');
+    return hasPasswordProvider && !hasSocialProvider && !user.emailVerified;
+  }
+
+  Future<bool> reloadAndCheckEmailVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    await user.reload();
+    return _auth.currentUser?.emailVerified == true;
+  }
+
+  Future<void> markCurrentUserEmailVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(user.uid)
+        .set({
+          UserProfileContract.emailVerified: true,
+          UserProfileContract.emailVerifiedAt: FieldValue.serverTimestamp(),
+          UserProfileContract.accountStatus:
+              UserProfileContract.statusPendingOnboarding,
+          UserProfileContract.cleanupEligible: false,
+          UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
+  Future<void> deleteCurrentUserCompletely() async {
+    await _revokeAppleAuthorizationIfLinked();
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'deleteCurrentUserCompletely',
     );
+    await callable.call(<String, dynamic>{'confirm': true});
+  }
 
-    final oauth = OAuthProvider('apple.com').credential(
-      idToken: appleCredential.identityToken,
-      accessToken: appleCredential.authorizationCode,
+  bool _isAppleLinked(User user) {
+    return user.providerData.any(
+      (provider) => provider.providerId == 'apple.com',
     );
+  }
 
-    await _auth.signInWithCredential(oauth);
+  Future<void> _revokeAppleAuthorizationIfLinked() async {
+    final user = _auth.currentUser;
+    if (user == null || !_isAppleLinked(user)) return;
+
+    try {
+      final isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) return;
+
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      await _auth.revokeTokenWithAuthorizationCode(
+        appleCredential.authorizationCode,
+      );
+
+      final appleName = UserProfileContract.normalizeName(
+        [
+          appleCredential.givenName,
+          appleCredential.familyName,
+        ].whereType<String>().map((part) => part.trim()).join(' '),
+      );
+      if (appleName.isNotEmpty) {
+        await user.updateDisplayName(appleName);
+        await upsertSocialUserProfile(
+          user: _auth.currentUser ?? user,
+          providerId: 'apple.com',
+          fallbackName: appleName,
+          displayNameSource: 'apple_revoke_authorization',
+          emailSource:
+              ((_auth.currentUser ?? user).email ?? '').trim().isNotEmpty
+              ? 'apple'
+              : null,
+          appleFullNameCaptured: true,
+        );
+      }
+
+      if (kDebugMode) {
+        debugPrint('Apple authorization revoked before account deletion.');
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Apple authorization revoke skipped: $error');
+      }
+      // Account deletion must remain available even if Apple revocation is
+      // cancelled or temporarily unavailable. If revocation fails, Apple may
+      // still withhold fullName on the next sign-in until the user removes
+      // the app from Apple ID > Sign in with Apple.
+    }
+  }
+
+  Future<void> resendVerificationEmail() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(code: 'missing-user');
+    }
+    final userRef = FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(user.uid);
+    final now = DateTime.now();
+
+    await FirebaseFirestore.instance.runTransaction((tx) async {
+      final snap = await tx.get(userRef);
+      final data = snap.data() ?? const <String, dynamic>{};
+      final lastSent = _timestampToDate(
+        data[UserProfileContract.lastVerificationResendAt] ??
+            data[UserProfileContract.verificationEmailSentAt],
+      );
+      if (lastSent != null) {
+        final elapsed = now.difference(lastSent).inSeconds;
+        if (elapsed < verificationResendCooldownSeconds) {
+          throw VerificationResendLimitException(
+            'cooldown',
+            remainingSeconds: verificationResendCooldownSeconds - elapsed,
+          );
+        }
+      }
+
+      final windowStartedAt = _timestampToDate(
+        data[UserProfileContract.verificationResendWindowStartedAt],
+      );
+      final isSameWindow =
+          windowStartedAt != null &&
+          now.difference(windowStartedAt) < verificationResendWindow;
+      final currentCount = isSameWindow
+          ? (data[UserProfileContract.verificationResendCount] as num?)
+                    ?.toInt() ??
+                0
+          : 0;
+      if (currentCount >= verificationMaxResendPerWindow) {
+        throw const VerificationResendLimitException('daily-limit');
+      }
+
+      tx.set(userRef, {
+        UserProfileContract.verificationResendWindowStartedAt: isSameWindow
+            ? data[UserProfileContract.verificationResendWindowStartedAt]
+            : FieldValue.serverTimestamp(),
+        UserProfileContract.verificationResendCount: currentCount + 1,
+        UserProfileContract.lastVerificationResendAt:
+            FieldValue.serverTimestamp(),
+        UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+
+    await user.sendEmailVerification();
+  }
+
+  Future<void> upsertSocialUserProfile({
+    required User user,
+    required String providerId,
+    String fallbackName = '',
+    String? displayNameSource,
+    String? emailSource,
+    String? photoUrlSource,
+    bool forcePendingOnboarding = false,
+    bool appleFullNameCaptured = false,
+  }) async {
+    final userDocRef = FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(user.uid);
+    final existing = await userDocRef.get();
+    final existingData = existing.data() ?? const <String, dynamic>{};
+    final existingComplete =
+        existingData[UserProfileContract.isProfileComplete] == true ||
+        existingData[UserProfileContract.onboardingCompleted] == true;
+    final existingBirthDate =
+        (existingData[UserProfileContract.birthDate] as String?)?.trim() ?? '';
+    final existingDisplayName = UserProfileContract.normalizeName(
+      (existingData[UserProfileContract.displayName] as String?) ?? '',
+    );
+    final existingName = UserProfileContract.normalizeName(
+      (existingData[UserProfileContract.name] as String?) ?? '',
+    );
+    final existingResolvedName = existingDisplayName.isNotEmpty
+        ? existingDisplayName
+        : existingName;
+    final incomingName = UserProfileContract.normalizeName(
+      fallbackName.isNotEmpty ? fallbackName : user.displayName ?? '',
+    );
+    final resolvedName = UserProfileContract.normalizeName(
+      existingResolvedName.isNotEmpty ? existingResolvedName : incomingName,
+    );
+    final hasRequiredName = resolvedName.isNotEmpty;
+    final hasRequiredBirthDate = existingBirthDate.isNotEmpty;
+    final canKeepProfileComplete =
+        !forcePendingOnboarding &&
+        existingComplete &&
+        hasRequiredName &&
+        hasRequiredBirthDate;
+    final incomingEmail = (user.email ?? '').trim();
+    final incomingPhotoUrl = (user.photoURL ?? '').trim();
+    final shouldWriteIncomingName =
+        incomingName.isNotEmpty && existingResolvedName.isEmpty;
+    final shouldWriteProfileSource =
+        displayNameSource != null && shouldWriteIncomingName ||
+        emailSource != null && incomingEmail.isNotEmpty ||
+        photoUrlSource != null && incomingPhotoUrl.isNotEmpty;
+    final providerIds =
+        user.providerData
+            .map((provider) => provider.providerId)
+            .where((id) => id.isNotEmpty)
+            .toSet()
+          ..add(providerId);
+
+    await userDocRef.set({
+      UserProfileContract.uid: user.uid,
+      if (incomingEmail.isNotEmpty) UserProfileContract.email: incomingEmail,
+      if (resolvedName.isNotEmpty) UserProfileContract.name: resolvedName,
+      if (resolvedName.isNotEmpty)
+        UserProfileContract.displayName: resolvedName,
+      if (shouldWriteProfileSource)
+        UserProfileContract.profileSource: <String, dynamic>{
+          if (displayNameSource != null && shouldWriteIncomingName)
+            UserProfileContract.displayName: displayNameSource,
+          if (emailSource != null && incomingEmail.isNotEmpty)
+            UserProfileContract.email: emailSource,
+          if (photoUrlSource != null && incomingPhotoUrl.isNotEmpty)
+            UserProfileContract.photoUrl: photoUrlSource,
+        },
+      if (appleFullNameCaptured && shouldWriteIncomingName)
+        UserProfileContract.appleFullNameCapturedAt:
+            FieldValue.serverTimestamp(),
+      if (incomingPhotoUrl.isNotEmpty)
+        UserProfileContract.photoUrl: incomingPhotoUrl,
+      UserProfileContract.provider: providerId,
+      UserProfileContract.providers: providerIds.toList(growable: false),
+      UserProfileContract.emailVerified: true,
+      UserProfileContract.providerVerified: true,
+      UserProfileContract.cleanupEligible: false,
+      UserProfileContract.accountStatus: canKeepProfileComplete
+          ? UserProfileContract.statusActive
+          : UserProfileContract.statusPendingOnboarding,
+      UserProfileContract.onboardingCompleted: canKeepProfileComplete,
+      UserProfileContract.isProfileComplete: canKeepProfileComplete,
+      if (!existing.exists)
+        UserProfileContract.createdAt: FieldValue.serverTimestamp(),
+      UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  DateTime? _timestampToDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
   }
 }

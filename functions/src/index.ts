@@ -1,6 +1,14 @@
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import * as functionsV1 from 'firebase-functions/v1';
+import * as logger from 'firebase-functions/logger';
 
 loadEnv({ path: resolve(__dirname, '../../.env') });
 
@@ -10,13 +18,6 @@ if (!process.env.GEMINI_API_KEY?.trim()) {
   );
 }
 
-import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
-import { getStorage } from 'firebase-admin/storage';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import * as functionsV1 from 'firebase-functions/v1';
-import * as logger from 'firebase-functions/logger';
 import { mapError } from './lib/errors';
 import { buildSystemPrompt } from './lib/context-builder';
 import { createReadingText } from './lib/gemini';
@@ -57,6 +58,7 @@ const coffeeOrphanGraceMs = 24 * 60 * 60 * 1000;
 const coffeeMaxImageBytes = 5 * 1024 * 1024;
 const coffeeTenMinuteAttemptLimit = 3;
 const coffeeDailyAttemptLimit = 10;
+const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
 
 type CoffeeStep = typeof coffeeRequiredSteps[number];
 type CoffeeImageRefs = Record<CoffeeStep, string>;
@@ -149,6 +151,125 @@ function resolveUserDisplayName(user: UserDoc & Record<string, unknown>): string
     ? user.profile.name.trim()
     : '';
   return profileName || 'Seeker';
+}
+
+function timestampToMillis(value: unknown): number | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'object' && 'toMillis' in value && typeof value.toMillis === 'function') {
+    const millis = value.toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  return null;
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === 'object' && error && 'code' in error
+    ? String((error as { code?: unknown }).code)
+    : '';
+}
+
+async function callerIsAdmin(uid: string, token: Record<string, unknown> | undefined): Promise<boolean> {
+  if (token?.admin === true) return true;
+
+  const adminSnap = await db.collection('admins').doc(uid).get();
+  if (!adminSnap.exists) return false;
+
+  const data = adminSnap.data() ?? {};
+  return data.active !== false && data.disabled !== true;
+}
+
+async function deleteQueryDocuments(
+  collectionPath: string,
+  fieldName: string,
+  uid: string,
+): Promise<number> {
+  let deleted = 0;
+
+  while (true) {
+    const snap = await db
+      .collection(collectionPath)
+      .where(fieldName, '==', uid)
+      .limit(400)
+      .get();
+
+    if (snap.empty) break;
+
+    const batch = db.batch();
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+      deleted += 1;
+    }
+    await batch.commit();
+
+    if (snap.size < 400) break;
+  }
+
+  return deleted;
+}
+
+async function deleteStoragePrefixes(uid: string): Promise<string[]> {
+  const prefixes = [
+    `audio/${uid}/`,
+    `coffee/${uid}/`,
+    `palmistry/${uid}/`,
+    `share/${uid}/`,
+    `temp/${uid}/`,
+    `users/${uid}/`,
+  ];
+  const deletedPrefixes: string[] = [];
+
+  for (const prefix of prefixes) {
+    try {
+      await storage.bucket().deleteFiles({ prefix, force: true });
+      deletedPrefixes.push(prefix);
+    } catch (error) {
+      logger.warn('deleteStoragePrefixes failed for prefix', { uid, prefix, error });
+    }
+  }
+
+  return deletedPrefixes;
+}
+
+async function deleteUserArtifacts(uid: string): Promise<{
+  userDocExisted: boolean;
+  targetEmail?: string;
+  deletedNotificationDeviceDocs: number;
+  deletedStoragePrefixes: string[];
+}> {
+  const userRef = db.collection('users').doc(uid);
+  const userSnap = await userRef.get();
+  const userData = userSnap.data() as Partial<UserDoc> | undefined;
+  const targetEmail = typeof userData?.email === 'string' ? userData.email : undefined;
+
+  await Promise.allSettled([
+    db.recursiveDelete(userRef),
+    db.recursiveDelete(db.collection('notificationPreferences').doc(uid)),
+    db.recursiveDelete(db.collection('userNotificationPreferences').doc(uid)),
+  ]);
+
+  const deletedByUserId = await deleteQueryDocuments('notificationDevices', 'userId', uid);
+  const deletedByUid = await deleteQueryDocuments('notificationDevices', 'uid', uid);
+  const deletedStoragePrefixes = await deleteStoragePrefixes(uid);
+
+  return {
+    userDocExisted: userSnap.exists,
+    targetEmail,
+    deletedNotificationDeviceDocs: deletedByUserId + deletedByUid,
+    deletedStoragePrefixes,
+  };
+}
+
+async function deleteAuthUserIfExists(uid: string): Promise<boolean> {
+  try {
+    await getAuth().deleteUser(uid);
+    return true;
+  } catch (error) {
+    if (errorCode(error) === 'auth/user-not-found') {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function sanitizeShortText(value: unknown, maxLength: number): string {
@@ -530,24 +651,60 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
   if (!user?.uid) return;
 
   const userRef = db.collection('users').doc(user.uid);
+  const providers = (user.providerData ?? [])
+    .map((provider) => provider.providerId)
+    .filter(Boolean);
+  const hasSocialProvider = providers.some((providerId) => providerId === 'google.com' || providerId === 'apple.com');
+  const hasPasswordProvider = providers.includes('password') || providers.length === 0;
+  const emailVerified = Boolean(user.emailVerified || hasSocialProvider);
+  const accountStatus = emailVerified ? 'pending_onboarding' : 'pending_email_verification';
   const snap = await userRef.get();
   if (snap.exists) {
     const existing = snap.data() as Partial<UserDoc>;
-    if (!existing.wallet || typeof existing.wallet.credits !== 'number') {
-      await userRef.set({
+    const existingName = typeof existing.displayName === 'string' && existing.displayName.trim()
+      ? existing.displayName.trim()
+      : typeof existing.name === 'string'
+        ? existing.name.trim()
+        : '';
+    const existingBirthDate = typeof existing.birthDate === 'string' ? existing.birthDate.trim() : '';
+    const existingProfileComplete = existing.isProfileComplete === true &&
+      existing.onboardingCompleted === true &&
+      Boolean(existingName) &&
+      Boolean(existingBirthDate);
+    await userRef.set({
+      ...(user.email ? { email: user.email } : {}),
+      ...(user.displayName ? { name: user.displayName, displayName: user.displayName } : {}),
+      provider: hasSocialProvider ? providers.find((providerId) => providerId === 'google.com' || providerId === 'apple.com') : 'password',
+      providers: providers.length ? providers : ['password'],
+      emailVerified,
+      providerVerified: hasSocialProvider,
+      cleanupEligible: !emailVerified && hasPasswordProvider,
+      accountStatus: existingProfileComplete ? 'active' : accountStatus,
+      onboardingCompleted: existingProfileComplete,
+      isProfileComplete: existingProfileComplete,
+      ...(!existing.wallet || typeof existing.wallet.credits !== 'number' ? {
         wallet: {
           credits: initialFreeCredits,
           isFirstFreeUsed: false
         },
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
-    }
+      } : {}),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
     return;
   }
 
   const payload: UserDoc = {
     uid: user.uid,
     isProfileComplete: false,
+    onboardingCompleted: false,
+    accountStatus,
+    emailVerified,
+    providerVerified: hasSocialProvider,
+    provider: hasSocialProvider ? providers.find((providerId) => providerId === 'google.com' || providerId === 'apple.com') : 'password',
+    providers: providers.length ? providers : ['password'],
+    cleanupEligible: !emailVerified && hasPasswordProvider,
+    ...(user.email ? { email: user.email } : {}),
+    ...(user.displayName ? { name: user.displayName, displayName: user.displayName } : {}),
     wallet: {
       credits: initialFreeCredits,
       isFirstFreeUsed: false
@@ -557,6 +714,7 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
       selectedPersonaId: 'emilia'
     },
     createdAt: FieldValue.serverTimestamp(),
+    ...(!emailVerified ? { verificationResendCount: 0 } : {}),
     updatedAt: FieldValue.serverTimestamp()
   };
 
@@ -574,6 +732,148 @@ export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) =
       uid: user.uid,
       error
     });
+  }
+});
+
+export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async (event) => {
+  const uid = event.params.uid;
+  if (!uid) return;
+
+  const deletedData = event.data?.data() as Partial<UserDoc> | undefined;
+  const deletedEmail = typeof deletedData?.email === 'string' ? deletedData.email : undefined;
+
+  try {
+    const authDeleted = await deleteAuthUserIfExists(uid);
+    const cleanup = await deleteUserArtifacts(uid);
+
+    await db.collection('adminLogs').add({
+      action: 'handleUserDocumentDeleted',
+      targetUid: uid,
+      actorUid: 'firestore-user-delete-trigger',
+      targetEmail: deletedEmail ?? cleanup.targetEmail ?? null,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+      deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
+      deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('handleUserDocumentDeleted completed', {
+      uid,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+    });
+  } catch (error) {
+    logger.error('handleUserDocumentDeleted failed', { uid, error });
+  }
+});
+
+export const deleteUserCompletely = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const adminUid = request.auth.uid;
+    const token = request.auth.token as Record<string, unknown> | undefined;
+    const isAdmin = await callerIsAdmin(adminUid, token);
+    if (!isAdmin) {
+      throw new HttpsError('permission-denied', 'ADMIN_REQUIRED');
+    }
+
+    const targetUid = typeof request.data?.uid === 'string'
+      ? request.data.uid.trim()
+      : '';
+    if (!targetUid) {
+      throw new HttpsError('invalid-argument', 'UID_REQUIRED');
+    }
+
+    if (targetUid === adminUid) {
+      throw new HttpsError('failed-precondition', 'CANNOT_DELETE_SELF_WITH_ADMIN_FUNCTION');
+    }
+
+    const targetSnap = await db.collection('users').doc(targetUid).get();
+    const targetData = targetSnap.data() as Partial<UserDoc> | undefined;
+    const targetEmail = typeof targetData?.email === 'string' ? targetData.email : undefined;
+
+    const authDeleted = await deleteAuthUserIfExists(targetUid);
+    const cleanup = await deleteUserArtifacts(targetUid);
+
+    await db.collection('adminLogs').add({
+      action: 'deleteUserCompletely',
+      targetUid,
+      adminUid,
+      targetEmail: targetEmail ?? cleanup.targetEmail ?? null,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+      deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
+      deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('deleteUserCompletely completed', {
+      targetUid,
+      adminUid,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+    });
+
+    return { success: true, authDeleted };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    logger.error('deleteUserCompletely failed', {
+      callerUid: request.auth?.uid ?? null,
+      targetUid: request.data?.uid ?? null,
+      err,
+    });
+    throw new HttpsError('internal', 'DELETE_USER_FAILED');
+  }
+});
+
+export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    if (request.data?.confirm !== true) {
+      throw new HttpsError('invalid-argument', 'CONFIRM_REQUIRED');
+    }
+
+    const uid = request.auth.uid;
+    const userSnap = await db.collection('users').doc(uid).get();
+    const userData = userSnap.data() as Partial<UserDoc> | undefined;
+    const targetEmail = typeof userData?.email === 'string' ? userData.email : undefined;
+
+    const authDeleted = await deleteAuthUserIfExists(uid);
+    const cleanup = await deleteUserArtifacts(uid);
+
+    await db.collection('adminLogs').add({
+      action: 'deleteCurrentUserCompletely',
+      targetUid: uid,
+      actorUid: uid,
+      targetEmail: targetEmail ?? cleanup.targetEmail ?? null,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+      deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
+      deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('deleteCurrentUserCompletely completed', {
+      uid,
+      authDeleted,
+      userDocExisted: cleanup.userDocExisted,
+    });
+
+    return { success: true, authDeleted };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    logger.error('deleteCurrentUserCompletely failed', {
+      uid: request.auth?.uid ?? null,
+      err,
+    });
+    throw new HttpsError('internal', 'DELETE_CURRENT_USER_FAILED');
   }
 });
 
@@ -1928,6 +2228,9 @@ export const saveOnboardingProfile = onCall({ enforceAppCheck: false }, async (r
           consentVersion
         },
         isProfileComplete: true,
+        onboardingCompleted: true,
+        accountStatus: 'active',
+        cleanupEligible: false,
         settings: {
           lang: resolveLanguage(request.data?.lang),
           selectedPersonaId: String(request.data?.selectedPersonaId ?? defaultPersonaId)
@@ -2142,6 +2445,87 @@ export const sendTestDailyNudge = onCall({ enforceAppCheck: false }, async (requ
     throw mapError(err);
   }
 });
+
+export const cleanupUnverifiedAccounts = onSchedule(
+  {
+    schedule: 'every 60 minutes',
+    timeZone: process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul',
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const nowMs = Date.now();
+    const ttlMs = Math.max(1, unverifiedAccountTtlHours) * 60 * 60 * 1000;
+    let deleted = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    const pendingSnap = await db
+      .collection('users')
+      .where('accountStatus', '==', 'pending_email_verification')
+      .where('cleanupEligible', '==', true)
+      .where('emailVerified', '==', false)
+      .where('provider', '==', 'password')
+      .limit(250)
+      .get();
+
+    for (const userSnap of pendingSnap.docs) {
+      const data = userSnap.data() as UserDoc & Record<string, unknown>;
+      const uid = String(data.uid || userSnap.id);
+      const createdAtMs = timestampToMillis(data.createdAt);
+      const deadlineMs = timestampToMillis(data.verificationDeadlineAt)
+        ?? (createdAtMs !== null ? createdAtMs + ttlMs : null);
+
+      if (deadlineMs === null || deadlineMs > nowMs) {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        let authEmailVerified = false;
+        try {
+          const authUser = await getAuth().getUser(uid);
+          authEmailVerified = authUser.emailVerified === true;
+        } catch (error: unknown) {
+          if (errorCode(error) !== 'auth/user-not-found') {
+            throw error;
+          }
+        }
+
+        if (authEmailVerified) {
+          await userSnap.ref.set({
+            emailVerified: true,
+            accountStatus: 'pending_onboarding',
+            cleanupEligible: false,
+            emailVerifiedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          skipped += 1;
+          continue;
+        }
+
+        await userSnap.ref.set({
+          accountStatus: 'deleted',
+          deletedReason: 'email_verification_timeout',
+          deletedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        await deleteAuthUserIfExists(uid);
+        await db.recursiveDelete(userSnap.ref);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn('cleanupUnverifiedAccounts failed for user', { uid, error });
+      }
+    }
+
+    logger.info('cleanupUnverifiedAccounts completed', {
+      deleted,
+      skipped,
+      failed,
+    });
+  }
+);
 
 export const cleanupCoffeeArtifacts = onSchedule(
   {

@@ -146,6 +146,50 @@ class LocalizationService {
     'auth.register.hide_password': 'Hide password',
     'auth.register.legal_link_error':
         'The link could not be opened. Showing the in-app text instead.',
+    'auth.register.disposable_email':
+        'Temporary email addresses cannot be used to register.',
+    'toast.warning_title': 'Notice',
+    'toast.info_title': 'Info',
+    'verifyEmailTitle': 'Verify Your Email',
+    'verifyEmailSubtitle': 'Tap the link in your email to open your star gate.',
+    'verifyEmailDescription':
+        'We sent you a verification link. Please check your email and tap the link.',
+    'verifyEmailSecurityTitle': 'Account security',
+    'verifyEmailSecurityDescription':
+        'Verifying your email helps us protect your account and provide secure access.',
+    'verifyEmailSentTo': 'Link sent to',
+    'verifyEmailUnknownEmail': 'Your email address',
+    'verifyEmailCheckedButton': 'I Verified',
+    'verifyEmailChecking': 'Checking...',
+    'verifyEmailResendButton': 'Resend',
+    'verifyEmailResending': 'Sending...',
+    'verifyEmailChangeEmail': 'Change Email Address',
+    'verifyEmailSignOut': 'Sign Out',
+    'verifyEmailDeadlineInfo':
+        'If you do not verify your account within 24 hours, registration may be cancelled.',
+    'verifyEmailNotVerifiedYet':
+        'Your email does not look verified yet. Make sure you tapped the verification link.',
+    'verifyEmailVerifiedSuccess':
+        'Your email is verified. You can now complete your cosmic profile.',
+    'verifyEmailNetworkError':
+        'Verification status could not be checked. Check your connection and try again.',
+    'verifyEmailResendSuccess': 'A new verification link has been sent.',
+    'verifyEmailResendError':
+        'The verification link could not be sent. Please try again.',
+    'verifyEmailCheckSpamTitle': 'Can’t see the email?',
+    'verifyEmailCheckSpamDescription':
+        'Check your Spam, Junk, or Promotions folder. Then request a new link if needed.',
+    'verifyEmailWaitingTitle': 'Waiting for verification',
+    'verifyEmailWaitingDescription':
+        'We are checking in the background. Once you tap the link, this screen will continue automatically.',
+    'verifyEmailMailNotArrived':
+        'If the email does not arrive within a few minutes, check Spam/Junk too.',
+    'verifyEmailManualCooldown': 'Wait a few seconds before checking again.',
+    'verifyEmailCooldownInline': 'Wait {seconds}s before sending again.',
+    'verifyEmailDailyLimitInline':
+        'You requested too many verification links today. Please try again later.',
+    'toastDuplicateSuppressed': '',
+    'toastGenericInfo': 'Info',
     'legal.terms.title': 'Terms of Service',
     'legal.privacy.title': 'Privacy Policy',
     'legal.ai_notice.title': 'AI Usage Notice',
@@ -160,6 +204,10 @@ class LocalizationService {
         'These details are collected once so the cards can know you better.',
     'onboarding.name_label_upper': 'NAME',
     'onboarding.name_hint': 'Your name in the language of the stars...',
+    'onboarding.apple_name_prompt_title': 'Complete your name',
+    'onboarding.apple_name_prompt_body':
+        'Apple did not share your name with the app this time. Enter your name for your cosmic profile.',
+    'onboarding.apple_name_prompt_cta': 'Save',
     'onboarding.birth_section_title': 'BIRTH DATE & TIME',
     'onboarding.birth_date_placeholder': '12 Mar 1994',
     'onboarding.birth_time_placeholder': '14:45',
@@ -715,6 +763,52 @@ class LocalizationService {
     'auth.register.hide_password': 'Şifreyi gizle',
     'auth.register.legal_link_error':
         'Bağlantı açılamadı. Uygulama içindeki metni gösteriyoruz.',
+    'auth.register.disposable_email':
+        'Geçici e-posta adresleriyle kayıt yapılamaz.',
+    'toast.warning_title': 'Dikkat',
+    'toast.info_title': 'Bilgilendirme',
+    'verifyEmailTitle': 'E-postanı Doğrula',
+    'verifyEmailSubtitle':
+        'Yıldız kapını açmak için e-postandaki bağlantıya dokun.',
+    'verifyEmailDescription':
+        'Sana bir doğrulama bağlantısı gönderdik. Lütfen e-postanı kontrol et ve bağlantıya tıkla.',
+    'verifyEmailSecurityTitle': 'Hesap güvenliği',
+    'verifyEmailSecurityDescription':
+        'E-postanı doğrulaman, hesabını korumamıza ve sana güvenli erişim sağlamamıza yardımcı olur.',
+    'verifyEmailSentTo': 'Bağlantı gönderildi',
+    'verifyEmailUnknownEmail': 'E-posta adresin',
+    'verifyEmailCheckedButton': 'Doğruladım',
+    'verifyEmailChecking': 'Kontrol ediliyor...',
+    'verifyEmailResendButton': 'Yeniden Gönder',
+    'verifyEmailResending': 'Gönderiliyor...',
+    'verifyEmailChangeEmail': 'E-posta Adresini Değiştir',
+    'verifyEmailSignOut': 'Çıkış Yap',
+    'verifyEmailDeadlineInfo':
+        'Hesabını 24 saat içinde doğrulamazsan kayıt işlemin iptal edilebilir.',
+    'verifyEmailNotVerifiedYet':
+        'E-posta henüz doğrulanmamış görünüyor. Lütfen bağlantıya tıkladığından emin ol.',
+    'verifyEmailVerifiedSuccess':
+        'E-postan doğrulandı. Şimdi kozmik profilini tamamlayabilirsin.',
+    'verifyEmailNetworkError':
+        'Doğrulama durumu kontrol edilemedi. Bağlantını kontrol edip tekrar dene.',
+    'verifyEmailResendSuccess': 'Yeni doğrulama bağlantısı gönderildi.',
+    'verifyEmailResendError':
+        'Doğrulama bağlantısı gönderilemedi. Lütfen tekrar dene.',
+    'verifyEmailCheckSpamTitle': 'Maili göremiyor musun?',
+    'verifyEmailCheckSpamDescription':
+        'Spam, Gereksiz veya Tanıtımlar klasörünü kontrol et. Ardından gerekirse yeni doğrulama bağlantısı isteyebilirsin.',
+    'verifyEmailWaitingTitle': 'Doğrulama bekleniyor',
+    'verifyEmailWaitingDescription':
+        'Arka planda kontrol ediliyor. Bağlantıya tıkladığında bu ekran otomatik olarak devam edecek.',
+    'verifyEmailMailNotArrived':
+        'E-posta birkaç dakika içinde gelmezse Spam/Gereksiz klasörünü kontrol etmeyi unutma.',
+    'verifyEmailManualCooldown':
+        'Tekrar kontrol etmek için birkaç saniye bekle.',
+    'verifyEmailCooldownInline': 'Tekrar göndermek için {seconds} sn bekle.',
+    'verifyEmailDailyLimitInline':
+        'Bugün çok fazla doğrulama bağlantısı istedin. Lütfen daha sonra tekrar dene.',
+    'toastDuplicateSuppressed': '',
+    'toastGenericInfo': 'Bilgilendirme',
     'legal.terms.title': 'Kullanim Kosullari',
     'legal.privacy.title': 'Gizlilik Politikasi',
     'legal.ai_notice.title': 'AI Kullanım Notu',
@@ -729,6 +823,10 @@ class LocalizationService {
         'Bu bilgiler yalnizca bir kez alinir. Kartlar seni daha iyi tanisin.',
     'onboarding.name_label_upper': 'ADIN',
     'onboarding.name_hint': 'Goklerin diliyle ismin...',
+    'onboarding.apple_name_prompt_title': 'Adını tamamla',
+    'onboarding.apple_name_prompt_body':
+        'Apple bu girişte adını uygulamaya iletmedi. Kozmik profilin için adını yaz.',
+    'onboarding.apple_name_prompt_cta': 'Kaydet',
     'onboarding.birth_section_title': 'DOGUM TARIHI & SAATI',
     'onboarding.birth_date_placeholder': '12 Mart 1994',
     'onboarding.birth_time_placeholder': '14:45',

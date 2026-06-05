@@ -34,21 +34,21 @@ class OnboardingPayload {
   final List<String>? focusAreas;
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'birthDate': birthDate,
-        'privacyAccepted': privacyAccepted,
-        'termsAccepted': termsAccepted,
-        'aiProcessingAccepted': aiProcessingAccepted,
-        if (lang != null) 'lang': lang,
-        if (selectedPersonaId != null) 'selectedPersonaId': selectedPersonaId,
-        if (birthTime != null) 'birthTime': birthTime,
-        if (birthCity != null) 'birthCity': birthCity,
-        if (occupation != null) 'occupation': occupation,
-        if (relationshipStatus != null) 'relationshipStatus': relationshipStatus,
-        if (lifeSpace != null) 'lifeSpace': lifeSpace,
-        if (interpretationTone != null) 'interpretationTone': interpretationTone,
-        if (focusAreas != null) 'focusAreas': focusAreas,
-      };
+    'name': name,
+    'birthDate': birthDate,
+    'privacyAccepted': privacyAccepted,
+    'termsAccepted': termsAccepted,
+    'aiProcessingAccepted': aiProcessingAccepted,
+    if (lang != null) 'lang': lang,
+    if (selectedPersonaId != null) 'selectedPersonaId': selectedPersonaId,
+    if (birthTime != null) 'birthTime': birthTime,
+    if (birthCity != null) 'birthCity': birthCity,
+    if (occupation != null) 'occupation': occupation,
+    if (relationshipStatus != null) 'relationshipStatus': relationshipStatus,
+    if (lifeSpace != null) 'lifeSpace': lifeSpace,
+    if (interpretationTone != null) 'interpretationTone': interpretationTone,
+    if (focusAreas != null) 'focusAreas': focusAreas,
+  };
 
   Map<String, dynamic> toUserDocumentMap({
     required String uid,
@@ -67,6 +67,11 @@ class OnboardingPayload {
       interpretationTone: interpretationTone,
       focusAreas: focusAreas,
       isProfileComplete: isProfileComplete,
+      onboardingCompleted: isProfileComplete,
+      accountStatus: isProfileComplete
+          ? UserProfileContract.statusActive
+          : UserProfileContract.statusPendingOnboarding,
+      cleanupEligible: false,
       includeCreatedAt: includeCreatedAt,
     ).toMap();
   }

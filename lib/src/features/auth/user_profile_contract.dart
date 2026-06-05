@@ -5,9 +5,24 @@ class UserProfileContract {
 
   static const String usersCollection = 'users';
 
+  static const String statusPendingEmailVerification =
+      'pending_email_verification';
+  static const String statusPendingOnboarding = 'pending_onboarding';
+  static const String statusActive = 'active';
+  static const String statusDeleted = 'deleted';
+
   static const String uid = 'uid';
   static const String email = 'email';
   static const String name = 'name';
+  static const String displayName = 'displayName';
+  static const String photoUrl = 'photoUrl';
+  static const String profileSource = 'profileSource';
+  static const String appleFullNameCapturedAt = 'appleFullNameCapturedAt';
+  static const String provider = 'provider';
+  static const String providers = 'providers';
+  static const String providerVerified = 'providerVerified';
+  static const String emailVerified = 'emailVerified';
+  static const String emailVerifiedAt = 'emailVerifiedAt';
 
   static const String birthDate = 'birthDate';
   static const String birthTime = 'birthTime';
@@ -19,6 +34,15 @@ class UserProfileContract {
   static const String personalizationEnabled = 'personalizationEnabled';
 
   static const String isProfileComplete = 'isProfileComplete';
+  static const String onboardingCompleted = 'onboardingCompleted';
+  static const String accountStatus = 'accountStatus';
+  static const String cleanupEligible = 'cleanupEligible';
+  static const String verificationEmailSentAt = 'verificationEmailSentAt';
+  static const String verificationDeadlineAt = 'verificationDeadlineAt';
+  static const String verificationResendCount = 'verificationResendCount';
+  static const String verificationResendWindowStartedAt =
+      'verificationResendWindowStartedAt';
+  static const String lastVerificationResendAt = 'lastVerificationResendAt';
   static const String createdAt = 'createdAt';
   static const String updatedAt = 'updatedAt';
   static const String wallet = 'wallet';
@@ -52,6 +76,19 @@ class UserProfileWrite {
     this.personalizationEnabled = true,
     this.legalConsent,
     required this.isProfileComplete,
+    this.onboardingCompleted,
+    this.accountStatus,
+    this.emailVerified,
+    this.provider,
+    this.providers,
+    this.providerVerified,
+    this.photoUrl,
+    this.cleanupEligible,
+    this.verificationEmailSentAt,
+    this.verificationDeadlineAt,
+    this.verificationResendCount,
+    this.verificationResendWindowStartedAt,
+    this.lastVerificationResendAt,
     this.includeCreatedAt = false,
   });
 
@@ -67,6 +104,19 @@ class UserProfileWrite {
   final bool personalizationEnabled;
   final UserLegalConsent? legalConsent;
   final bool isProfileComplete;
+  final bool? onboardingCompleted;
+  final String? accountStatus;
+  final bool? emailVerified;
+  final String? provider;
+  final List<String>? providers;
+  final bool? providerVerified;
+  final String? photoUrl;
+  final bool? cleanupEligible;
+  final Object? verificationEmailSentAt;
+  final Object? verificationDeadlineAt;
+  final int? verificationResendCount;
+  final Object? verificationResendWindowStartedAt;
+  final Object? lastVerificationResendAt;
   final bool includeCreatedAt;
 
   Map<String, dynamic> toMap() {
@@ -87,6 +137,30 @@ class UserProfileWrite {
       if (legalConsent != null)
         UserProfileContract.legalConsent: legalConsent!.toMap(),
       UserProfileContract.isProfileComplete: isProfileComplete,
+      UserProfileContract.onboardingCompleted:
+          onboardingCompleted ?? isProfileComplete,
+      if (accountStatus != null)
+        UserProfileContract.accountStatus: accountStatus,
+      if (emailVerified != null)
+        UserProfileContract.emailVerified: emailVerified,
+      if (provider != null) UserProfileContract.provider: provider,
+      if (providers != null) UserProfileContract.providers: providers,
+      if (providerVerified != null)
+        UserProfileContract.providerVerified: providerVerified,
+      if (photoUrl != null) UserProfileContract.photoUrl: photoUrl,
+      if (cleanupEligible != null)
+        UserProfileContract.cleanupEligible: cleanupEligible,
+      if (verificationEmailSentAt != null)
+        UserProfileContract.verificationEmailSentAt: verificationEmailSentAt,
+      if (verificationDeadlineAt != null)
+        UserProfileContract.verificationDeadlineAt: verificationDeadlineAt,
+      if (verificationResendCount != null)
+        UserProfileContract.verificationResendCount: verificationResendCount,
+      if (verificationResendWindowStartedAt != null)
+        UserProfileContract.verificationResendWindowStartedAt:
+            verificationResendWindowStartedAt,
+      if (lastVerificationResendAt != null)
+        UserProfileContract.lastVerificationResendAt: lastVerificationResendAt,
       if (includeCreatedAt)
         UserProfileContract.createdAt: FieldValue.serverTimestamp(),
       UserProfileContract.updatedAt: FieldValue.serverTimestamp(),

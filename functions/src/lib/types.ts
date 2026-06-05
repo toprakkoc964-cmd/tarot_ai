@@ -22,6 +22,20 @@ export type UserWallet = {
 export type UserDoc = {
   uid: string;
   isProfileComplete: boolean;
+  onboardingCompleted?: boolean;
+  accountStatus?: 'pending_email_verification' | 'pending_onboarding' | 'active' | 'deleted';
+  email?: string;
+  name?: string;
+  displayName?: string;
+  photoUrl?: string;
+  provider?: string;
+  providers?: string[];
+  emailVerified?: boolean;
+  providerVerified?: boolean;
+  cleanupEligible?: boolean;
+  verificationDeadlineAt?: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  verificationResendCount?: number;
+  lastVerificationResendAt?: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue | null;
   birthDate?: string;
   relationshipStatus?: string;
   lifeSpace?: string;

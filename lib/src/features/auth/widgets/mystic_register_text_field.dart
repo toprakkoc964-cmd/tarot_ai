@@ -18,6 +18,7 @@ class MysticRegisterTextField extends StatelessWidget {
     this.suffixIcon,
     this.onSubmitted,
     this.maxLength,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
@@ -32,6 +33,7 @@ class MysticRegisterTextField extends StatelessWidget {
   final Widget? suffixIcon;
   final ValueChanged<String>? onSubmitted;
   final int? maxLength;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +59,7 @@ class MysticRegisterTextField extends StatelessWidget {
             textInputAction: textInputAction,
             obscureText: obscureText,
             enableSuggestions: enableSuggestions,
+            enabled: enabled,
             autocorrect: false,
             maxLength: maxLength,
             cursorColor: AppColors.tertiaryGold,
