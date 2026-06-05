@@ -254,6 +254,12 @@ class AuthService {
         nonce: hashedNonce,
       );
 
+      debugPrint(
+        '🍎 APPLE_CREDENTIAL idToken=${appleCredential.identityToken != null} '
+        'authCode=${appleCredential.authorizationCode.isNotEmpty} '
+        'nonceLen=${rawNonce.length}',
+      );
+
       final idToken = appleCredential.identityToken;
       if (idToken == null) {
         throw FirebaseAuthException(
@@ -266,8 +272,21 @@ class AuthService {
         'apple.com',
       ).credential(idToken: idToken, rawNonce: rawNonce);
 
-      final result = await _auth.signInWithCredential(oauth);
+      UserCredential result;
+      try {
+        result = await _auth.signInWithCredential(oauth);
+      } on FirebaseAuthException catch (e) {
+        debugPrint('🍎 APPLE_SIGNIN_FAILED code=${e.code} msg=${e.message}');
+        rethrow;
+      } catch (e) {
+        debugPrint('🍎 APPLE_SIGNIN_FAILED_OTHER: $e');
+        rethrow;
+      }
       final user = result.user;
+      debugPrint(
+        '🍎 APPLE_SIGNIN_OK uid=${user?.uid} '
+        'isNew=${result.additionalUserInfo?.isNewUser}',
+      );
       if (user != null) {
         await _registerAppleAuthorization(appleCredential.authorizationCode);
         final appleName = UserProfileContract.normalizeName(

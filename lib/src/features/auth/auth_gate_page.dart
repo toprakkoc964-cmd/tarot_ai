@@ -68,6 +68,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
       await user.reload();
       return FirebaseAuth.instance.currentUser != null;
     } on FirebaseAuthException catch (e) {
+      debugPrint('🍎 VERIFY_SESSION_FAILED code=${e.code} msg=${e.message}');
       if (e.code == 'user-not-found' ||
           e.code == 'invalid-user-token' ||
           e.code == 'user-disabled') {
