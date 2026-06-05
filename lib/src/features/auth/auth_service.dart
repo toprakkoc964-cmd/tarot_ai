@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -236,17 +240,31 @@ class AuthService {
         );
       }
 
+      // Apple authorization code is single-use. Firebase sign-in uses
+      // idToken + rawNonce, while the authorization code is redeemed only by
+      // our backend for server-side revocation support.
+      final rawNonce = _generateNonce();
+      final hashedNonce = _sha256ofString(rawNonce);
+
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
+        nonce: hashedNonce,
       );
 
-      final oauth = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
+      final idToken = appleCredential.identityToken;
+      if (idToken == null) {
+        throw FirebaseAuthException(
+          code: 'apple-id-token-missing',
+          message: 'Apple identity token is missing.',
+        );
+      }
+
+      final oauth = OAuthProvider(
+        'apple.com',
+      ).credential(idToken: idToken, rawNonce: rawNonce);
 
       final result = await _auth.signInWithCredential(oauth);
       final user = result.user;
@@ -307,6 +325,22 @@ class AuthService {
     }
   }
 
+  String _generateNonce([int length = 32]) {
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = math.Random.secure();
+    return List<String>.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
+  }
+
+  String _sha256ofString(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
   bool requiresEmailVerification(User user) {
     final providerIds = user.providerData
         .map((provider) => provider.providerId)
@@ -341,71 +375,10 @@ class AuthService {
   }
 
   Future<void> deleteCurrentUserCompletely() async {
-    await _revokeAppleAuthorizationIfLinked();
     final callable = FirebaseFunctions.instance.httpsCallable(
       'deleteCurrentUserCompletely',
     );
     await callable.call(<String, dynamic>{'confirm': true});
-  }
-
-  bool _isAppleLinked(User user) {
-    return user.providerData.any(
-      (provider) => provider.providerId == 'apple.com',
-    );
-  }
-
-  Future<void> _revokeAppleAuthorizationIfLinked() async {
-    final user = _auth.currentUser;
-    if (user == null || !_isAppleLinked(user)) return;
-
-    try {
-      final isAvailable = await SignInWithApple.isAvailable();
-      if (!isAvailable) return;
-
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: const [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-
-      await _auth.revokeTokenWithAuthorizationCode(
-        appleCredential.authorizationCode,
-      );
-
-      final appleName = UserProfileContract.normalizeName(
-        [
-          appleCredential.givenName,
-          appleCredential.familyName,
-        ].whereType<String>().map((part) => part.trim()).join(' '),
-      );
-      if (appleName.isNotEmpty) {
-        await user.updateDisplayName(appleName);
-        await upsertSocialUserProfile(
-          user: _auth.currentUser ?? user,
-          providerId: 'apple.com',
-          fallbackName: appleName,
-          displayNameSource: 'apple_revoke_authorization',
-          emailSource:
-              ((_auth.currentUser ?? user).email ?? '').trim().isNotEmpty
-              ? 'apple'
-              : null,
-          appleFullNameCaptured: true,
-        );
-      }
-
-      if (kDebugMode) {
-        debugPrint('Apple authorization revoked before account deletion.');
-      }
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('Apple authorization revoke skipped: $error');
-      }
-      // Account deletion must remain available even if Apple revocation is
-      // cancelled or temporarily unavailable. If revocation fails, Apple may
-      // still withhold fullName on the next sign-in until the user removes
-      // the app from Apple ID > Sign in with Apple.
-    }
   }
 
   Future<void> resendVerificationEmail() async {
