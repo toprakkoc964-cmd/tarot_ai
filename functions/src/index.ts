@@ -309,8 +309,20 @@ async function revokeAppleAuthorizationForUid(uid: string): Promise<AppleRevokeR
 
   try {
     await revokeAppleRefreshToken(refreshToken);
+    await appleAuthRef.delete();
+    logger.info('apple revoke ok', { uid });
     return { attempted: true, success: true };
   } catch (error) {
+    await appleAuthRef.delete().catch((deleteError) => {
+      logger.warn('apple_auth cleanup after revoke failure failed', {
+        uid,
+        error: safeAppleError(deleteError),
+      });
+    });
+    logger.error('apple revoke failed', {
+      uid,
+      error: safeAppleError(error),
+    });
     return {
       attempted: true,
       success: false,
@@ -886,7 +898,9 @@ export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) =
   }
 });
 
-export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async (event) => {
+export const handleUserDocumentDeleted = onDocumentDeleted(
+  { document: 'users/{uid}', region: 'us-central1', secrets: appleAuthSecretNames },
+  async (event) => {
   const uid = event.params.uid;
   if (!uid) return;
 
@@ -894,6 +908,7 @@ export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async 
   const deletedEmail = typeof deletedData?.email === 'string' ? deletedData.email : undefined;
 
   try {
+    const appleRevoke = await revokeAppleAuthorizationForUid(uid);
     const authDeleted = await deleteAuthUserIfExists(uid);
     const cleanup = await deleteUserArtifacts(uid);
 
@@ -903,6 +918,9 @@ export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async 
       actorUid: 'firestore-user-delete-trigger',
       targetEmail: deletedEmail ?? cleanup.targetEmail ?? null,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
+      appleRevokeError: appleRevoke.errorCode ?? null,
       userDocExisted: cleanup.userDocExisted,
       deletedNotificationDeviceDocs: cleanup.deletedNotificationDeviceDocs,
       deletedStoragePrefixes: cleanup.deletedStoragePrefixes,
@@ -912,6 +930,8 @@ export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async 
     logger.info('handleUserDocumentDeleted completed', {
       uid,
       authDeleted,
+      appleRevokeAttempted: appleRevoke.attempted,
+      appleRevoked: appleRevoke.success,
       userDocExisted: cleanup.userDocExisted,
     });
   } catch (error) {
