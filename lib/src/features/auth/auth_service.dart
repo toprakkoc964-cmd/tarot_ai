@@ -240,9 +240,8 @@ class AuthService {
         );
       }
 
-      // Apple authorization code is single-use. Firebase sign-in uses
-      // idToken + rawNonce, while the authorization code is redeemed only by
-      // our backend for server-side revocation support.
+      // Firebase requires Apple idToken + rawNonce, and accepts the
+      // authorization code as the Apple access token for this sign-in.
       final rawNonce = _generateNonce();
       final hashedNonce = _sha256ofString(rawNonce);
 
@@ -270,7 +269,11 @@ class AuthService {
 
       final oauth = OAuthProvider(
         'apple.com',
-      ).credential(idToken: idToken, rawNonce: rawNonce);
+      ).credential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        accessToken: appleCredential.authorizationCode,
+      );
 
       UserCredential result;
       try {
