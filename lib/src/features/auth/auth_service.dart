@@ -340,6 +340,9 @@ class AuthService {
       await callable.call(<String, dynamic>{
         'authorizationCode': normalizedCode,
       });
+      if (kDebugMode) {
+        debugPrint('Apple auth register succeeded');
+      }
     } catch (error) {
       if (kDebugMode) {
         if (error is FirebaseFunctionsException) {
@@ -406,10 +409,15 @@ class AuthService {
   }
 
   Future<void> deleteCurrentUserCompletely() async {
-    final callable = FirebaseFunctions.instance.httpsCallable(
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'us-central1',
+    ).httpsCallable(
       'deleteCurrentUserCompletely',
     );
-    await callable.call(<String, dynamic>{'confirm': true});
+    final response = await callable.call(<String, dynamic>{'confirm': true});
+    if (kDebugMode) {
+      debugPrint('Account deletion completed: ${response.data}');
+    }
   }
 
   Future<void> resendVerificationEmail() async {

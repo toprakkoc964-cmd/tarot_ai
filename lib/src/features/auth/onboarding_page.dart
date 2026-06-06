@@ -317,6 +317,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
         },
       );
     } finally {
+      // The dialog route may still rebuild TextField during its pop animation.
+      // Disposing immediately can trip "controller used after disposed".
+      await Future<void>.delayed(const Duration(milliseconds: 350));
       controller.dispose();
     }
 
