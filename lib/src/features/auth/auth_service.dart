@@ -332,7 +332,9 @@ class AuthService {
     if (normalizedCode.isEmpty) return;
 
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable(
         'registerAppleAuthorization',
       );
       await callable.call(<String, dynamic>{
@@ -340,7 +342,14 @@ class AuthService {
       });
     } catch (error) {
       if (kDebugMode) {
-        debugPrint('Apple authorization register skipped: $error');
+        if (error is FirebaseFunctionsException) {
+          debugPrint(
+            'Apple auth register failed code=${error.code} '
+            'msg=${error.message} details=${error.details}',
+          );
+        } else {
+          debugPrint('Apple authorization register skipped: $error');
+        }
       }
       // Do not block sign-in. If this best-effort registration fails, the
       // existing onboarding name fallback still keeps the account usable.

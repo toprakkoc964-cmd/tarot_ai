@@ -920,7 +920,7 @@ export const handleUserDocumentDeleted = onDocumentDeleted('users/{uid}', async 
 });
 
 export const registerAppleAuthorization = onCall(
-  { enforceAppCheck: false, secrets: appleAuthSecretNames },
+  { region: 'us-central1', enforceAppCheck: false, secrets: appleAuthSecretNames },
   async (request) => {
     try {
       if (!request.auth?.uid) {

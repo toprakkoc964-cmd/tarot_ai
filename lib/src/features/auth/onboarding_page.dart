@@ -197,8 +197,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final controller = TextEditingController();
     String? capturedName;
     try {
+      if (!mounted) return;
       capturedName = await showDialog<String>(
         context: context,
+        useRootNavigator: true,
         barrierDismissible: false,
         builder: (dialogContext) {
           String? inputError;
