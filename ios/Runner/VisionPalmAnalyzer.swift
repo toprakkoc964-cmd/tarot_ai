@@ -83,13 +83,21 @@ final class VisionPalmAnalyzer {
     ]
     debug.forEach { debugMap[$0.key] = $0.value ?? NSNull() }
 
-    return [
+    let response: [String: Any] = [
       "source": "Vision",
       "state": "noHand",
       "confidence": 0.0,
       "labels": labels,
       "debug": debugMap,
     ]
+    if debugEnabled(debugMap) {
+      NSLog(
+        "[palmvision] native state=noHand scan=noHand valid=false labels=%@ debug=%@",
+        labels.joined(separator: ","),
+        String(describing: debugMap)
+      )
+    }
+    return response
   }
 
   @available(iOS 14.0, *)
@@ -529,7 +537,8 @@ final class VisionPalmAnalyzer {
     possibleHand: Bool,
     validPalm: Bool
   ) -> [String: Any] {
-    [
+    let compactDebug = debug.compactMapValues { $0 }
+    let response: [String: Any] = [
       "source": "Vision",
       "state": state,
       "scanState": scanState,
@@ -538,8 +547,30 @@ final class VisionPalmAnalyzer {
       "handDetected": handDetected,
       "possibleHand": possibleHand,
       "validPalm": validPalm,
-      "debug": debug.compactMapValues { $0 },
+      "debug": compactDebug,
     ]
+    if Self.debugEnabled(compactDebug) {
+      NSLog(
+        "[palmvision] native state=%@ scan=%@ conf=%.2f valid=%@ labels=%@ debug=%@",
+        state,
+        scanState,
+        roundMetric(confidence),
+        validPalm ? "true" : "false",
+        labels.joined(separator: ","),
+        String(describing: compactDebug)
+      )
+    }
+    return response
+  }
+
+  private static func debugEnabled(_ debug: [String: Any]) -> Bool {
+    if let debugMode = debug["debugMode"] as? Bool, debugMode {
+      return true
+    }
+    if let debugSmokeMode = debug["debugSmokeMode"] as? Bool, debugSmokeMode {
+      return true
+    }
+    return false
   }
 
   @available(iOS 14.0, *)

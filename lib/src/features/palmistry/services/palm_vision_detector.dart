@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:developer' as dev;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -7,13 +8,15 @@ import 'package:flutter/services.dart';
 import '../../../core/utils/palm_detection_result.dart';
 
 class PalmVisionDetector {
-  static const MethodChannel _channel = MethodChannel('palmistry/vision');
+  static const MethodChannel _channel = MethodChannel('tarot_ai/palm_vision');
 
-  Future<PalmDetectionResult> detect(
+  Future<PalmDetectionResult> analyzeFrame(
     CameraImage image, {
-    CameraDescription? camera,
-    Size? previewSize,
-    Rect? guideRect,
+    required Rect guideRect,
+    required Size previewSize,
+    int sensorOrientation = 0,
+    bool isFrontCamera = false,
+    bool debugMode = false,
   }) async {
     if (!Platform.isIOS || image.planes.isEmpty) {
       return const PalmDetectionResult.noHand();
@@ -35,31 +38,31 @@ class PalmVisionDetector {
     }
 
     final payload = <String, Object?>{
-      'frameBytes': plane.bytes,
       'bytes': plane.bytes,
       'width': image.width,
       'height': image.height,
       'bytesPerRow': plane.bytesPerRow,
       'bytesPerPixel': plane.bytesPerPixel,
       'formatGroup': formatGroup,
-      'sensorOrientation': camera?.sensorOrientation ?? 0,
-      'isFrontCamera': camera?.lensDirection == CameraLensDirection.front,
-      'debugMode': kDebugMode,
-      if (previewSize != null) 'previewWidth': previewSize.width,
-      if (previewSize != null) 'previewHeight': previewSize.height,
-      if (guideRect != null) 'guideLeft': guideRect.left,
-      if (guideRect != null) 'guideTop': guideRect.top,
-      if (guideRect != null) 'guideWidth': guideRect.width,
-      if (guideRect != null) 'guideHeight': guideRect.height,
+      'sensorOrientation': sensorOrientation,
+      'isFrontCamera': isFrontCamera,
+      'debugMode': debugMode,
+      'previewWidth': previewSize.width,
+      'previewHeight': previewSize.height,
+      'guideLeft': guideRect.left,
+      'guideTop': guideRect.top,
+      'guideWidth': guideRect.width,
+      'guideHeight': guideRect.height,
     };
 
     try {
       final response = await _channel.invokeMapMethod<Object?, Object?>(
-        'detect',
+        'analyzePalmFrame',
         payload,
       );
       if (response == null) return const PalmDetectionResult.noHand();
       final result = PalmDetectionResult.fromVisionMap(response);
+      _logResult(result, debugMode: debugMode);
       return PalmDetectionResult(
         state: result.state,
         scanState: result.scanState,
@@ -72,8 +75,12 @@ class PalmVisionDetector {
         debug: result.debug,
       );
     } on PlatformException catch (error) {
-      if (kDebugMode) {
-        debugPrint('PalmVisionDetector failed: ${error.code}');
+      if (debugMode || kDebugMode) {
+        dev.log(
+          '[palmvision] platformError code=${error.code} '
+          'message=${error.message}',
+          name: 'palmvision',
+        );
       }
       return PalmDetectionResult(
         state: PalmDetectionState.noHand,
@@ -86,8 +93,8 @@ class PalmVisionDetector {
         },
       );
     } catch (error) {
-      if (kDebugMode) {
-        debugPrint('PalmVisionDetector failed: $error');
+      if (debugMode || kDebugMode) {
+        dev.log('[palmvision] error=$error', name: 'palmvision');
       }
       return const PalmDetectionResult(
         state: PalmDetectionState.noHand,
@@ -95,6 +102,22 @@ class PalmVisionDetector {
         labels: ['vision_error'],
         source: 'apple_vision',
       );
+    }
+  }
+
+  void _logResult(PalmDetectionResult result, {required bool debugMode}) {
+    if (!debugMode && !kDebugMode) return;
+    dev.log(
+      '[palmvision] state=${result.state.name} '
+      'scan=${result.effectiveScanState.name} '
+      'conf=${result.confidence.toStringAsFixed(2)} '
+      'valid=${result.validPalm} labels=${result.labels} '
+      'source=${result.source}',
+      name: 'palmvision',
+    );
+    final debug = result.debug;
+    if (debug != null) {
+      dev.log('[palmvision] debug=$debug', name: 'palmvision');
     }
   }
 }

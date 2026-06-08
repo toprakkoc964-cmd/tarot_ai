@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -132,6 +134,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       );
 
       await controller.initialize();
+      await controller.setFlashMode(FlashMode.off);
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       try {
         await controller.setFocusMode(FocusMode.auto);
@@ -231,6 +234,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
     try {
       await _stopImageStreamIfNeeded();
+      await controller.setFlashMode(FlashMode.off);
       final picture = await controller.takePicture();
       final imageFile = File(picture.path);
 
@@ -315,13 +319,20 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     final controller = _controller;
     final previewSize = _lastPreviewSurfaceSize;
     final guideRect = _lastGuideRect;
+    if (controller == null || previewSize == null || guideRect == null) {
+      _isProcessingFrame = false;
+      return;
+    }
     unawaited(
       _visionDetector
-          .detect(
+          .analyzeFrame(
             image,
-            camera: controller?.description,
+            sensorOrientation: controller.description.sensorOrientation,
+            isFrontCamera:
+                controller.description.lensDirection == CameraLensDirection.front,
             previewSize: previewSize,
             guideRect: guideRect,
+            debugMode: kDebugMode,
           )
           .then(_handleDetectionResult)
           .catchError((_) {
@@ -336,6 +347,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
   void _handleDetectionResult(PalmDetectionResult result) {
     if (!mounted || _isScanning) return;
+    _logPalmVisionResult(result);
 
     final wasValid = _detectionResult.isValid;
     final nextStableCount = result.isValid ? _stableValidFrameCount + 1 : 0;
@@ -352,6 +364,22 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
     if (shouldAutoScan) {
       unawaited(_startScan());
+    }
+  }
+
+  void _logPalmVisionResult(PalmDetectionResult result) {
+    if (!kDebugMode || !Platform.isIOS) return;
+    dev.log(
+      '[palmvision] screen state=${result.state.name} '
+      'scan=${result.effectiveScanState.name} '
+      'conf=${result.confidence.toStringAsFixed(2)} '
+      'valid=${result.validPalm} labels=${result.labels} '
+      'source=${result.source} stable=$_stableValidFrameCount',
+      name: 'palmvision',
+    );
+    final debug = result.debug;
+    if (debug != null) {
+      dev.log('[palmvision] screen debug=$debug', name: 'palmvision');
     }
   }
 
