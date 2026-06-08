@@ -68,6 +68,7 @@ export async function analyzePalmWithGemini(input: {
   imageBase64: string;
   mimeType: string;
   lang: string;
+  preValidated?: boolean;
 }): Promise<PalmVisionAnalysis> {
   const model = getGenerativeModelForVision({
     modelName: process.env.GEMINI_PALM_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
@@ -75,12 +76,22 @@ export async function analyzePalmWithGemini(input: {
   });
 
   const lang = input.lang.trim().toLowerCase();
+  const validationPolicy = input.preValidated
+    ? [
+      'The photo was already pre-validated on-device with Apple Vision as an open palm.',
+      'Do not reject because of mild blur, shadows, cropping, or uncertainty.',
+      'Only set isValid false if the image is genuinely empty, unreadable, or clearly not a palm at all.'
+    ].join(' ')
+    : [
+      'When uncertain, prefer isValid true and provide a careful entertainment reading.',
+      'Reject only if the image is clearly not a human palm, only the back of a hand, only fingers, empty, or unreadable.',
+      'Mild blur, shadows, or partial lighting alone are not rejection reasons.'
+    ].join(' ');
+
   const systemPrompt = [
     'You are a mystical palm-reading guide for an entertainment app.',
     'Analyze ONLY the uploaded photo.',
-    'If the photo is not a human palm (inner surface with lines), set isValid to false.',
-    'If the palm is too blurry, dark, cropped, or lines are not visible, set isValid to false with rejectionCode IMAGE_UNREADABLE.',
-    'If only fingers or back of hand is shown, set isValid to false with rejectionCode NOT_A_PALM.',
+    validationPolicy,
     'Never invent medical, legal, or deterministic predictions.',
     'No markdown. Respond with JSON only.',
     `Write reading text strictly in language: ${lang}.`

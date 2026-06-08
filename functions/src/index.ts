@@ -2945,10 +2945,12 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
 
     const lang = resolveLanguage(request.data?.lang);
     const mimeType = sanitizeShortText(request.data?.mimeType, 32) || 'image/jpeg';
+    const preValidated = request.data?.preValidated === true;
     const analysis = await analyzePalmWithGemini({
       imageBase64,
       mimeType,
-      lang
+      lang,
+      preValidated
     });
 
     if (!analysis.isValid || !analysis.reading) {

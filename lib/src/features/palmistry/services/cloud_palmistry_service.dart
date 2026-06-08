@@ -16,7 +16,10 @@ class CloudPalmistryService implements IPalmistryService {
   final TarotFunctionsClient _functionsClient;
 
   @override
-  Future<PalmistryResult> analyzePalm(File image) async {
+  Future<PalmistryResult> analyzePalm(
+    File image, {
+    bool preValidated = false,
+  }) async {
     final bytes = await image.readAsBytes();
     if (bytes.isEmpty) {
       throw const PalmistryAnalysisException('INVALID_PALM_IMAGE_INPUT');
@@ -27,9 +30,13 @@ class CloudPalmistryService implements IPalmistryService {
         imageBase64: base64Encode(bytes),
         lang: _activeLanguage(),
         mimeType: 'image/jpeg',
+        preValidated: preValidated,
       );
       final result = PalmistryResult.fromMap(response);
-      if (!result.isValid) {
+      if (!result.isValid &&
+          result.reading.mindLine.trim().isEmpty &&
+          result.reading.heartLine.trim().isEmpty &&
+          result.reading.lifeEnergy.trim().isEmpty) {
         throw const PalmistryAnalysisException('IMAGE_UNREADABLE');
       }
       return result;

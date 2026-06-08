@@ -74,11 +74,13 @@ class TarotFunctionsClient {
     required String imageBase64,
     String? lang,
     String mimeType = 'image/jpeg',
+    bool preValidated = false,
   }) async {
     final callable = _functions.httpsCallable('analyzePalmReading');
     final response = await callable.call({
       'imageBase64': imageBase64,
       'mimeType': mimeType,
+      'preValidated': preValidated,
       if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
     });
     return Map<String, dynamic>.from(response.data as Map);

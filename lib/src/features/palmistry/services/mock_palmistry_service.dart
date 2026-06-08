@@ -5,7 +5,10 @@ import 'i_palmistry_service.dart';
 
 class MockPalmistryService implements IPalmistryService {
   @override
-  Future<PalmistryResult> analyzePalm(File image) async {
+  Future<PalmistryResult> analyzePalm(
+    File image, {
+    bool preValidated = false,
+  }) async {
     await Future<void>.delayed(const Duration(seconds: 3));
 
     return const PalmistryResult(

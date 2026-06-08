@@ -15,6 +15,7 @@ import '../../../core/utils/image_compression_helper.dart';
 import '../../../core/utils/palm_detection_result.dart';
 import '../services/i_palmistry_service.dart';
 import '../services/palmistry_analysis_exception.dart';
+import '../services/palm_vision_detector.dart';
 import '../widgets/cosmic_scan_button.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/palm_overlay_painter.dart';
@@ -34,13 +35,21 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _scanAnimation;
 
+  final PalmVisionDetector _visionDetector = PalmVisionDetector();
   CameraController? _controller;
   File? _frozenImage;
+  PalmDetectionResult _detectionResult = const PalmDetectionResult.noHand();
 
   bool _isInitializing = true;
   bool _isPermissionDenied = false;
   bool _isPermissionPermanentlyDenied = false;
   bool _isScanning = false;
+  bool _isProcessingFrame = false;
+  bool _isImageStreamActive = false;
+  int _stableValidFrameCount = 0;
+  DateTime? _lastFrameAnalysisAt;
+  Size? _lastPreviewSurfaceSize;
+  Rect? _lastGuideRect;
   String? _errorTitle;
   String? _errorMessage;
 
@@ -74,7 +83,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     final controller = _controller;
     return !_isScanning &&
         controller != null &&
-        controller.value.isInitialized;
+        controller.value.isInitialized &&
+        (!Platform.isIOS || _detectionResult.isValid);
   }
 
   Future<void> _initializeCamera() async {
@@ -114,7 +124,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       );
       final controller = CameraController(
         camera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -123,6 +133,10 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
       await controller.initialize();
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      try {
+        await controller.setFocusMode(FocusMode.auto);
+        await controller.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
 
       if (!mounted) {
         await controller.dispose();
@@ -132,7 +146,20 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       setState(() {
         _controller = controller;
         _isInitializing = false;
+        _detectionResult = Platform.isIOS
+            ? const PalmDetectionResult.noHand()
+            : const PalmDetectionResult(
+                state: PalmDetectionState.validHand,
+                scanState: PalmScanState.ready,
+                confidence: 1,
+                labels: ['manual_android_fallback'],
+                source: 'manual',
+                handDetected: true,
+                possibleHand: true,
+                validPalm: true,
+              );
       });
+      await _startImageStreamIfNeeded(controller);
     } on CameraException catch (e) {
       if (!mounted) return;
       final code = e.code.toLowerCase();
@@ -203,6 +230,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     });
 
     try {
+      await _stopImageStreamIfNeeded();
       final picture = await controller.takePicture();
       final imageFile = File(picture.path);
 
@@ -211,7 +239,10 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       _scanAnimation.repeat();
 
       final compressed = await compressPalmImage(imageFile);
-      final result = await getIt<IPalmistryService>().analyzePalm(compressed);
+      final result = await getIt<IPalmistryService>().analyzePalm(
+        compressed,
+        preValidated: Platform.isIOS && _detectionResult.isValid,
+      );
 
       if (!mounted) return;
       _scanAnimation.stop();
@@ -234,20 +265,120 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       setState(() {
         _isScanning = false;
         _frozenImage = null;
+        _stableValidFrameCount = 0;
         _errorTitle = AppTexts.t('palmScanErrorTitle');
         _errorMessage = _mapScanError(error);
       });
+      final activeController = _controller;
+      if (activeController != null && activeController.value.isInitialized) {
+        await _startImageStreamIfNeeded(activeController);
+      }
+    }
+  }
+
+  Future<void> _startImageStreamIfNeeded(CameraController controller) async {
+    if (!Platform.isIOS || _isImageStreamActive || _isScanning) return;
+    if (!controller.value.isInitialized) return;
+    try {
+      await controller.startImageStream(_handleCameraImage);
+      _isImageStreamActive = true;
+    } catch (_) {
+      _isImageStreamActive = false;
+    }
+  }
+
+  Future<void> _stopImageStreamIfNeeded() async {
+    final controller = _controller;
+    if (!_isImageStreamActive || controller == null) return;
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (_) {
+    } finally {
+      _isImageStreamActive = false;
+      _isProcessingFrame = false;
+    }
+  }
+
+  void _handleCameraImage(CameraImage image) {
+    if (!mounted || _isScanning || _isProcessingFrame) return;
+
+    final now = DateTime.now();
+    final last = _lastFrameAnalysisAt;
+    if (last != null && now.difference(last).inMilliseconds < 180) {
+      return;
+    }
+    _lastFrameAnalysisAt = now;
+    _isProcessingFrame = true;
+
+    final controller = _controller;
+    final previewSize = _lastPreviewSurfaceSize;
+    final guideRect = _lastGuideRect;
+    unawaited(
+      _visionDetector
+          .detect(
+            image,
+            camera: controller?.description,
+            previewSize: previewSize,
+            guideRect: guideRect,
+          )
+          .then(_handleDetectionResult)
+          .catchError((_) {
+            if (!mounted) return;
+            _handleDetectionResult(const PalmDetectionResult.noHand());
+          })
+          .whenComplete(() {
+            _isProcessingFrame = false;
+          }),
+    );
+  }
+
+  void _handleDetectionResult(PalmDetectionResult result) {
+    if (!mounted || _isScanning) return;
+
+    final wasValid = _detectionResult.isValid;
+    final nextStableCount = result.isValid ? _stableValidFrameCount + 1 : 0;
+    final shouldAutoScan = nextStableCount >= 5 && !_isScanning;
+
+    setState(() {
+      _detectionResult = result;
+      _stableValidFrameCount = nextStableCount;
+    });
+
+    if (!wasValid && result.isValid) {
+      HapticFeedback.lightImpact();
+    }
+
+    if (shouldAutoScan) {
+      unawaited(_startScan());
     }
   }
 
   Future<void> _disposeCamera() async {
     final controller = _controller;
-    _controller = null;
-
     if (controller == null) return;
     try {
+      await _stopImageStreamIfNeeded();
       await controller.dispose();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _controller = null;
+    }
+  }
+
+  String _instructionForScanState(PalmScanState state) {
+    return switch (state) {
+      PalmScanState.noHand => AppTexts.t('palmShowHand'),
+      PalmScanState.handOutsideGuide => AppTexts.t('palmPlaceInsideGuide'),
+      PalmScanState.handTooClose => AppTexts.t('palmMoveHandAway'),
+      PalmScanState.handTooFar => AppTexts.t('palmMoveHandCloser'),
+      PalmScanState.rotateHand => AppTexts.t('palmKeepHandVertical'),
+      PalmScanState.openFingers => AppTexts.t('palmOpenFingers'),
+      PalmScanState.showPalm => AppTexts.t('palmShowPalm'),
+      PalmScanState.unstable => AppTexts.t('palmHoldSteady'),
+      PalmScanState.ready => AppTexts.t('palmDetected'),
+    };
   }
 
   @override
@@ -308,12 +439,12 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       );
     }
 
-    final overlayState = _isScanning
-        ? PalmDetectionState.validHand
-        : PalmDetectionState.partialHand;
+    final overlayState = _isScanning ? PalmDetectionState.validHand : _detectionResult.state;
     final helperText = _isScanning
         ? AppTexts.t('palmScanningLoading')
-        : AppTexts.t('palmReadyToScan');
+        : Platform.isIOS
+            ? _instructionForScanState(_detectionResult.effectiveScanState)
+            : AppTexts.t('palmReadyToScan');
 
     return Column(
       children: [
@@ -329,47 +460,65 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: Hero(
-            tag: PalmScannerScreen.heroTag,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(34),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _CameraSurface(
-                    controller: controller,
-                    frozenImage: _frozenImage,
-                  ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: AppColors.glassBorder,
-                        width: 1.2,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final surfaceSize = Size(
+                constraints.maxWidth,
+                constraints.maxHeight,
+              );
+              _lastPreviewSurfaceSize = surfaceSize;
+              _lastGuideRect = PalmOverlayPainter.guideRectForSize(surfaceSize);
+
+              return Hero(
+                tag: PalmScannerScreen.heroTag,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(34),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _CameraSurface(
+                        controller: controller,
+                        frozenImage: _frozenImage,
                       ),
-                      borderRadius: BorderRadius.circular(34),
-                    ),
-                  ),
-                  CustomPaint(
-                    painter: PalmOverlayPainter(
-                      detectionState: overlayState,
-                      readinessProgress: _isScanning ? 1 : 0.45,
-                      pulseValue: 0,
-                    ),
-                  ),
-                  if (_isScanning)
-                    AnimatedBuilder(
-                      animation: _scanAnimation,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          painter: ScannerLaserPainter(
-                            progress: _scanAnimation.value,
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: AppColors.glassBorder,
+                            width: 1.2,
                           ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ),
+                          borderRadius: BorderRadius.circular(34),
+                        ),
+                      ),
+                      CustomPaint(
+                        painter: PalmOverlayPainter(
+                          detectionState: overlayState,
+                          readinessProgress: _isScanning
+                              ? 1
+                              : _detectionResult.confidence
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                          pulseValue: _detectionResult.state ==
+                                  PalmDetectionState.possibleHand
+                              ? 0.6
+                              : 0,
+                        ),
+                      ),
+                      if (_isScanning)
+                        AnimatedBuilder(
+                          animation: _scanAnimation,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              painter: ScannerLaserPainter(
+                                progress: _scanAnimation.value,
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(height: 18),
