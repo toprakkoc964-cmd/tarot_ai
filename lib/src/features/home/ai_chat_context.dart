@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../core/app_texts.dart';
+import '../coffee_reading/models/coffee_image_pipeline_result.dart';
 import '../coffee_reading/models/coffee_photo_step.dart';
 import '../coffee_reading/models/coffee_validation_result.dart';
 
@@ -23,6 +24,7 @@ class AiChatContext {
     required this.title,
     this.imageFile,
     this.imageFiles,
+    this.coffeePhotos,
     this.metadata,
     this.initialPrompt,
     this.ownsImageFile = false,
@@ -33,6 +35,7 @@ class AiChatContext {
   final String title;
   final File? imageFile;
   final List<File>? imageFiles;
+  final Map<CoffeePhotoStep, CoffeeImagePipelineResult>? coffeePhotos;
   final Map<String, dynamic>? metadata;
   final String? initialPrompt;
   final bool ownsImageFile;
@@ -49,6 +52,9 @@ class AiChatContext {
   factory AiChatContext.coffeeReadingMadamAris({
     required List<File> imageFiles,
     required Map<CoffeePhotoStep, CoffeeValidationResult> validations,
+    Map<CoffeePhotoStep, CoffeeImagePipelineResult>? coffeePhotos,
+    String? sessionId,
+    String? idempotencyKey,
   }) {
     final validationSummary = {
       for (final entry in validations.entries)
@@ -65,10 +71,19 @@ class AiChatContext {
       title: AppTexts.t('coffeeMadamArisTitle'),
       imageFile: imageFiles.isEmpty ? null : imageFiles.first,
       imageFiles: List<File>.unmodifiable(imageFiles),
+      coffeePhotos: coffeePhotos == null
+          ? null
+          : Map<CoffeePhotoStep, CoffeeImagePipelineResult>.unmodifiable(
+              coffeePhotos,
+            ),
       ownsImageFile: true,
       metadata: {
         'source': 'coffee_reading',
         'requiredPhotoCount': 3,
+        if (sessionId != null && sessionId.trim().isNotEmpty)
+          'sessionId': sessionId.trim(),
+        if (idempotencyKey != null && idempotencyKey.trim().isNotEmpty)
+          'idempotencyKey': idempotencyKey.trim(),
         'validationSummary': validationSummary,
         'createdAt': DateTime.now().toIso8601String(),
       },

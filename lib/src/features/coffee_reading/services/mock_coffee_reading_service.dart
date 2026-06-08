@@ -11,6 +11,7 @@ class MockCoffeeReadingService implements CoffeeReadingService {
     required Map<CoffeePhotoStep, CoffeeImagePipelineResult> photos,
     String? idempotencyKey,
     String? languageCode,
+    String? mood,
   }) async {
     await Future<void>.delayed(const Duration(seconds: 3));
     final now = DateTime.now();

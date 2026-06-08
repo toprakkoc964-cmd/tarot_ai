@@ -1,28 +1,28 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../core/app_locale.dart';
 import '../../../core/app_texts.dart';
 import '../../../core/function_error_codes.dart';
 import '../../../core/idempotency_key.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/coffee_image_pipeline_result.dart';
 import '../models/coffee_photo_step.dart';
-import '../services/backend_coffee_reading_service.dart';
 import '../services/coffee_image_pipeline_service.dart';
-import '../services/coffee_reading_service.dart';
 import '../services/coffee_temp_file_cleaner.dart';
+import '../../home/ai_chat_context.dart';
+import '../../home/aris_session_service.dart';
+import '../../home/chat_page.dart';
 import '../widgets/coffee_capture_card.dart';
 import '../widgets/coffee_capture_progress.dart';
 import '../widgets/coffee_source_bottom_sheet.dart';
 import '../widgets/coffee_sticky_cta.dart';
 import '../widgets/coffee_validation_error_dialog.dart';
 import 'coffee_loading_screen.dart';
-import 'coffee_result_screen.dart';
 
 class CoffeeCaptureFlowScreen extends StatefulWidget {
   const CoffeeCaptureFlowScreen({
@@ -45,22 +45,24 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
   CoffeePhotoStep _activeStep = CoffeePhotoStep.cupInside;
   bool _isProcessing = false;
   bool _isAnalyzing = false;
+  bool _transferredPhotoOwnership = false;
   String _overlayMessageKey = 'coffeePreparingPhoto';
 
   CoffeeImagePipelineService get _pipeline =>
       GetIt.I<CoffeeImagePipelineService>();
-  CoffeeReadingService get _readingService => GetIt.I<CoffeeReadingService>();
   CoffeeTempFileCleaner get _cleaner => GetIt.I<CoffeeTempFileCleaner>();
   bool get _isComplete =>
       _completedSteps.length == CoffeePhotoStep.values.length;
 
   @override
   void dispose() {
-    unawaited(
-      _cleaner.cleanup(
-        _completedSteps.values.expand((result) => result.tempFiles),
-      ),
-    );
+    if (!_transferredPhotoOwnership) {
+      unawaited(
+        _cleaner.cleanup(
+          _completedSteps.values.expand((result) => result.tempFiles),
+        ),
+      );
+    }
     super.dispose();
   }
 
@@ -147,47 +149,57 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
     });
 
     try {
-      final result = await _readingService.analyzeCoffee(
-        uid: widget.uid,
-        photos: Map<CoffeePhotoStep, CoffeeImagePipelineResult>.from(
-          _completedSteps,
-        ),
-        idempotencyKey: createIdempotencyKey(),
-        languageCode: AppLocale.current,
+      final photos = Map<CoffeePhotoStep, CoffeeImagePipelineResult>.from(
+        _completedSteps,
       );
+      final sessionId = newArisSessionId(prefix: 'coffee');
+      final idempotencyKey = createIdempotencyKey();
 
-      await _cleaner.cleanup(
-        _completedSteps.values.expand((photo) => photo.tempFiles),
-      );
+      await Future<void>.delayed(const Duration(milliseconds: 1350))
+          .timeout(const Duration(seconds: 3), onTimeout: () {});
+
       if (!mounted) return;
+      _transferredPhotoOwnership = true;
       await Navigator.of(context).pushReplacement<void, void>(
-        MaterialPageRoute<void>(
-          builder: (_) => CoffeeResultScreen(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, __, ___) => KozmikBilgePage(
             uid: widget.uid,
-            result: result,
+            chatContext: AiChatContext.coffeeReadingMadamAris(
+              imageFiles: CoffeePhotoStep.values
+                  .map((step) => photos[step]?.compressedImage)
+                  .whereType<File>()
+                  .toList(growable: false),
+              validations: {
+                for (final entry in photos.entries)
+                  entry.key: entry.value.validationResult,
+              },
+              coffeePhotos: photos,
+              sessionId: sessionId,
+              idempotencyKey: idempotencyKey,
+            ),
           ),
+          transitionDuration: const Duration(milliseconds: 520),
+          transitionsBuilder: (_, animation, __, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(
+              opacity: curved,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.025),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+                  child: child,
+                ),
+              ),
+            );
+          },
         ),
       );
-    } on CoffeeReadingValidationException catch (error) {
-      if (!mounted) return;
-      final failureStep = error.response.validation.failureStep;
-      setState(() {
-        _isAnalyzing = false;
-        if (failureStep != null) {
-          _activeStep = failureStep;
-          _backendRetrySteps.add(failureStep);
-        }
-      });
-      final retry = await CoffeeValidationErrorDialog.show(
-        context,
-        step: error.response.validation.failureStep,
-        validationResult: null,
-        backendMessage: error.response.validation.userMessage ??
-            AppTexts.t('coffeeValidationParseError'),
-      );
-      if (retry == true && mounted && failureStep != null) {
-        await _chooseSourceForStep(failureStep);
-      }
     } on FirebaseFunctionsException catch (error) {
       if (!mounted) return;
       setState(() {

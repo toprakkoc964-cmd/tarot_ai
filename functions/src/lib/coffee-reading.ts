@@ -170,6 +170,7 @@ export function parseCoffeeAiPayload(raw: string): CoffeeAiPayload {
 export async function createCoffeeReadingWithVision(input: {
   languageCode: string;
   images: Array<{ step: string; mimeType: string; base64: string }>;
+  mood?: string;
 }): Promise<CoffeeAiPayload> {
   const modelName = process.env.GEMINI_COFFEE_MODEL ?? 'gemini-2.5-flash-lite';
   const model = getClient().getGenerativeModel({
@@ -198,6 +199,9 @@ export async function createCoffeeReadingWithVision(input: {
     {
       text: [
         `Language: ${input.languageCode}`,
+        input.mood?.trim()
+          ? `User feeling before reading: ${input.mood.trim()}`
+          : 'User feeling before reading: not provided.',
         'Evaluate cupInside, saucer, and cupSide images for real physical coffee cup tasseography.',
         'Reject empty cups, stock photos, screenshots, screen spoofing, duplicate images, blurry/dark/bright images, and inappropriate content.',
         'If valid, write reading sections as Madam Aris with entertainment disclaimer.',

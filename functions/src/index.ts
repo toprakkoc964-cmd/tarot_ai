@@ -790,6 +790,52 @@ function buildArisConversationPrompt(input: {
   };
 }
 
+function buildCoffeeArisConversationPrompt(input: {
+  user: UserDoc & Record<string, unknown>;
+  openingMessage: string;
+  recentMessages: Array<{ role: 'user' | 'assistant'; text: string }>;
+  userMessage: string;
+  lang: string;
+}): { systemPrompt: string; userPrompt: string } {
+  const transcript = input.recentMessages
+    .slice(-8)
+    .map((message) => `${message.role === 'user' ? 'User' : 'Madam Aris'}: ${message.text}`)
+    .join('\n');
+
+  const systemPrompt = input.lang === 'tr'
+    ? [
+      'Sen Madam Aris adli zarif, mistik ve bilge bir kahve fali rehberisin.',
+      'Kullanicinin yukledigi fincan ici, fincan tabagi ve fincan dis gorunumu yorumuna dayanarak sohbet edersin.',
+      'AI, yapay zeka, model veya sistem oldugunu soyleme; Madam Aris olarak kendi agzindan konus.',
+      'Tibbi, finansal, hukuki tavsiye verme ve kesin gelecek iddiasi kurma.',
+      'Cevaplarin sicak, sezgisel, premium ve korkutmayan bir tonda olsun.',
+      '85-140 kelime arasinda yanit ver; kullanici sadece tesekkur ederse kisa ve yumusak cevap ver.'
+    ].join(' ')
+    : [
+      'You are Madam Aris, an elegant, mystical, and wise Turkish coffee reading guide.',
+      'You continue the conversation from the user\'s uploaded cup-inside, saucer, and outer-cup reading.',
+      'Do not say you are AI, a model, or a system; speak in-character as Madam Aris.',
+      'Do not give medical, financial, legal advice, or certain future predictions.',
+      'Keep the tone warm, intuitive, premium, and non-frightening.',
+      'Answer in 85-140 words unless the user only thanks you.'
+    ].join(' ');
+
+  return {
+    systemPrompt,
+    userPrompt: [
+      ...buildArisProfileContext(input.user, {
+        includeSoftPersonalization: shouldUseSoftPersonalization(input.userMessage)
+      }),
+      `Opening coffee greeting: ${input.openingMessage}`,
+      transcript ? `Recent coffee conversation:\n${transcript}` : '',
+      `User: ${input.userMessage}`,
+      input.lang === 'tr'
+        ? 'Fincan yorumundaki sembolik dili koruyarak Madam Aris olarak cevap ver.'
+        : 'Answer as Madam Aris while preserving the symbolic language of the coffee reading.'
+    ].filter(Boolean).join('\n')
+  };
+}
+
 async function getPersonaOrDefault(personaId: string): Promise<AIPersonaDoc> {
   const fallback: AIPersonaDoc = {
     name: 'Emilia',
@@ -1526,6 +1572,7 @@ export const analyzeCoffeeReading = onCall(
 
       const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
       const languageCode = resolveLanguage(request.data?.languageCode);
+      const mood = sanitizeShortText(request.data?.mood, 320);
       const parsedRefs = parseCoffeeImageRefs(uid, request.data?.imageRefs);
       imageRefs = parsedRefs.imageRefs;
       validateLocalCoffeeSummary(request.data?.localValidation);
@@ -1550,6 +1597,7 @@ export const analyzeCoffeeReading = onCall(
       const aiPayload = await createCoffeeReadingWithVision({
         languageCode,
         images,
+        mood,
       });
 
       if (!aiPayload.validation.isValid || !aiPayload.reading) {
@@ -2074,8 +2122,11 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       cardNames?: string[];
       openingMessage?: string;
       lang?: string;
+      mode?: string;
+      persona?: string;
       recentMessages?: Array<{ role?: string; text?: string }>;
     };
+    const isCoffeeSession = session.mode === 'coffeeReading' || session.persona === 'madamAris';
     const cardName = session.cardName?.trim();
     const cardNames = Array.isArray(session.cardNames)
       ? session.cardNames.map((item) => sanitizeShortText(item, 80)).filter(Boolean)
@@ -2104,7 +2155,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
     });
     const currentCredits = Number((user as UserDoc).wallet.credits ?? 0);
     const restrictedReply = restrictedArisReply({ message, lang });
-    const offTopicReply = !restrictedReply && isOffTopicArisMessage(message)
+    const offTopicReply = !restrictedReply && !isCoffeeSession && isOffTopicArisMessage(message)
       ? offTopicArisReply(lang)
       : null;
     if (restrictedReply || offTopicReply) {
@@ -2133,7 +2184,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       ]);
       return result;
     }
-    const quickReply = quickArisReply({ message, lang, user });
+    const quickReply = isCoffeeSession ? null : quickArisReply({ message, lang, user });
     if (quickReply) {
       const updatedMessages = [
         ...recentMessages,
@@ -2190,15 +2241,23 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       const profileReply = birthMonthReply({ user, message, lang });
       const prompts = profileReply
         ? null
-        : buildArisConversationPrompt({
-        user,
-        cardName,
-        cardNames: cardNames.length > 0 ? cardNames : undefined,
-        openingMessage,
-        recentMessages,
-        userMessage: message,
-        lang
-      });
+        : isCoffeeSession
+          ? buildCoffeeArisConversationPrompt({
+            user,
+            openingMessage,
+            recentMessages,
+            userMessage: message,
+            lang
+          })
+          : buildArisConversationPrompt({
+            user,
+            cardName,
+            cardNames: cardNames.length > 0 ? cardNames : undefined,
+            openingMessage,
+            recentMessages,
+            userMessage: message,
+            lang
+          });
       const reply = cleanArisPersonaText(profileReply ?? (await createReadingText({
         ...prompts!,
         maxOutputTokens: 260,

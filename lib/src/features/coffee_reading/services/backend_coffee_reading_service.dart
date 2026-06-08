@@ -24,6 +24,7 @@ class BackendCoffeeReadingService implements CoffeeReadingService {
     required Map<CoffeePhotoStep, CoffeeImagePipelineResult> photos,
     String? idempotencyKey,
     String? languageCode,
+    String? mood,
   }) async {
     final readingId = 'coffee_${DateTime.now().microsecondsSinceEpoch}';
     final imageRefs = await _backendService.uploadPhotos(
@@ -47,6 +48,7 @@ class BackendCoffeeReadingService implements CoffeeReadingService {
           },
       },
       idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
+      mood: mood,
     );
 
     if (!response.success || response.reading == null) {

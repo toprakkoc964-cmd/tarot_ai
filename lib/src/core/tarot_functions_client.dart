@@ -111,6 +111,7 @@ class TarotFunctionsClient {
     required Map<String, String> imageRefs,
     required Map<String, dynamic> localValidation,
     required String idempotencyKey,
+    String? mood,
   }) async {
     final callable = _functions.httpsCallable('analyzeCoffeeReading');
     final response = await callable.call({
@@ -118,6 +119,7 @@ class TarotFunctionsClient {
       'imageRefs': imageRefs,
       'localValidation': localValidation,
       'idempotencyKey': idempotencyKey,
+      if (mood != null && mood.trim().isNotEmpty) 'mood': mood.trim(),
     });
     return CoffeeAnalyzeResponse.fromMap(
       Map<String, dynamic>.from(response.data as Map),

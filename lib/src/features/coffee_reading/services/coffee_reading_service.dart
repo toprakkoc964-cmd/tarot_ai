@@ -8,5 +8,6 @@ abstract class CoffeeReadingService {
     required Map<CoffeePhotoStep, CoffeeImagePipelineResult> photos,
     String? idempotencyKey,
     String? languageCode,
+    String? mood,
   });
 }

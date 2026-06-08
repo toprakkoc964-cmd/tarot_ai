@@ -613,6 +613,16 @@ class LocalizationService {
     'coffeeMessageNote': 'A coffee reading costs 20 tokens.',
     'coffeeQuestionHint': 'Ask about the symbols in the grounds...',
     'coffeeLoadingChatSubtitle': 'Listening to the symbols in the grounds.',
+    'coffeeArisLookingAtCup': 'Madam Aris is looking into your cup...',
+    'coffeeMadamArisGreeting': 'Hello {name}, how are you feeling today?',
+    'coffeeMadamArisGreetingNoName':
+        'Hello, how are you feeling today?',
+    'coffeeReadingError':
+        'Your cup is close, but the signs blurred for a moment. Try again and I will look once more.',
+    'coffeeChatReplyEmpty':
+        'The cup went quiet for a moment. Ask me again and I will listen more closely.',
+    'coffeeChatMessageFailed':
+        'Madam Aris could not answer right now. Please try again.',
     'coffeeMockOpening':
         'I can see your cup and the traces in the grounds... Inside, on the saucer, and across the outer surface, there are symbols that complete each other. This reading is prepared for entertainment and personal awareness. Now, let us read these signs together...',
     'coffeeMockLoveReply':
@@ -1224,6 +1234,17 @@ class LocalizationService {
     'coffeeMessageNote': 'Kahve falı yorumlaması 20 jetondur.',
     'coffeeQuestionHint': 'Telvedeki sembolleri sor...',
     'coffeeLoadingChatSubtitle': 'Telvedeki sembolleri dinliyor.',
+    'coffeeArisLookingAtCup': 'Madam Aris fincanına bakıyor...',
+    'coffeeMadamArisGreeting':
+        'Merhaba {name}, bugün kendini nasıl hissediyorsun?',
+    'coffeeMadamArisGreetingNoName':
+        'Merhaba, bugün kendini nasıl hissediyorsun?',
+    'coffeeReadingError':
+        'Fincanın çok yakın, ama işaretler bir anlığına bulanıklaştı. Tekrar dene; yeniden bakacağım.',
+    'coffeeChatReplyEmpty':
+        'Fincan bir anlığına sessizleşti. Yeniden sor; daha yakından dinleyeceğim.',
+    'coffeeChatMessageFailed':
+        'Madam Aris şu anda yanıt veremedi. Lütfen tekrar dene.',
     'coffeeMockOpening':
         'Fincanını ve telvenin izlerini gördüm... İçte, tabakta ve dış yüzeyde birbirini tamamlayan semboller var. Bu yorum eğlence ve kişisel farkındalık amacıyla hazırlanıyor. Şimdi birlikte bu işaretlere bakalım...',
     'coffeeMockLoveReply':

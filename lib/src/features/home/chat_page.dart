@@ -6,12 +6,19 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
+import '../../core/idempotency_key.dart';
 import '../../core/tarot_functions_client.dart';
 import '../auth/user_profile_contract.dart';
+import '../coffee_reading/models/coffee_image_pipeline_result.dart';
+import '../coffee_reading/models/coffee_photo_step.dart';
+import '../coffee_reading/models/coffee_reading_result.dart';
+import '../coffee_reading/services/backend_coffee_reading_service.dart';
+import '../coffee_reading/services/coffee_reading_service.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
 import 'ai_chat_context.dart';
@@ -52,18 +59,27 @@ class KozmikBilgePage extends StatefulWidget {
 class _KozmikBilgePageState extends State<KozmikBilgePage> {
   final _functionsClient = TarotFunctionsClient();
   final _messageController = TextEditingController();
+  final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _random = math.Random();
   final List<_ArisChatMessage> _messages = [];
 
   String? _sessionId;
+  String? _coffeeIdempotencyKey;
+  Timer? _coffeeMoodWindowTimer;
+  Timer? _coffeeMoodResponseTimer;
   bool _isLoadingOpening = true;
   bool _isSending = false;
+  bool _isGeneratingCoffeeReading = false;
+  bool _coffeeAwaitingMood = false;
+  bool _coffeeReadingGenerated = false;
+  bool _coffeeReadingFailed = false;
   String? _openingError;
 
   @override
   void initState() {
     super.initState();
+    _messageFocusNode.addListener(_handleComposerFocusChanged);
     final resumeId = widget.resumeSessionId?.trim() ?? '';
     if (resumeId.isNotEmpty) {
       _loadResumedSession(resumeId);
@@ -74,6 +90,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
 
   @override
   void dispose() {
+    _coffeeMoodWindowTimer?.cancel();
+    _coffeeMoodResponseTimer?.cancel();
+    _messageFocusNode.removeListener(_handleComposerFocusChanged);
+    _messageFocusNode.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     final contextImages = widget.chatContext?.contextImageFiles ?? const [];
@@ -109,7 +129,11 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       : AppTexts.t('arisAssistantName');
 
   String get _loadingSubtitle => _isCoffeeChat
-      ? AppTexts.t('coffeeLoadingChatSubtitle')
+      ? AppTexts.t(
+          _isGeneratingCoffeeReading
+              ? 'coffeeArisLookingAtCup'
+              : 'coffeeLoadingChatSubtitle',
+        )
       : AppTexts.t('arisLoadingSubtitle');
 
   Future<void> _deleteOwnedContextImages(List<File> imageFiles) async {
@@ -132,6 +156,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     return widget.chatContext?.metadata ?? const {};
   }
 
+  Map<CoffeePhotoStep, CoffeeImagePipelineResult> get _coffeePhotos {
+    return widget.chatContext?.coffeePhotos ?? const {};
+  }
+
   int get _coffeeRequiredPhotoCount {
     return (_coffeeMetadata['requiredPhotoCount'] as num?)?.toInt() ?? 3;
   }
@@ -142,6 +170,23 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     final subtitle = AppTexts.t('coffeeMadamArisSubtitle');
     if (_coffeePhotoCount >= _coffeeRequiredPhotoCount) return subtitle;
     return '$subtitle · $_coffeePhotoCount/$_coffeeRequiredPhotoCount';
+  }
+
+  void _handleComposerFocusChanged() {
+    if (!_isCoffeeChat ||
+        !_coffeeAwaitingMood ||
+        _coffeeReadingGenerated ||
+        _isGeneratingCoffeeReading) {
+      return;
+    }
+    if (_messageFocusNode.hasFocus) {
+      _coffeeMoodWindowTimer?.cancel();
+      _coffeeMoodResponseTimer?.cancel();
+      _coffeeMoodResponseTimer = Timer(const Duration(seconds: 90), () {
+        if (!mounted || _coffeeReadingGenerated) return;
+        _startCoffeeReadingGeneration();
+      });
+    }
   }
 
   String _todayKey() {
@@ -315,16 +360,212 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         _openingError = null;
       });
     }
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-    if (!mounted) return;
-    setState(() {
-      _sessionId = 'mock_coffee_${DateTime.now().microsecondsSinceEpoch}';
-      _messages
-        ..clear()
-        ..add(_ArisChatMessage.assistant(AppTexts.t('coffeeMockOpening')));
-      _isLoadingOpening = false;
-      _openingError = null;
+    try {
+      final sessionId =
+          (_coffeeMetadata['sessionId'] as String?)?.trim().isNotEmpty == true
+              ? (_coffeeMetadata['sessionId'] as String).trim()
+              : newArisSessionId(prefix: 'coffee');
+      final idempotencyKey =
+          (_coffeeMetadata['idempotencyKey'] as String?)?.trim().isNotEmpty ==
+                  true
+              ? (_coffeeMetadata['idempotencyKey'] as String).trim()
+              : createIdempotencyKey();
+      final name = await _loadUserDisplayName();
+      final greeting = _coffeeGreetingFor(name);
+
+      if (!mounted) return;
+      setState(() {
+        _sessionId = sessionId;
+        _coffeeIdempotencyKey = idempotencyKey;
+        _messages
+          ..clear()
+          ..add(_ArisChatMessage.assistant(greeting));
+        _isLoadingOpening = false;
+        _openingError = null;
+        _coffeeAwaitingMood = true;
+      });
+      _scrollToBottomSoon();
+      unawaited(_saveCoffeeSession());
+      _startCoffeeMoodWindow();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingOpening = false;
+        _openingError = AppTexts.t('aris.opening_error_generic');
+      });
+    }
+  }
+
+  Future<String> _loadUserDisplayName() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(widget.uid)
+          .get();
+      final data = doc.data() ?? const <String, dynamic>{};
+      final name = ((data[UserProfileContract.displayName] as String?) ??
+              (data[UserProfileContract.name] as String?) ??
+              '')
+          .trim();
+      return name;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _coffeeGreetingFor(String name) {
+    final template = AppTexts.t(
+      name.trim().isEmpty
+          ? 'coffeeMadamArisGreetingNoName'
+          : 'coffeeMadamArisGreeting',
+    );
+    return template.replaceFirst('{name}', name.trim());
+  }
+
+  void _startCoffeeMoodWindow() {
+    _coffeeMoodWindowTimer?.cancel();
+    _coffeeMoodResponseTimer?.cancel();
+    _coffeeMoodWindowTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted ||
+          !_coffeeAwaitingMood ||
+          _coffeeReadingGenerated ||
+          _isGeneratingCoffeeReading ||
+          _messageFocusNode.hasFocus) {
+        return;
+      }
+      _startCoffeeReadingGeneration();
     });
+  }
+
+  String _coffeeReadingText(CoffeeReadingResult result) {
+    final reading = result.reading;
+    final sections = <String>[
+      '${AppTexts.t('coffeeReadingGeneralEnergy')}\n${reading.generalEnergy}',
+      '${AppTexts.t('coffeeReadingSymbols')}\n${reading.symbols}',
+      '${AppTexts.t('coffeeReadingSaucerSigns')}\n${reading.saucerSigns}',
+      '${AppTexts.t('coffeeReadingOuterCupMessage')}\n${reading.outerCupMessage}',
+      '${AppTexts.t('coffeeReadingPastTrace')}\n${reading.pastTrace}',
+      '${AppTexts.t('coffeeReadingPresentMood')}\n${reading.presentMood}',
+      '${AppTexts.t('coffeeReadingNearFutureMessage')}\n${reading.nearFutureMessage}',
+      '${AppTexts.t('coffeeReadingAdvice')}\n${reading.advice}',
+      reading.disclaimer,
+    ];
+    return sections
+        .map((section) => section.trim())
+        .where((section) => section.isNotEmpty)
+        .join('\n\n');
+  }
+
+  Future<void> _startCoffeeReadingGeneration({String? mood}) async {
+    if (!_isCoffeeChat ||
+        _coffeeReadingGenerated ||
+        _isGeneratingCoffeeReading ||
+        _coffeePhotos.length < CoffeePhotoStep.values.length ||
+        _sessionId == null) {
+      return;
+    }
+    _coffeeMoodWindowTimer?.cancel();
+    _coffeeMoodResponseTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _coffeeAwaitingMood = false;
+        _isGeneratingCoffeeReading = true;
+        _isSending = true;
+        _coffeeReadingFailed = false;
+      });
+    }
+    _scrollToBottom();
+
+    try {
+      final result = await GetIt.I<CoffeeReadingService>().analyzeCoffee(
+        uid: widget.uid,
+        photos: Map<CoffeePhotoStep, CoffeeImagePipelineResult>.from(
+          _coffeePhotos,
+        ),
+        idempotencyKey: _coffeeIdempotencyKey ?? createIdempotencyKey(),
+        languageCode: _activeArisLanguage(),
+        mood: mood,
+      );
+      final readingText = _coffeeReadingText(result);
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ArisChatMessage.assistant(readingText));
+        _coffeeReadingGenerated = true;
+        _isGeneratingCoffeeReading = false;
+        _isSending = false;
+      });
+      _scrollToBottom();
+      unawaited(_saveCoffeeSession(readingId: result.readingId));
+    } on CoffeeReadingValidationException catch (error) {
+      if (!mounted) return;
+      final message = error.response.validation.userMessage ??
+          AppTexts.t('coffeeValidationParseError');
+      setState(() {
+        _openingError = null;
+        _isGeneratingCoffeeReading = false;
+        _isSending = false;
+        _coffeeReadingFailed = true;
+        _messages.add(_ArisChatMessage.assistant(message));
+      });
+      _scrollToBottom();
+      unawaited(_saveCoffeeSession());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isGeneratingCoffeeReading = false;
+        _isSending = false;
+        _coffeeReadingFailed = true;
+        _messages.add(
+          _ArisChatMessage.assistant(AppTexts.t('coffeeReadingError')),
+        );
+      });
+      _scrollToBottom();
+      unawaited(_saveCoffeeSession());
+    }
+  }
+
+  Future<void> _saveCoffeeSession({String? readingId}) async {
+    final sessionId = _sessionId;
+    if (!_isCoffeeChat || sessionId == null || _messages.isEmpty) return;
+    final opening = _messages.first.text.trim();
+    final recentSource = _messages
+        .skip(1)
+        .where((message) => message.text.trim().isNotEmpty)
+        .toList(growable: false);
+    final recentMessages = recentSource
+        .skip(math.max(0, recentSource.length - 48))
+        .map((message) => {
+              'role': message.isUser ? 'user' : 'assistant',
+              'text': message.text.trim(),
+            })
+        .toList(growable: false);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(widget.uid)
+          .collection('aris_sessions')
+          .doc(sessionId)
+          .set({
+        'cardName': AppTexts.t('coffeeMadamArisTitle'),
+        'cardNames': const <String>[],
+        'openingMessage': opening,
+        'recentMessages': recentMessages,
+        'mode': 'coffeeReading',
+        'persona': 'madamAris',
+        'lang': _activeArisLanguage(),
+        'day': _todayKey(),
+        if (readingId != null && readingId.trim().isNotEmpty)
+          'coffeeReadingId': readingId.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      if (mounted) {
+        debugPrint('coffee aris session save failed: $error');
+      }
+    }
   }
 
   Future<void> _sendMessage(int credits) async {
@@ -388,29 +629,43 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     });
     _scrollToBottom();
 
-    await Future<void>.delayed(const Duration(milliseconds: 950));
-    if (!mounted) return;
-    setState(() {
-      _messages.add(_ArisChatMessage.assistant(_mockCoffeeReply(text)));
-      _isSending = false;
-    });
-    _scrollToBottom();
-  }
+    if (_coffeeAwaitingMood && !_coffeeReadingGenerated) {
+      await _startCoffeeReadingGeneration(mood: text);
+      unawaited(_saveCoffeeSession());
+      return;
+    }
 
-  String _mockCoffeeReply(String text) {
-    final normalized = text.toLowerCase();
-    if (normalized.contains('aşk') ||
-        normalized.contains('ask') ||
-        normalized.contains('love')) {
-      return AppTexts.t('coffeeMockLoveReply');
+    try {
+      final response = await _functionsClient.continueArisConversation(
+        sessionId: _sessionId!,
+        message: text,
+        idempotencyKey: createIdempotencyKey(),
+        lang: _activeArisLanguage(),
+      );
+      final reply = (response['reply'] as String?)?.trim() ?? '';
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _ArisChatMessage.assistant(
+            reply.isEmpty ? AppTexts.t('coffeeChatReplyEmpty') : reply,
+          ),
+        );
+      });
+      _scrollToBottom();
+      unawaited(_saveCoffeeSession());
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      if (error.message == 'INSUFFICIENT_CREDITS') {
+        await _showInsufficientCreditsDialog();
+      } else {
+        _showSnack(AppTexts.t('coffeeChatMessageFailed'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(AppTexts.t('coffeeChatMessageFailed'));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
-    if (normalized.contains('iş') ||
-        normalized.contains('kariyer') ||
-        normalized.contains('career') ||
-        normalized.contains('para')) {
-      return AppTexts.t('coffeeMockCareerReply');
-    }
-    return AppTexts.t('coffeeMockGeneralReply');
   }
 
   Future<void> _showInsufficientCreditsDialog() async {
@@ -531,6 +786,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                       padding: const EdgeInsets.only(left: 4),
                       child: _MessageMeta(assistantName: _assistantName),
                     ),
+                  if (_isCoffeeChat && _coffeeReadingFailed) ...[
+                    const SizedBox(height: 10),
+                    _CoffeeReadingRetryButton(
+                      onRetry: () => _startCoffeeReadingGeneration(),
+                    ),
+                  ],
                   if (_isSending) ...[
                     const SizedBox(height: 12),
                     _ArisLoadingBubble(
@@ -544,6 +805,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
               _ChatTopBar(credits: credits, title: _chatTitle),
               _ComposerArea(
                 controller: _messageController,
+                focusNode: _messageFocusNode,
                 enabled: !_isLoadingOpening &&
                     _openingError == null &&
                     !_isSending &&
@@ -1447,9 +1709,35 @@ class _MessageMeta extends StatelessWidget {
   }
 }
 
+class _CoffeeReadingRetryButton extends StatelessWidget {
+  const _CoffeeReadingRetryButton({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, color: _kPrimary, size: 18),
+        label: Text(AppTexts.t('coffeeRetry')),
+        style: TextButton.styleFrom(
+          foregroundColor: _kPrimary,
+          textStyle: GoogleFonts.spaceGrotesk(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ComposerArea extends StatelessWidget {
   const _ComposerArea({
     required this.controller,
+    required this.focusNode,
     required this.enabled,
     required this.isSending,
     required this.costLabel,
@@ -1458,6 +1746,7 @@ class _ComposerArea extends StatelessWidget {
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final bool enabled;
   final bool isSending;
   final String costLabel;
@@ -1519,6 +1808,7 @@ class _ComposerArea extends StatelessWidget {
                       Expanded(
                         child: TextField(
                           controller: controller,
+                          focusNode: focusNode,
                           enabled: enabled,
                           minLines: 1,
                           maxLines: 4,
