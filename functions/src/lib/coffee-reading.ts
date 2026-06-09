@@ -21,7 +21,8 @@ export async function createReadingText(input: {
   modelName?: string;
 }): Promise<string> {
   try {
-    const modelName = input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const modelName =
+      input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash-lite';
     const model = getClient().getGenerativeModel({
       model: modelName,
       systemInstruction: input.systemPrompt,
