@@ -88,6 +88,11 @@ final class VisionPalmAnalyzer {
       "state": "noHand",
       "confidence": 0.0,
       "labels": labels,
+      "openPalmScore": 0.0,
+      "extendedFingerCount": 0,
+      "fingerSpreadRatio": 0.0,
+      "handDetected": false,
+      "validPalm": false,
       "debug": debugMap,
     ]
     if debugEnabled(debugMap) {
@@ -538,12 +543,18 @@ final class VisionPalmAnalyzer {
     validPalm: Bool
   ) -> [String: Any] {
     let compactDebug = debug.compactMapValues { $0 }
+    let openPalmScore = compactDebug["openPalmScore"] as? Double ?? roundMetric(confidence)
+    let extendedFingerCount = compactDebug["extendedFingerCount"] as? Int ?? 0
+    let fingerSpreadRatio = compactDebug["fingerSpreadRatio"] as? Double ?? 0.0
     let response: [String: Any] = [
       "source": "Vision",
       "state": state,
       "scanState": scanState,
       "confidence": roundMetric(confidence),
       "labels": labels,
+      "openPalmScore": openPalmScore,
+      "extendedFingerCount": extendedFingerCount,
+      "fingerSpreadRatio": fingerSpreadRatio,
       "handDetected": handDetected,
       "possibleHand": possibleHand,
       "validPalm": validPalm,

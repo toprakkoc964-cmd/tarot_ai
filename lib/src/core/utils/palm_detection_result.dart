@@ -1,9 +1,4 @@
-enum PalmDetectionState {
-  noHand,
-  partialHand,
-  possibleHand,
-  validHand,
-}
+enum PalmDetectionState { noHand, partialHand, possibleHand, validHand }
 
 enum PalmScanState {
   noHand,
@@ -26,20 +21,26 @@ class PalmDetectionResult {
     this.handDetected = false,
     this.possibleHand = false,
     this.validPalm = false,
+    this.openPalmScore = 0,
+    this.extendedFingerCount = 0,
+    this.fingerSpreadRatio = 0,
     this.source,
     this.debug,
   });
 
   const PalmDetectionResult.noHand()
-      : state = PalmDetectionState.noHand,
-        confidence = 0,
-        labels = const [],
-        scanState = PalmScanState.noHand,
-        handDetected = false,
-        possibleHand = false,
-        validPalm = false,
-        source = null,
-        debug = null;
+    : state = PalmDetectionState.noHand,
+      confidence = 0,
+      labels = const [],
+      scanState = PalmScanState.noHand,
+      handDetected = false,
+      possibleHand = false,
+      validPalm = false,
+      openPalmScore = 0,
+      extendedFingerCount = 0,
+      fingerSpreadRatio = 0,
+      source = null,
+      debug = null;
 
   final PalmDetectionState state;
   final double confidence;
@@ -48,6 +49,9 @@ class PalmDetectionResult {
   final bool handDetected;
   final bool possibleHand;
   final bool validPalm;
+  final double openPalmScore;
+  final int extendedFingerCount;
+  final double fingerSpreadRatio;
   final String? source;
   final Map<String, dynamic>? debug;
 
@@ -85,13 +89,36 @@ class PalmDetectionResult {
       handDetected: map['handDetected'] == true,
       possibleHand: map['possibleHand'] == true,
       validPalm: map['validPalm'] == true,
+      openPalmScore: _doubleFromMap(map, 'openPalmScore'),
+      extendedFingerCount: _intFromMap(map, 'extendedFingerCount'),
+      fingerSpreadRatio: _doubleFromMap(map, 'fingerSpreadRatio'),
       source: map['source']?.toString(),
       debug: rawDebug is Map
-          ? rawDebug.map(
-              (key, value) => MapEntry(key.toString(), value),
-            )
+          ? rawDebug.map((key, value) => MapEntry(key.toString(), value))
           : null,
     );
+  }
+
+  static double _doubleFromMap(Map<Object?, Object?> map, String key) {
+    final value = map[key];
+    if (value is num) return value.toDouble();
+    final debug = map['debug'];
+    if (debug is Map) {
+      final debugValue = debug[key];
+      if (debugValue is num) return debugValue.toDouble();
+    }
+    return 0;
+  }
+
+  static int _intFromMap(Map<Object?, Object?> map, String key) {
+    final value = map[key];
+    if (value is num) return value.toInt();
+    final debug = map['debug'];
+    if (debug is Map) {
+      final debugValue = debug[key];
+      if (debugValue is num) return debugValue.toInt();
+    }
+    return 0;
   }
 
   static PalmDetectionState _stateFromString(String? value) {

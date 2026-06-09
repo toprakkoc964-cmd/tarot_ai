@@ -315,6 +315,11 @@ class LocalizationService {
     'palmShowPalm': 'Turn your palm toward the camera.',
     'palmTapToScan': 'TAP TO SCAN',
     'palmReadyToScan': 'Center your palm and tap to scan.',
+    'palmLivenessInstruction': 'Open and close your fingers',
+    'palmLivenessConfirm': 'Confirm Movement',
+    'palmLivenessStart': 'Start Scan',
+    'palmLivenessReady': 'Palm ready',
+    'palmLivenessTimeout': 'We could not detect it, try again',
     'palmErrorNotPalm':
         'This does not look like an open palm. Show your inner palm clearly.',
     'palmErrorUnreadable':
@@ -617,8 +622,7 @@ class LocalizationService {
     'coffeeLoadingChatSubtitle': 'Listening to the symbols in the grounds.',
     'coffeeArisLookingAtCup': 'Madam Aris is looking into your cup...',
     'coffeeMadamArisGreeting': 'Hello {name}, how are you feeling today?',
-    'coffeeMadamArisGreetingNoName':
-        'Hello, how are you feeling today?',
+    'coffeeMadamArisGreetingNoName': 'Hello, how are you feeling today?',
     'coffeeReadingError':
         'Your cup is close, but the signs blurred for a moment. Try again and I will look once more.',
     'coffeeChatReplyEmpty':
@@ -945,6 +949,11 @@ class LocalizationService {
     'palmShowPalm': 'Avuç içini kameraya çevir.',
     'palmTapToScan': 'TARAMA İÇİN DOKUN',
     'palmReadyToScan': 'Avucunu ortaya hizala ve taramak için dokun.',
+    'palmLivenessInstruction': 'Parmaklarını aç-kapat',
+    'palmLivenessConfirm': 'Hareketi Onayla',
+    'palmLivenessStart': 'Taramayı Başlat',
+    'palmLivenessReady': 'Avuç hazır',
+    'palmLivenessTimeout': 'Algılayamadık, tekrar dene',
     'palmErrorNotPalm':
         'Bu görüntü avuç içi gibi görünmüyor. Avucunu açık ve net şekilde göster.',
     'palmErrorUnreadable':
