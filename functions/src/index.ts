@@ -31,7 +31,7 @@ import { checkAndBumpThrottle } from './lib/rate-limit';
 import { AIPersonaDoc, UserDoc } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
-import { getUserFcmTokens, sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
+import { sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
 import {
   arisSpreadSystemRules,
@@ -2456,49 +2456,6 @@ export const validateIosPurchase = onCall({ enforceAppCheck: false }, async (req
   }
 });
 
-export const generateShareAsset = onCall({ enforceAppCheck: false }, async (request) => {
-  try {
-    if (!request.auth?.uid) {
-      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
-    }
-
-    const uid = request.auth.uid;
-    const readingId = String(request.data?.readingId ?? '');
-    if (!readingId) {
-      throw new HttpsError('invalid-argument', 'INVALID_READING_ID');
-    }
-
-    const readingRef = db.collection('users').doc(uid).collection('readings').doc(readingId);
-    const readingSnap = await readingRef.get();
-    if (!readingSnap.exists) {
-      throw new HttpsError('not-found', 'READING_NOT_FOUND');
-    }
-
-    const reading = readingSnap.data() as { aiResponse?: string };
-    const shareDeepLink = buildShareDeepLink(readingId);
-    const imageBuffer = renderShareImage({
-      title: 'Share My Destiny',
-      excerpt: (reading.aiResponse ?? '').slice(0, 220),
-      footer: 'tarotai.app'
-    });
-
-    const path = `share/${uid}/${readingId}.png`;
-    const file = storage.bucket().file(path);
-    await file.save(imageBuffer, { contentType: 'image/png', public: true });
-    const shareImageUrl = `https://storage.googleapis.com/${storage.bucket().name}/${path}`;
-
-    await readingRef.update({
-      shareImageUrl,
-      shareDeepLink,
-      updatedAt: FieldValue.serverTimestamp()
-    });
-
-    return { shareImageUrl, shareDeepLink };
-  } catch (err) {
-    throw mapError(err);
-  }
-});
-
 export const saveOnboardingProfile = onCall({ enforceAppCheck: false }, async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -2706,55 +2663,6 @@ export const sendDailyCardNudges = onSchedule(
     }
   }
 );
-
-export const sendTestDailyNudge = onCall({ enforceAppCheck: false }, async (request) => {
-  try {
-    if (!request.auth?.uid) {
-      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
-    }
-
-    const uid = request.auth.uid;
-    const userSnap = await db.collection('users').doc(uid).get();
-    if (!userSnap.exists) {
-      throw new HttpsError('not-found', 'USER_NOT_FOUND');
-    }
-
-    const user = userSnap.data() as UserDoc;
-    const birthDate = resolveUserBirthDate(user);
-    if (!birthDate) {
-      throw new HttpsError('failed-precondition', 'BIRTH_DATE_REQUIRED');
-    }
-
-    const tokenCount = (await getUserFcmTokens(uid)).length;
-    if (tokenCount === 0) {
-      throw new HttpsError('failed-precondition', 'FCM_TOKEN_MISSING');
-    }
-
-    const zodiac = zodiacFromBirthDate(birthDate);
-    const sendResult = await sendDailyNudge({
-      uid,
-      lang: resolveLanguage(user.settings?.lang),
-      zodiac,
-      deepLink: process.env.DAILY_NUDGE_DEEP_LINK ?? 'https://tarotai.app/daily'
-    });
-
-    logger.info('sendTestDailyNudge result', {
-      uid,
-      zodiac,
-      sendResult
-    });
-
-    return {
-      ok: true,
-      tokenCount,
-      sendResult,
-      zodiac,
-      sentAt: new Date().toISOString()
-    };
-  } catch (err) {
-    throw mapError(err);
-  }
-});
 
 export const cleanupUnverifiedAccounts = onSchedule(
   {

@@ -151,12 +151,6 @@ class TarotFunctionsClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
-  Future<Map<String, dynamic>> generateShareAsset(String readingId) async {
-    final callable = _functions.httpsCallable('generateShareAsset');
-    final response = await callable.call({'readingId': readingId});
-    return Map<String, dynamic>.from(response.data as Map);
-  }
-
   Future<Map<String, dynamic>> restoreIosPurchases(
     List<RestorePurchaseItem> purchases,
   ) async {
@@ -167,9 +161,4 @@ class TarotFunctionsClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
-  Future<Map<String, dynamic>> sendTestDailyNudge() async {
-    final callable = _functions.httpsCallable('sendTestDailyNudge');
-    final response = await callable.call();
-    return Map<String, dynamic>.from(response.data as Map);
-  }
 }
