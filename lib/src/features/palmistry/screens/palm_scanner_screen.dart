@@ -12,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/app_texts.dart';
 import '../../../core/di/service_locator.dart';
+import '../../../core/function_error_codes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_compression_helper.dart';
 import '../../../core/utils/palm_detection_result.dart';
@@ -210,6 +211,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
           return AppTexts.t('palmErrorAuth');
         case 'GEMINI_API_KEY_MISSING':
           return AppTexts.t('palmErrorServerConfig');
+        case FunctionErrorCodes.rateLimited:
+          return AppTexts.t('readingRateLimited');
         default:
           return AppTexts.t('palmScanErrorDescription');
       }

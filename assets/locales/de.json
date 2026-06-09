@@ -212,6 +212,7 @@
     "home.cta.drawing": "WIRD GEZOGEN...",
     "home.cta.draw_locked": "MORGEN WIEDERKOMMEN",
     "home.cta.insufficient_credits_message": "Du hast nicht genug Jetons.",
+    "readingRateLimited": "Du hast zu viele Versuche gemacht. Bitte versuche es in Kuerze erneut.",
     "home.card.star.title": "Sternkarte",
     "home.card.star.name": "The Star",
     "home.card.star.subtitle": "Hoffnung & Inspiration",

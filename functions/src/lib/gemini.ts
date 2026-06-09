@@ -2,6 +2,7 @@ import {
   GenerativeModel,
   GoogleGenerativeAI
 } from '@google/generative-ai';
+import { logger } from 'firebase-functions';
 
 let client: GoogleGenerativeAI | null = null;
 
@@ -24,7 +25,12 @@ export async function createReadingText(input: {
   modelName?: string;
 }): Promise<string> {
   try {
-    const modelName = input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const modelName =
+      input.modelName ??
+      process.env.GEMINI_TEXT_MODEL ??
+      process.env.GEMINI_MODEL ??
+      'gemini-2.5-flash-lite';
+    logger.info('gemini_model_resolved', { fn: 'text', modelName });
     const model = getClient().getGenerativeModel({
       model: modelName,
       systemInstruction: input.systemPrompt,
@@ -46,12 +52,17 @@ export function getGenerativeModelForVision(input: {
   modelName?: string;
   maxOutputTokens?: number;
 }): GenerativeModel {
-  const modelName = input.modelName ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const modelName =
+    input.modelName ??
+    process.env.GEMINI_VISION_MODEL ??
+    process.env.GEMINI_MODEL ??
+    'gemini-2.5-flash-lite';
+  logger.info('gemini_model_resolved', { fn: 'vision', modelName });
   return getClient().getGenerativeModel({
     model: modelName,
     generationConfig: {
       temperature: 0.35,
-      maxOutputTokens: input.maxOutputTokens ?? 720
+      maxOutputTokens: input.maxOutputTokens ?? 600
     }
   });
 }

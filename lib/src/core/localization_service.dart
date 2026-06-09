@@ -244,6 +244,8 @@ class LocalizationService {
     'home.cta.insufficient_credits': 'NEED 5 TOKENS',
     'home.cta.insufficient_credits_message':
         'You need at least 5 tokens to draw a card.',
+    'readingRateLimited':
+        'You have made too many attempts. Please try again shortly.',
     'home.card.star.title': 'Star Card',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Hope & Inspiration',
@@ -874,6 +876,8 @@ class LocalizationService {
     'home.cta.insufficient_credits': '5 JETON GEREKLI',
     'home.cta.insufficient_credits_message':
         'Kart cekmek icin en az 5 jeton gerekli.',
+    'readingRateLimited':
+        'Cok fazla deneme yaptiniz, lutfen birazdan tekrar deneyin.',
     'home.card.star.title': 'Yildiz Karti',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Umut & Ilham',

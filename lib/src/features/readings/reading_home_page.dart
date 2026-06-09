@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/app_texts.dart';
+import '../../core/function_error_codes.dart';
 import '../../core/idempotency_key.dart';
 import '../../core/language_picker_button.dart';
 import '../../core/localization_service.dart';
@@ -83,6 +85,12 @@ class _ReadingHomePageState extends State<ReadingHomePage> {
         ),
       );
       setState(() => _lastResult = result);
+    } on FirebaseFunctionsException catch (e) {
+      if (e.message == FunctionErrorCodes.rateLimited) {
+        _showError(AppTexts.t('readingRateLimited'));
+      } else {
+        _showError(e.toString());
+      }
     } catch (e) {
       _showError(e.toString());
     } finally {

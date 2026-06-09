@@ -31,6 +31,9 @@ export function mapError(err: unknown): HttpsError {
     if (err.message === 'COFFEE_RATE_LIMITED') {
       return new HttpsError('resource-exhausted', 'COFFEE_RATE_LIMITED');
     }
+    if (err.message === 'RATE_LIMITED') {
+      return new HttpsError('resource-exhausted', 'RATE_LIMITED');
+    }
   }
 
   return new HttpsError('internal', 'AI_TEMPORARY_FAILURE');

@@ -1,4 +1,5 @@
 import { getGenerativeModelForVision } from './gemini';
+import { logger } from 'firebase-functions';
 
 export type PalmReadingPayload = {
   mindLine: string;
@@ -70,9 +71,15 @@ export async function analyzePalmWithGemini(input: {
   lang: string;
   preValidated?: boolean;
 }): Promise<PalmVisionAnalysis> {
+  const modelName =
+    process.env.GEMINI_PALM_MODEL ??
+    process.env.GEMINI_VISION_MODEL ??
+    process.env.GEMINI_MODEL ??
+    'gemini-2.5-flash-lite';
+  logger.info('gemini_model_resolved', { fn: 'palm', modelName });
   const model = getGenerativeModelForVision({
-    modelName: process.env.GEMINI_PALM_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-    maxOutputTokens: 720
+    modelName,
+    maxOutputTokens: 600
   });
 
   const lang = input.lang.trim().toLowerCase();

@@ -27,6 +27,7 @@ import { renderShareImage } from './lib/share-image';
 import { buildShareDeepLink } from './lib/deep-link';
 import { validateAppleReceipt } from './lib/purchase';
 import { requireIdempotencyKey } from './lib/idempotency';
+import { checkAndBumpThrottle } from './lib/rate-limit';
 import { AIPersonaDoc, UserDoc } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
@@ -59,6 +60,9 @@ const coffeeOrphanGraceMs = 24 * 60 * 60 * 1000;
 const coffeeMaxImageBytes = 5 * 1024 * 1024;
 const coffeeTenMinuteAttemptLimit = 3;
 const coffeeDailyAttemptLimit = 10;
+const readingThrottleWindowMs = 10 * 60 * 1000;
+const readingWindowLimit = Number(process.env.READING_WINDOW_LIMIT ?? '5');
+const readingDailyLimit = Number(process.env.READING_DAILY_LIMIT ?? '30');
 const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
 const appleAuthSecretNames = [
   'APPLE_TEAM_ID',
@@ -1179,10 +1183,30 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
         throw new HttpsError('not-found', 'USER_NOT_FOUND');
       }
 
-      const user = userSnap.data() as UserDoc;
+      const user = userSnap.data() as UserDoc & {
+        readingThrottle?: {
+          windowStartedAtMs?: number;
+          windowCount?: number;
+          dayKey?: string;
+          dayCount?: number;
+        };
+      };
       const profile = user.profile;
       if (!user.isProfileComplete || !profile?.name || !profile.birthDate) {
         throw new Error('PROFILE_INCOMPLETE');
+      }
+
+      const nowMs = Date.now();
+      const throttle = checkAndBumpThrottle({
+        throttle: user.readingThrottle,
+        nowMs,
+        windowMs: readingThrottleWindowMs,
+        windowLimit: readingWindowLimit,
+        dailyLimit: readingDailyLimit,
+        dayKey: coffeeDayKey(nowMs),
+      });
+      if (!throttle.allowed) {
+        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
       }
 
       if (user.wallet.credits <= 0) {
@@ -1192,6 +1216,7 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
       previousCredits = user.wallet.credits;
       tx.update(userRef, {
         'wallet.credits': previousCredits - 1,
+        readingThrottle: throttle.next,
         updatedAt: FieldValue.serverTimestamp()
       });
 
@@ -1225,7 +1250,7 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
       const aiResponse = await createReadingText({
         systemPrompt,
         userPrompt: `Chosen cards: ${cards.join(', ')}. Provide a tarot reading in ${lang}.`,
-        maxOutputTokens: 700
+        maxOutputTokens: 500
       });
 
       const shareDeepLink = buildShareDeepLink(readingRef.id);
@@ -1445,12 +1470,16 @@ async function reserveCoffeeCredits(input: {
       );
     }
 
-    const windowStartedAtMs = Number(analysis.windowStartedAtMs ?? 0);
-    const isCurrentWindow = nowMs - windowStartedAtMs < 10 * 60 * 1000;
-    const windowCount = isCurrentWindow ? Number(analysis.windowCount ?? 0) : 0;
     const dayKey = coffeeDayKey(nowMs);
-    const dayCount = analysis.dayKey === dayKey ? Number(analysis.dayCount ?? 0) : 0;
-    if (windowCount >= coffeeTenMinuteAttemptLimit || dayCount >= coffeeDailyAttemptLimit) {
+    const throttle = checkAndBumpThrottle({
+      throttle: analysis,
+      nowMs,
+      windowMs: coffeeReservationTtlMs,
+      windowLimit: coffeeTenMinuteAttemptLimit,
+      dailyLimit: coffeeDailyAttemptLimit,
+      dayKey,
+    });
+    if (!throttle.allowed) {
       throw new Error('COFFEE_RATE_LIMITED');
     }
 
@@ -1466,10 +1495,10 @@ async function reserveCoffeeCredits(input: {
         activeReservationId: input.idemKey,
         activeReservationExpiresAtMs: expiresAtMs,
         activeReservationAmount: coffeeReadingCost,
-        windowStartedAtMs: isCurrentWindow ? windowStartedAtMs : nowMs,
-        windowCount: windowCount + 1,
-        dayKey,
-        dayCount: dayCount + 1,
+        windowStartedAtMs: throttle.next.windowStartedAtMs,
+        windowCount: throttle.next.windowCount,
+        dayKey: throttle.next.dayKey,
+        dayCount: throttle.next.dayCount,
       },
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -2924,6 +2953,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
     }
 
+    const uid = request.auth.uid;
     requireAppCheckIfEnabled(request);
     const imageBase64 = sanitizeBase64Image(request.data?.imageBase64, 6_000_000);
     if (!imageBase64 || imageBase64.length < 100) {
@@ -2946,6 +2976,38 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
     const lang = resolveLanguage(request.data?.lang);
     const mimeType = sanitizeShortText(request.data?.mimeType, 32) || 'image/jpeg';
     const preValidated = request.data?.preValidated === true;
+    const userRef = db.collection('users').doc(uid);
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+      const user = userSnap.data() as UserDoc & {
+        palmThrottle?: {
+          windowStartedAtMs?: number;
+          windowCount?: number;
+          dayKey?: string;
+          dayCount?: number;
+        };
+      };
+      const nowMs = Date.now();
+      const throttle = checkAndBumpThrottle({
+        throttle: user.palmThrottle,
+        nowMs,
+        windowMs: readingThrottleWindowMs,
+        windowLimit: readingWindowLimit,
+        dailyLimit: readingDailyLimit,
+        dayKey: coffeeDayKey(nowMs),
+      });
+      if (!throttle.allowed) {
+        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
+      }
+      tx.update(userRef, {
+        palmThrottle: throttle.next,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
     const analysis = await analyzePalmWithGemini({
       imageBase64,
       mimeType,

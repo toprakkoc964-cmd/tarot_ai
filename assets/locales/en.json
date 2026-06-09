@@ -218,6 +218,7 @@
     "home.cta.draw_with_credits": "DRAW WITH 5 TOKENS",
     "home.cta.insufficient_credits": "NEED 5 TOKENS",
     "home.cta.insufficient_credits_message": "You need at least 5 tokens to draw a card.",
+    "readingRateLimited": "You have made too many attempts. Please try again shortly.",
     "home.card.star.title": "Star Card",
     "home.card.star.name": "The Star",
     "home.card.star.subtitle": "Hope & Inspiration",

@@ -218,6 +218,7 @@
     "home.cta.draw_with_credits": "5 JETONLA CEK",
     "home.cta.insufficient_credits": "5 JETON GEREKLI",
     "home.cta.insufficient_credits_message": "Kart cekmek icin en az 5 jeton gerekli.",
+    "readingRateLimited": "Cok fazla deneme yaptiniz, lutfen birazdan tekrar deneyin.",
     "home.card.star.title": "Yildiz Karti",
     "home.card.star.name": "The Star",
     "home.card.star.subtitle": "Umut & Ilham",
