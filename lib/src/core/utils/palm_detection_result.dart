@@ -24,6 +24,8 @@ class PalmDetectionResult {
     this.openPalmScore = 0,
     this.extendedFingerCount = 0,
     this.fingerSpreadRatio = 0,
+    this.reliablePointCount = 0,
+    this.rotationAngle,
     this.source,
     this.debug,
   });
@@ -39,6 +41,8 @@ class PalmDetectionResult {
       openPalmScore = 0,
       extendedFingerCount = 0,
       fingerSpreadRatio = 0,
+      reliablePointCount = 0,
+      rotationAngle = null,
       source = null,
       debug = null;
 
@@ -52,6 +56,8 @@ class PalmDetectionResult {
   final double openPalmScore;
   final int extendedFingerCount;
   final double fingerSpreadRatio;
+  final int reliablePointCount;
+  final double? rotationAngle;
   final String? source;
   final Map<String, dynamic>? debug;
 
@@ -92,6 +98,10 @@ class PalmDetectionResult {
       openPalmScore: _doubleFromMap(map, 'openPalmScore'),
       extendedFingerCount: _intFromMap(map, 'extendedFingerCount'),
       fingerSpreadRatio: _doubleFromMap(map, 'fingerSpreadRatio'),
+      reliablePointCount: _intFromMap(map, 'reliablePointCount'),
+      rotationAngle:
+          _nullableDoubleFromMap(map, 'rotationAngle') ??
+          _nullableDoubleFromMap(map, 'rotationAngleFromVertical'),
       source: map['source']?.toString(),
       debug: rawDebug is Map
           ? rawDebug.map((key, value) => MapEntry(key.toString(), value))
@@ -119,6 +129,17 @@ class PalmDetectionResult {
       if (debugValue is num) return debugValue.toInt();
     }
     return 0;
+  }
+
+  static double? _nullableDoubleFromMap(Map<Object?, Object?> map, String key) {
+    final value = map[key];
+    if (value is num) return value.toDouble();
+    final debug = map['debug'];
+    if (debug is Map) {
+      final debugValue = debug[key];
+      if (debugValue is num) return debugValue.toDouble();
+    }
+    return null;
   }
 
   static PalmDetectionState _stateFromString(String? value) {

@@ -1918,6 +1918,13 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (req
     const uid = request.auth.uid;
     const userRef = db.collection('users').doc(uid);
     let remainingCredits = 0;
+    const requestedCost = Number(request.data?.cost ?? homeCardDrawCost);
+    const drawCost = Number.isFinite(requestedCost) &&
+      requestedCost >= homeCardDrawCost &&
+      requestedCost <= homeCardDrawCost * 7 &&
+      requestedCost % homeCardDrawCost === 0
+      ? requestedCost
+      : homeCardDrawCost;
 
     await db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
@@ -1927,11 +1934,11 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (req
 
       const user = userSnap.data() as UserDoc;
       const currentCredits = Number(user.wallet.credits ?? 0);
-      if (currentCredits < homeCardDrawCost) {
+      if (currentCredits < drawCost) {
         throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
       }
 
-      remainingCredits = currentCredits - homeCardDrawCost;
+      remainingCredits = currentCredits - drawCost;
       tx.update(userRef, {
         'wallet.credits': remainingCredits,
         updatedAt: FieldValue.serverTimestamp()
@@ -1939,7 +1946,7 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (req
 
       tx.set(userRef.collection('credit_ledger').doc(), {
         type: 'debit',
-        amount: -homeCardDrawCost,
+        amount: -drawCost,
         reason: 'home_card_draw',
         createdAt: FieldValue.serverTimestamp()
       });
@@ -1947,7 +1954,7 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (req
 
     return {
       ok: true,
-      drawCost: homeCardDrawCost,
+      drawCost,
       remainingCredits
     };
   } catch (err) {

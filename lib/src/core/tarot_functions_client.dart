@@ -7,7 +7,7 @@ import '../features/readings/reading_models.dart';
 
 class TarotFunctionsClient {
   TarotFunctionsClient({FirebaseFunctions? functions})
-      : _functions = functions ?? FirebaseFunctions.instance;
+    : _functions = functions ?? FirebaseFunctions.instance;
 
   final FirebaseFunctions _functions;
 
@@ -42,9 +42,9 @@ class TarotFunctionsClient {
     return comment;
   }
 
-  Future<Map<String, dynamic>> consumeHomeCardDraw() async {
+  Future<Map<String, dynamic>> consumeHomeCardDraw({int? cost}) async {
     final callable = _functions.httpsCallable('consumeHomeCardDraw');
-    final response = await callable.call();
+    final response = await callable.call({if (cost != null) 'cost': cost});
     return Map<String, dynamic>.from(response.data as Map);
   }
 
@@ -54,6 +54,8 @@ class TarotFunctionsClient {
     required String day,
     String? lang,
     List<String>? cardNames,
+    List<String>? spreadPositions,
+    String? spreadName,
     String? sessionId,
   }) async {
     final callable = _functions.httpsCallable('generateArisOpeningReading');
@@ -64,6 +66,10 @@ class TarotFunctionsClient {
       'day': day,
       if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
       if (cardNames != null && cardNames.isNotEmpty) 'cardNames': cardNames,
+      if (spreadPositions != null && spreadPositions.isNotEmpty)
+        'spreadPositions': spreadPositions,
+      if (spreadName != null && spreadName.trim().isNotEmpty)
+        'spreadName': spreadName.trim(),
       if (sessionId != null && sessionId.trim().isNotEmpty)
         'sessionId': sessionId.trim(),
     });
@@ -128,9 +134,7 @@ class TarotFunctionsClient {
     );
   }
 
-  Future<void> deleteCoffeeReadingPhotos({
-    required String readingId,
-  }) async {
+  Future<void> deleteCoffeeReadingPhotos({required String readingId}) async {
     final callable = _functions.httpsCallable('deleteCoffeeReadingPhotos');
     await callable.call({'readingId': readingId});
   }
@@ -160,5 +164,4 @@ class TarotFunctionsClient {
     });
     return Map<String, dynamic>.from(response.data as Map);
   }
-
 }

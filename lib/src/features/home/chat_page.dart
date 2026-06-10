@@ -39,6 +39,8 @@ class KozmikBilgePage extends StatefulWidget {
     this.cardTitle = '',
     this.cardImageUrl = '',
     this.spreadCards = const [],
+    this.spreadPositions = const [],
+    this.spreadName,
     this.spreadSessionId,
     this.resumeSessionId,
     this.chatContext,
@@ -48,6 +50,8 @@ class KozmikBilgePage extends StatefulWidget {
   final String cardTitle;
   final String cardImageUrl;
   final List<DrawnTarotCard> spreadCards;
+  final List<String> spreadPositions;
+  final String? spreadName;
   final String? spreadSessionId;
   final String? resumeSessionId;
   final AiChatContext? chatContext;
@@ -111,12 +115,6 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       .map((card) => card.card.displayName.trim())
       .where((name) => name.isNotEmpty)
       .toList(growable: false);
-
-  String? get _spreadCardNameJoined {
-    final names = _spreadCardNames;
-    if (names.isEmpty) return null;
-    return names.join(', ');
-  }
 
   String get _chatTitle =>
       widget.chatContext?.title ??
@@ -222,8 +220,9 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     final appLang = AppLocale.current.trim().toLowerCase();
     if (supported.contains(appLang)) return appLang;
 
-    final deviceLang =
-        PlatformDispatcher.instance.locale.languageCode.trim().toLowerCase();
+    final deviceLang = PlatformDispatcher.instance.locale.languageCode
+        .trim()
+        .toLowerCase();
     if (supported.contains(deviceLang)) return deviceLang;
     return 'en';
   }
@@ -309,11 +308,22 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       }
 
       final spreadNames = _isSpreadChat ? _spreadCardNames : null;
+      final positionedSpreadNames =
+          spreadNames == null ||
+              widget.spreadPositions.length != spreadNames.length
+          ? spreadNames
+          : List<String>.generate(
+              spreadNames.length,
+              (index) =>
+                  '${widget.spreadPositions[index]}: ${spreadNames[index]}',
+              growable: false,
+            );
       final singleName = widget.cardTitle.trim();
-      final cardNames = spreadNames ??
+      final cardNames =
+          positionedSpreadNames ??
           (singleName.isNotEmpty ? [singleName] : null);
       final cardNameForApi = spreadNames != null
-          ? _spreadCardNameJoined
+          ? cardNames?.join(', ')
           : (singleName.isNotEmpty ? singleName : null);
 
       final response = await _functionsClient.generateArisOpeningReading(
@@ -322,6 +332,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
             ? (widget.spreadCards.first.imageUrl)
             : widget.cardImageUrl,
         cardNames: cardNames,
+        spreadPositions: _isSpreadChat ? widget.spreadPositions : null,
+        spreadName: _isSpreadChat ? widget.spreadName : null,
         sessionId: _openingSessionId(),
         day: _todayKey(),
         lang: _activeArisLanguage(),
@@ -363,13 +375,13 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     try {
       final sessionId =
           (_coffeeMetadata['sessionId'] as String?)?.trim().isNotEmpty == true
-              ? (_coffeeMetadata['sessionId'] as String).trim()
-              : newArisSessionId(prefix: 'coffee');
+          ? (_coffeeMetadata['sessionId'] as String).trim()
+          : newArisSessionId(prefix: 'coffee');
       final idempotencyKey =
           (_coffeeMetadata['idempotencyKey'] as String?)?.trim().isNotEmpty ==
-                  true
-              ? (_coffeeMetadata['idempotencyKey'] as String).trim()
-              : createIdempotencyKey();
+              true
+          ? (_coffeeMetadata['idempotencyKey'] as String).trim()
+          : createIdempotencyKey();
       final name = await _loadUserDisplayName();
       final greeting = _coffeeGreetingFor(name);
 
@@ -403,10 +415,11 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
           .doc(widget.uid)
           .get();
       final data = doc.data() ?? const <String, dynamic>{};
-      final name = ((data[UserProfileContract.displayName] as String?) ??
-              (data[UserProfileContract.name] as String?) ??
-              '')
-          .trim();
+      final name =
+          ((data[UserProfileContract.displayName] as String?) ??
+                  (data[UserProfileContract.name] as String?) ??
+                  '')
+              .trim();
       return name;
     } catch (_) {
       return '';
@@ -498,7 +511,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       unawaited(_saveCoffeeSession(readingId: result.readingId));
     } on CoffeeReadingValidationException catch (error) {
       if (!mounted) return;
-      final message = error.response.validation.userMessage ??
+      final message =
+          error.response.validation.userMessage ??
           AppTexts.t('coffeeValidationParseError');
       setState(() {
         _openingError = null;
@@ -534,10 +548,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         .toList(growable: false);
     final recentMessages = recentSource
         .skip(math.max(0, recentSource.length - 48))
-        .map((message) => {
-              'role': message.isUser ? 'user' : 'assistant',
-              'text': message.text.trim(),
-            })
+        .map(
+          (message) => {
+            'role': message.isUser ? 'user' : 'assistant',
+            'text': message.text.trim(),
+          },
+        )
         .toList(growable: false);
 
     try {
@@ -547,20 +563,20 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
           .collection('aris_sessions')
           .doc(sessionId)
           .set({
-        'cardName': AppTexts.t('coffeeMadamArisTitle'),
-        'cardNames': const <String>[],
-        'openingMessage': opening,
-        'recentMessages': recentMessages,
-        'mode': 'coffeeReading',
-        'persona': 'madamAris',
-        'lang': _activeArisLanguage(),
-        'day': _todayKey(),
-        if (readingId != null && readingId.trim().isNotEmpty)
-          'coffeeReadingId': readingId.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+            'cardName': AppTexts.t('coffeeMadamArisTitle'),
+            'cardNames': const <String>[],
+            'openingMessage': opening,
+            'recentMessages': recentMessages,
+            'mode': 'coffeeReading',
+            'persona': 'madamAris',
+            'lang': _activeArisLanguage(),
+            'day': _todayKey(),
+            if (readingId != null && readingId.trim().isNotEmpty)
+              'coffeeReadingId': readingId.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
     } catch (error) {
       if (mounted) {
         debugPrint('coffee aris session save failed: $error');
@@ -806,7 +822,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
               _ComposerArea(
                 controller: _messageController,
                 focusNode: _messageFocusNode,
-                enabled: !_isLoadingOpening &&
+                enabled:
+                    !_isLoadingOpening &&
                     _openingError == null &&
                     !_isSending &&
                     _sessionId != null,
@@ -828,10 +845,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
 }
 
 class _ChatTopBar extends StatelessWidget {
-  const _ChatTopBar({
-    required this.credits,
-    required this.title,
-  });
+  const _ChatTopBar({required this.credits, required this.title});
 
   final int credits;
   final String title;
@@ -911,10 +925,7 @@ class _ChatTopBar extends StatelessWidget {
 }
 
 class _HeroTarotCard extends StatelessWidget {
-  const _HeroTarotCard({
-    required this.cardTitle,
-    required this.cardImageUrl,
-  });
+  const _HeroTarotCard({required this.cardTitle, required this.cardImageUrl});
 
   final String cardTitle;
   final String cardImageUrl;
@@ -1066,8 +1077,9 @@ class _TarotSpreadHeroState extends State<_TarotSpreadHero> {
                   child: imageUrl.isNotEmpty
                       ? TarotCardView(
                           imageUrl: imageUrl,
-                          borderRadius:
-                              const BorderRadius.all(Radius.circular(14)),
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(14),
+                          ),
                         )
                       : _SpreadCardPlaceholder(title: card.card.displayName),
                 );
@@ -1116,10 +1128,7 @@ class _SpreadCardPlaceholder extends StatelessWidget {
 }
 
 class _MadamArisHero extends StatelessWidget {
-  const _MadamArisHero({
-    required this.imageFiles,
-    required this.subtitle,
-  });
+  const _MadamArisHero({required this.imageFiles, required this.subtitle});
 
   final List<File> imageFiles;
   final String subtitle;
@@ -1180,9 +1189,11 @@ class _MadamArisHero extends StatelessWidget {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  for (var index = 0;
-                      index < math.min(3, imageFiles.length);
-                      index++) ...[
+                  for (
+                    var index = 0;
+                    index < math.min(3, imageFiles.length);
+                    index++
+                  ) ...[
                     Expanded(
                       child: _CoffeeThumb(
                         file: imageFiles[index],
@@ -1203,10 +1214,7 @@ class _MadamArisHero extends StatelessWidget {
 }
 
 class _CoffeeThumb extends StatelessWidget {
-  const _CoffeeThumb({
-    required this.file,
-    required this.index,
-  });
+  const _CoffeeThumb({required this.file, required this.index});
 
   final File file;
   final int index;
@@ -1402,11 +1410,23 @@ class _MadamArisAvatarPainter extends CustomPainter {
 
     final starPaint = Paint()..color = _kTertiary;
     _drawDiamond(
-        canvas, Offset(size.width * 0.27, size.height * 0.30), 3.4, starPaint);
+      canvas,
+      Offset(size.width * 0.27, size.height * 0.30),
+      3.4,
+      starPaint,
+    );
     _drawDiamond(
-        canvas, Offset(size.width * 0.72, size.height * 0.26), 2.8, starPaint);
+      canvas,
+      Offset(size.width * 0.72, size.height * 0.26),
+      2.8,
+      starPaint,
+    );
     _drawDiamond(
-        canvas, Offset(size.width * 0.64, size.height * 0.64), 2.4, starPaint);
+      canvas,
+      Offset(size.width * 0.64, size.height * 0.64),
+      2.4,
+      starPaint,
+    );
 
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -1444,11 +1464,7 @@ class _CoffeeDisclaimerBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            color: _kTertiary,
-            size: 18,
-          ),
+          const Icon(Icons.info_outline_rounded, color: _kTertiary, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -1467,14 +1483,11 @@ class _CoffeeDisclaimerBanner extends StatelessWidget {
 }
 
 class _ArisChatMessage {
-  const _ArisChatMessage({
-    required this.isUser,
-    required this.text,
-  });
+  const _ArisChatMessage({required this.isUser, required this.text});
 
   const _ArisChatMessage.user(String text) : this(isUser: true, text: text);
   const _ArisChatMessage.assistant(String text)
-      : this(isUser: false, text: text);
+    : this(isUser: false, text: text);
 
   final bool isUser;
   final String text;
@@ -1512,9 +1525,7 @@ class _ArisMessageBubble extends StatelessWidget {
                   bottomLeft: const Radius.circular(24),
                   bottomRight: const Radius.circular(24),
                 ),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
               child: Text(
                 message.text,
@@ -1577,10 +1588,9 @@ class _ArisLoadingBubble extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      AppTexts.t('arisTyping').replaceFirst(
-                        '{name}',
-                        assistantName,
-                      ),
+                      AppTexts.t(
+                        'arisTyping',
+                      ).replaceFirst('{name}', assistantName),
                       style: GoogleFonts.manrope(
                         fontWeight: FontWeight.w700,
                         color: _kOnSurface,
@@ -1656,10 +1666,7 @@ class _TypingDotsState extends State<_TypingDots>
 }
 
 class _ArisErrorBubble extends StatelessWidget {
-  const _ArisErrorBubble({
-    required this.message,
-    required this.onRetry,
-  });
+  const _ArisErrorBubble({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
@@ -1676,15 +1683,9 @@ class _ArisErrorBubble extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            message,
-            style: GoogleFonts.manrope(color: _kOnSurface),
-          ),
+          Text(message, style: GoogleFonts.manrope(color: _kOnSurface)),
           const SizedBox(height: 12),
-          TextButton(
-            onPressed: onRetry,
-            child: const Text('Tekrar dene'),
-          ),
+          TextButton(onPressed: onRetry, child: const Text('Tekrar dene')),
         ],
       ),
     );

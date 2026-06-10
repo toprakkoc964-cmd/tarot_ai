@@ -40,6 +40,51 @@ const _kGlassBg = HomePalette.glassBg;
 const _kGlassBorder = HomePalette.glassBorder;
 const _kPaidDrawCost = 5;
 
+enum _SpreadType {
+  single(1, 'single'),
+  three(3, 'three'),
+  five(5, 'five'),
+  seven(7, 'seven');
+
+  const _SpreadType(this.cardCount, this.key);
+
+  final int cardCount;
+  final String key;
+
+  int get cost => this == _SpreadType.single ? 0 : cardCount * _kPaidDrawCost;
+
+  String get shortLabel => AppTexts.t('tarot.spread.$key');
+
+  String get name => AppTexts.t('tarot.spread.name.$key');
+
+  List<String> get positions {
+    return switch (this) {
+      _SpreadType.single => [AppTexts.t('tarot.spread.position.message')],
+      _SpreadType.three => [
+        AppTexts.t('tarot.spread.position.past'),
+        AppTexts.t('tarot.spread.position.now'),
+        AppTexts.t('tarot.spread.position.future'),
+      ],
+      _SpreadType.five => [
+        AppTexts.t('tarot.spread.position.situation'),
+        AppTexts.t('tarot.spread.position.obstacle'),
+        AppTexts.t('tarot.spread.position.advice'),
+        AppTexts.t('tarot.spread.position.pastInfluence'),
+        AppTexts.t('tarot.spread.position.possibleOutcome'),
+      ],
+      _SpreadType.seven => [
+        AppTexts.t('tarot.spread.position.you'),
+        AppTexts.t('tarot.spread.position.obstacle'),
+        AppTexts.t('tarot.spread.position.conscious'),
+        AppTexts.t('tarot.spread.position.subconscious'),
+        AppTexts.t('tarot.spread.position.past'),
+        AppTexts.t('tarot.spread.position.nearFuture'),
+        AppTexts.t('tarot.spread.position.result'),
+      ],
+    };
+  }
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.authService, required this.uid});
 
@@ -373,7 +418,7 @@ class _TopBar extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.payments_rounded,
-                          color: _kPrimary,
+                          color: _kTertiary,
                           size: 14,
                         ),
                         const SizedBox(width: 6),
@@ -468,7 +513,6 @@ class _HeroSectionState extends State<_HeroSection>
   static const _initialLoopPage = _loopItemCount ~/ 2;
   static const _deckCardWidth = 224.0;
   static const _deckCardHeight = 348.0;
-  static const _maxSpreadCards = 7;
   static final List<String> _cardNames = TarotService.deck
       .map((card) => card.name)
       .toList(growable: false);
@@ -500,31 +544,30 @@ class _HeroSectionState extends State<_HeroSection>
   DrawnTarotCard? _revealedPreviewCard;
   final List<DrawnTarotCard> _selectedCards = [];
   final Set<int> _pickedCardIndices = {};
-  bool _awaitingSpreadAction = false;
+  bool _isChoosingSpread = false;
+  bool _isOpeningSpreadChat = false;
+  _SpreadType? _selectedSpreadType;
   int _deckSpinGeneration = 0;
   static const int _deckSpinMsPerPageNormal = 380;
   static const int _deckSpinMsPerPageFast = 115;
 
   String _drawBadgeText({required bool isLoading, required int credits}) {
     if (isLoading) return AppTexts.t('common.loading');
-    if (credits >= _kPaidDrawCost) {
-      return AppTexts.t('home.daily_draw.paid_available');
-    }
-    return AppTexts.t('home.daily_draw.insufficient');
+    return AppTexts.t('tarot.spread.cost_note');
   }
 
   String _ctaText({required bool isLoading, required int credits}) {
-    if (_awaitingSpreadAction) {
-      return AppTexts.t('tarot.spread.continue_cta');
+    if (_isChoosingSpread) {
+      return AppTexts.t('tarot.spread.cta_cancel');
     }
-    if (_selectionLocked || _isLoadingCard || _isDrawRequestInFlight) {
+    if (_selectionLocked ||
+        _isLoadingCard ||
+        _isDrawRequestInFlight ||
+        _isOpeningSpreadChat) {
       return AppTexts.t('tarot.spread.revealing');
     }
     if (isLoading) return AppTexts.t('common.loading');
-    if (credits >= _kPaidDrawCost) {
-      return '5 JETONLA CEK';
-    }
-    return AppTexts.t('home.cta.insufficient_credits');
+    return AppTexts.t('tarot.spread.cta_draw');
   }
 
   @override
@@ -535,11 +578,9 @@ class _HeroSectionState extends State<_HeroSection>
 
   void _warmCardImageCache() {
     TarotService.ensureLocalAssetsCached();
-    setState(() {
-      _cardImageUrlByIndex
-        ..clear()
-        ..addAll(TarotService.imageUrlByIndex);
-    });
+    _cardImageUrlByIndex
+      ..clear()
+      ..addAll(TarotService.imageUrlByIndex);
   }
 
   DrawnTarotCard _cardForIndex(int index) {
@@ -566,7 +607,6 @@ class _HeroSectionState extends State<_HeroSection>
       _revealedPreviewCard = selectedCard;
       _selectedCards.add(selectedCard);
       _pickedCardIndices.add(cardIndex);
-      _awaitingSpreadAction = true;
       if (selectedCard.imageUrl.isNotEmpty) {
         _cardImageUrlByIndex[cardIndex] = selectedCard.imageUrl;
       }
@@ -585,9 +625,9 @@ class _HeroSectionState extends State<_HeroSection>
     return enriched;
   }
 
-  Future<bool> _consumeDrawRight() async {
+  Future<bool> _consumeDrawRight(int cost) async {
     try {
-      await _functionsClient.consumeHomeCardDraw();
+      await _functionsClient.consumeHomeCardDraw(cost: cost);
       return true;
     } on FirebaseFunctionsException catch (error) {
       if (error.code == 'failed-precondition') return false;
@@ -658,7 +698,9 @@ class _HeroSectionState extends State<_HeroSection>
       _isLoadingCard = false;
       _selectedCards.clear();
       _pickedCardIndices.clear();
-      _awaitingSpreadAction = false;
+      _isChoosingSpread = false;
+      _isOpeningSpreadChat = false;
+      _selectedSpreadType = null;
     });
     _stopDeckSpin();
     if (_pageController.hasClients) {
@@ -671,7 +713,7 @@ class _HeroSectionState extends State<_HeroSection>
       _isDrawing &&
       _isDeckVisible &&
       !_selectionLocked &&
-      !_awaitingSpreadAction;
+      !_isOpeningSpreadChat;
 
   void _stopDeckSpin() {
     _deckSpinGeneration++;
@@ -727,19 +769,62 @@ class _HeroSectionState extends State<_HeroSection>
     }
   }
 
-  Future<void> _startRitual({required bool canDraw}) async {
+  void _toggleSpreadChooser() {
     if (_isDrawing ||
         _isDrawRequestInFlight ||
         _selectionLocked ||
-        _awaitingSpreadAction) {
+        _isOpeningSpreadChat) {
       return;
     }
-    if (!canDraw) {
+    setState(() => _isChoosingSpread = !_isChoosingSpread);
+  }
+
+  Future<void> _selectSpread(_SpreadType spread, int credits) async {
+    if (_isDrawing || _isDrawRequestInFlight || _selectionLocked) return;
+    _selectedSpreadType = spread;
+    // TODO(reklam): İleride jeton yerine reklam izle alternatifi burada eklenecek.
+    if (spread.cost > 0 && credits < spread.cost) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppTexts.t('home.cta.insufficient_credits_message')),
+        SnackBar(content: Text(AppTexts.t('tarot.gate.insufficient'))),
+      );
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CreditPage(
+            bottomInset: _BottomNavBar.estimatedHeight(context),
+            uid: widget.uid,
+          ),
         ),
       );
+      if (!mounted) return;
+      final freshCredits = await _currentWalletCredits();
+      if (freshCredits >= spread.cost) {
+        await _startRitual(spread);
+      } else {
+        setState(() {
+          _isChoosingSpread = true;
+          _selectedSpreadType = spread;
+        });
+      }
+      return;
+    }
+
+    await _startRitual(spread);
+  }
+
+  Future<int> _currentWalletCredits() async {
+    final snapshot = await _userDoc.get();
+    final data = snapshot.data();
+    final wallet = Map<String, dynamic>.from(
+      data?[UserProfileContract.wallet] as Map? ?? const {},
+    );
+    return (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> _startRitual(_SpreadType spread) async {
+    if (_isDrawing ||
+        _isDrawRequestInFlight ||
+        _selectionLocked ||
+        _isOpeningSpreadChat) {
       return;
     }
 
@@ -752,10 +837,11 @@ class _HeroSectionState extends State<_HeroSection>
       _drawnCard = null;
       _selectedCards.clear();
       _pickedCardIndices.clear();
-      _awaitingSpreadAction = false;
+      _isChoosingSpread = false;
+      _isOpeningSpreadChat = false;
+      _selectedSpreadType = spread;
     });
     _prepareDeckForRitual();
-    _warmCardImageCache();
 
     Future<void>.delayed(const Duration(milliseconds: 280), () {
       if (!mounted || !_isDrawing || _selectionLocked) return;
@@ -766,17 +852,17 @@ class _HeroSectionState extends State<_HeroSection>
     });
 
     try {
-      final consumed = await _consumeDrawRight();
-      if (!consumed) {
-        if (!mounted) return;
-        await _resetSelection();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppTexts.t('home.cta.insufficient_credits_message')),
-          ),
-        );
-        return;
+      if (spread.cost > 0) {
+        final consumed = await _consumeDrawRight(spread.cost);
+        if (!consumed) {
+          if (!mounted) return;
+          await _resetSelection();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppTexts.t('tarot.gate.insufficient'))),
+          );
+          return;
+        }
       }
     } finally {
       if (mounted) {
@@ -785,11 +871,36 @@ class _HeroSectionState extends State<_HeroSection>
     }
   }
 
+  Future<void> _continueOrOpenSpread() async {
+    final spread = _selectedSpreadType;
+    if (spread == null || !mounted) return;
+    if (_selectedCards.length >= spread.cardCount) {
+      await _openSpreadReading();
+      return;
+    }
+
+    _flipController.reset();
+    setState(() {
+      _selectionLocked = false;
+      _selectedCardIndex = null;
+      _drawnCard = null;
+      _revealedPreviewCard = null;
+      _isLoadingCard = false;
+      _isDrawing = true;
+      _isDeckVisible = true;
+    });
+
+    if (!_pageController.hasClients) return;
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    if (!mounted || _selectionLocked || _isOpeningSpreadChat) return;
+    unawaited(_startDeckSpin(fast: true));
+  }
+
   Future<void> _handleDeckRevealTap() async {
-    if (_awaitingSpreadAction ||
-        _selectionLocked ||
+    if (_selectionLocked ||
         _isDrawRequestInFlight ||
-        _isLoadingCard) {
+        _isLoadingCard ||
+        _isOpeningSpreadChat) {
       return;
     }
     if (!_isDeckVisible) return;
@@ -856,7 +967,7 @@ class _HeroSectionState extends State<_HeroSection>
       if (mounted) {
         setState(() {
           _isLoadingCard = false;
-          if (!_awaitingSpreadAction && _selectionLocked) {
+          if (_selectionLocked) {
             _selectionLocked = false;
             _selectedCardIndex = null;
             _drawnCard = null;
@@ -864,43 +975,30 @@ class _HeroSectionState extends State<_HeroSection>
         });
       }
     }
-  }
 
-  Future<void> _pickAnotherCard() async {
-    if (!_awaitingSpreadAction || _selectedCards.length >= _maxSpreadCards) {
-      return;
+    if (mounted) {
+      unawaited(_continueOrOpenSpread());
     }
-    _flipController.reset();
-    setState(() {
-      _awaitingSpreadAction = false;
-      _selectionLocked = false;
-      _selectedCardIndex = null;
-      _drawnCard = null;
-      _revealedPreviewCard = null;
-      _isLoadingCard = false;
-      _isDrawing = true;
-      _isDeckVisible = true;
-    });
-
-    if (!_pageController.hasClients) return;
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    if (!mounted || _awaitingSpreadAction || _selectionLocked) return;
-    unawaited(_startDeckSpin(fast: true));
   }
 
   Future<void> _openSpreadReading() async {
-    if (_selectedCards.isEmpty) return;
+    final spread = _selectedSpreadType ?? _SpreadType.single;
+    if (_selectedCards.isEmpty || _isOpeningSpreadChat) return;
+    setState(() => _isOpeningSpreadChat = true);
     final spreadCards = _enrichSelectedCardsForSpread();
     if (!mounted) return;
     final cardNames = spreadCards
         .map((card) => card.card.displayName)
         .toList(growable: false);
+    final positions = spread.positions;
     final sessionId = _spreadSessionId(cardNames);
     final chatResult = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         builder: (_) => KozmikBilgePage(
           uid: widget.uid,
           spreadCards: List<DrawnTarotCard>.unmodifiable(spreadCards),
+          spreadPositions: positions,
+          spreadName: spread.name,
           spreadSessionId: sessionId,
         ),
       ),
@@ -945,7 +1043,8 @@ class _HeroSectionState extends State<_HeroSection>
             !isLoading &&
             !_isLoadingCard &&
             !_isDrawRequestInFlight &&
-            credits >= _kPaidDrawCost;
+            !_selectionLocked &&
+            !_isOpeningSpreadChat;
         final drawBadgeText = _drawBadgeText(
           isLoading: isLoading,
           credits: credits,
@@ -953,29 +1052,24 @@ class _HeroSectionState extends State<_HeroSection>
         final ctaText = _ctaText(isLoading: isLoading, credits: credits);
         final selectedIndex =
             _selectedCardIndex ?? _cardIndexForLoopPage(_currentLoopPage);
-        final headline = _awaitingSpreadAction
-            ? AppTexts.t('tarot.spread.headline')
-            : (_selectionLocked
-                  ? _displayNameForIndex(selectedIndex)
-                  : 'Gunun Rehberi');
-        final subtitle = _awaitingSpreadAction
-            ? AppTexts.t('tarot.spread.selection_hint')
-                  .replaceAll('{count}', '${_selectedCards.length}')
-                  .replaceAll('{max}', '$_maxSpreadCards')
-            : (_isDrawing && _isDeckVisible
+        final spread = _selectedSpreadType;
+        final headline = _selectionLocked
+            ? _displayNameForIndex(selectedIndex)
+            : (spread?.name ?? AppTexts.t('tarot.spread.name.single'));
+        final subtitle = _isDrawing && _isDeckVisible
+            ? (_selectedCards.isEmpty
                   ? AppTexts.t('tarot.spread.tap_to_draw')
-                  : '');
+                  : AppTexts.t('tarot.spread.selection_hint')
+                        .replaceAll('{count}', '${_selectedCards.length}')
+                        .replaceAll('{max}', '${spread?.cardCount ?? 1}'))
+            : '';
         final canTapDeck =
             _isDrawing &&
             _isDeckVisible &&
             !_selectionLocked &&
             !_isLoadingCard &&
-            !_awaitingSpreadAction;
-        final ritualStageHeight = _isDrawing
-            ? (_awaitingSpreadAction ? 430.0 : 470.0)
-            : 316.0;
-        final canPickAnother =
-            _awaitingSpreadAction && _selectedCards.length < _maxSpreadCards;
+            !_isOpeningSpreadChat;
+        final ritualStageHeight = _isDrawing ? 470.0 : 316.0;
 
         return _GlassCard(
           borderRadius: 32,
@@ -1066,9 +1160,7 @@ class _HeroSectionState extends State<_HeroSection>
                                       duration: const Duration(
                                         milliseconds: 280,
                                       ),
-                                      opacity: _awaitingSpreadAction
-                                          ? 0.72
-                                          : (_selectionLocked ? 0.16 : 1),
+                                      opacity: _selectionLocked ? 0.16 : 1,
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
                                           final carouselWidth =
@@ -1107,17 +1199,14 @@ class _HeroSectionState extends State<_HeroSection>
                                     ),
                                   ),
                           ),
-                          if (_selectionLocked &&
-                              !_awaitingSpreadAction &&
-                              _selectedCardIndex != null)
+                          if (_selectionLocked && _selectedCardIndex != null)
                             _SelectedGuideCard(
                               title: _displayNameForIndex(_selectedCardIndex!),
                               imageUrl: _drawnCard?.imageUrl,
                               isLoading: _isLoadingCard,
                               flipAnimation: _flipController,
                             )
-                          else if (_awaitingSpreadAction &&
-                              _revealedPreviewCard != null)
+                          else if (_revealedPreviewCard != null)
                             _RevealedCardPreview(card: _revealedPreviewCard!),
                         ],
                       ),
@@ -1146,63 +1235,34 @@ class _HeroSectionState extends State<_HeroSection>
                       const SizedBox(height: 14),
                     ],
 
-                    if (_awaitingSpreadAction) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: canPickAnother
-                                  ? _pickAnotherCard
-                                  : null,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _kSecondary,
-                                side: BorderSide(
-                                  color: _kPrimary.withValues(alpha: 0.35),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 14,
-                                ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      child: _isChoosingSpread && !_isDrawing
+                          ? Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: _SpreadChoicePanel(
+                                selectedSpread: _selectedSpreadType,
+                                onSelected: (spread) =>
+                                    _selectSpread(spread, credits),
                               ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  AppTexts.t('tarot.spread.pick_another_short'),
-                                  maxLines: 1,
-                                  style: GoogleFonts.spaceGrotesk(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 2,
-                            child: _HeroCtaButton(
-                              canDraw: true,
-                              ctaText: AppTexts.t('tarot.spread.continue_cta'),
-                              onPressed: _openSpreadReading,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ] else
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 260),
-                        curve: Curves.easeOutCubic,
-                        opacity: _isDrawing ? 0 : 1,
-                        child: IgnorePointer(
-                          ignoring: _isDrawing,
-                          child: _HeroCtaButton(
-                            canDraw: canDraw,
-                            ctaText: ctaText,
-                            onPressed: () => _startRitual(canDraw: canDraw),
-                          ),
+                            )
+                          : const SizedBox(width: double.infinity),
+                    ),
+
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      opacity: _isDrawing ? 0 : 1,
+                      child: IgnorePointer(
+                        ignoring: _isDrawing,
+                        child: _HeroCtaButton(
+                          canDraw: canDraw,
+                          ctaText: ctaText,
+                          onPressed: _toggleSpreadChooser,
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -1210,6 +1270,173 @@ class _HeroSectionState extends State<_HeroSection>
           ),
         );
       },
+    );
+  }
+}
+
+class _SpreadChoicePanel extends StatelessWidget {
+  const _SpreadChoicePanel({
+    required this.selectedSpread,
+    required this.onSelected,
+  });
+
+  final _SpreadType? selectedSpread;
+  final ValueChanged<_SpreadType> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    const spreads = _SpreadType.values;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kGlassBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _kPrimary.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            AppTexts.t('tarot.spread.cost_note'),
+            style: GoogleFonts.spaceGrotesk(
+              color: _kTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final spread in spreads) ...[
+                Expanded(
+                  child: _SpreadChoiceTile(
+                    spread: spread,
+                    selected: selectedSpread == spread,
+                    onTap: () => onSelected(spread),
+                  ),
+                ),
+                if (spread != spreads.last) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpreadChoiceTile extends StatelessWidget {
+  const _SpreadChoiceTile({
+    required this.spread,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _SpreadType spread;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final costText = spread.cost == 0
+        ? AppTexts.t('tarot.spread.free')
+        : '${spread.cost} ${AppTexts.t('home.top.token_unit')}';
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          constraints: const BoxConstraints(minHeight: 106),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? _kPrimary.withValues(alpha: 0.18)
+                : _kSurfaceContainerHigh.withValues(alpha: 0.66),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? _kPrimary.withValues(alpha: 0.58)
+                  : _kGlassBorder,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _MiniSpreadFan(count: spread.cardCount),
+              const SizedBox(height: 8),
+              Text(
+                spread.shortLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.spaceGrotesk(
+                  color: _kOnSurface,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                costText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.manrope(
+                  color: spread.cost == 0 ? _kTertiary : _kSecondary,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniSpreadFan extends StatelessWidget {
+  const _MiniSpreadFan({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleCount = count.clamp(1, 5);
+    return SizedBox(
+      width: 48,
+      height: 32,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          for (var i = 0; i < visibleCount; i++)
+            Transform.translate(
+              offset: Offset((i - (visibleCount - 1) / 2) * 6, 0),
+              child: Transform.rotate(
+                angle: (i - (visibleCount - 1) / 2) * 0.10,
+                child: Container(
+                  width: 18,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(5),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [_kSurfaceContainerHigh, _kBg],
+                    ),
+                    border: Border.all(
+                      color: _kTertiary.withValues(alpha: 0.34),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1276,7 +1503,7 @@ class _SelectedSpreadStrip extends StatelessWidget {
   }
 }
 
-class _HeroCtaButton extends StatelessWidget {
+class _HeroCtaButton extends StatefulWidget {
   const _HeroCtaButton({
     required this.canDraw,
     required this.ctaText,
@@ -1288,46 +1515,98 @@ class _HeroCtaButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
+  State<_HeroCtaButton> createState() => _HeroCtaButtonState();
+}
+
+class _HeroCtaButtonState extends State<_HeroCtaButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1450),
+  );
+
+  late final Animation<double> _pulse = CurvedAnimation(
+    parent: _pulseController,
+    curve: Curves.easeInOut,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.canDraw) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroCtaButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.canDraw && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.canDraw && _pulseController.isAnimating) {
+      _pulseController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [_kPrimary, _kPrimaryContainer],
-          ),
-          borderRadius: BorderRadius.circular(9999),
-          boxShadow: [
-            BoxShadow(
-              color: _kPrimaryContainer.withValues(alpha: 0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final glow = widget.canDraw ? 0.24 + (_pulse.value * 0.16) : 0.12;
+        final scale = widget.canDraw ? 1.0 + (_pulse.value * 0.012) : 1.0;
+        return Transform.scale(
+          scale: scale,
+          child: SizedBox(
+            width: double.infinity,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [_kPrimary, _kPrimaryContainer],
+                ),
+                borderRadius: BorderRadius.circular(9999),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kPrimaryContainer.withValues(alpha: glow),
+                    blurRadius: 20 + (_pulse.value * 10),
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ElevatedButton(
+                onPressed: widget.canDraw ? widget.onPressed : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  disabledBackgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  disabledForegroundColor: _kOnPrimary.withValues(alpha: 0.6),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9999),
+                  ),
+                ),
+                child: Text(
+                  widget.ctaText,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                    color: _kOnPrimary.withValues(
+                      alpha: widget.canDraw ? 1 : 0.65,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-        child: ElevatedButton(
-          onPressed: canDraw ? onPressed : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            disabledBackgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            disabledForegroundColor: _kOnPrimary.withValues(alpha: 0.6),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(9999),
-            ),
           ),
-          child: Text(
-            ctaText,
-            style: GoogleFonts.spaceGrotesk(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 2,
-              color: _kOnPrimary.withValues(alpha: canDraw ? 1 : 0.65),
-            ),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -1512,7 +1791,7 @@ class _IdleGuideCard extends StatelessWidget {
           width: cardWidth,
           height: cardHeight,
           child: _GuideCardBack(
-            cardName: 'Gunun Rehberi',
+            cardName: AppTexts.t('tarot.spread.name.single'),
             width: cardWidth,
             height: cardHeight,
             margin: EdgeInsets.zero,

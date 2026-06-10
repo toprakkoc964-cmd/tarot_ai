@@ -13,7 +13,7 @@ final class VisionPalmAnalyzer {
   private let minHandArea = 0.18
   private let maxHandArea = 0.65
   private let minimumGuideOverlap = 0.70
-  private let maximumRotationFromVertical = 25.0
+  private let maximumRotationFromVertical = 55.0
   private let minimumOpenPalmScore = 0.72
 
   @available(iOS 14.0, *)
@@ -91,6 +91,8 @@ final class VisionPalmAnalyzer {
       "openPalmScore": 0.0,
       "extendedFingerCount": 0,
       "fingerSpreadRatio": 0.0,
+      "reliablePointCount": 0,
+      "rotationAngle": NSNull(),
       "handDetected": false,
       "validPalm": false,
       "debug": debugMap,
@@ -546,6 +548,8 @@ final class VisionPalmAnalyzer {
     let openPalmScore = compactDebug["openPalmScore"] as? Double ?? roundMetric(confidence)
     let extendedFingerCount = compactDebug["extendedFingerCount"] as? Int ?? 0
     let fingerSpreadRatio = compactDebug["fingerSpreadRatio"] as? Double ?? 0.0
+    let reliablePointCount = compactDebug["reliablePointCount"] as? Int ?? 0
+    let rotationAngle = compactDebug["rotationAngleFromVertical"] as? Double
     let response: [String: Any] = [
       "source": "Vision",
       "state": state,
@@ -555,6 +559,8 @@ final class VisionPalmAnalyzer {
       "openPalmScore": openPalmScore,
       "extendedFingerCount": extendedFingerCount,
       "fingerSpreadRatio": fingerSpreadRatio,
+      "reliablePointCount": reliablePointCount,
+      "rotationAngle": rotationAngle ?? NSNull(),
       "handDetected": handDetected,
       "possibleHand": possibleHand,
       "validPalm": validPalm,
@@ -764,11 +770,11 @@ final class VisionPalmAnalyzer {
     )
     let confidenceScore = min(max(Double(averageConfidence), 0), 1)
     let openPalmScore =
-      reliablePointScore * 0.15 +
-      fingerExtensionScore * 0.25 +
+      reliablePointScore * 0.25 +
+      fingerExtensionScore * 0.30 +
       fingerSpreadScore * 0.15 +
-      verticalOrientationScore * 0.15 +
-      orientation.score * 0.15 +
+      verticalOrientationScore * 0.05 +
+      orientation.score * 0.05 +
       guideAlignmentScore * 0.15 +
       confidenceScore * 0.05
 
@@ -873,8 +879,7 @@ final class VisionPalmAnalyzer {
       )
     }
 
-    if metrics.rotationAngleFromVertical > maximumRotationFromVertical ||
-       metrics.verticalOrientationScore <= 0 {
+    if metrics.rotationAngleFromVertical > maximumRotationFromVertical + 20 {
       return PalmValidationResult.reject(
         scanState: "rotateHand",
         reason: "handNotVertical",
@@ -883,9 +888,8 @@ final class VisionPalmAnalyzer {
     }
 
     if metrics.fingerSpreadRatio < 0.35 ||
-       metrics.thumbSpreadRatio < 0.20 ||
-       !metrics.palmOrientationReliable ||
-       metrics.palmOrientationScore < 0.62 {
+       metrics.thumbSpreadRatio < 0.18 ||
+       metrics.palmOrientationScore < 0.45 {
       return PalmValidationResult.reject(
         scanState: "showPalm",
         reason: "palmOrientationUncertain",
@@ -1074,12 +1078,38 @@ final class VisionPalmAnalyzer {
       return nil
     }
 
-    let dx = Double(middleMCP.location.x - wrist.location.x)
-    let dy = Double(middleMCP.location.y - wrist.location.y)
-    let upwardDistance = Double(wrist.location.y - middleTip.location.y)
-    guard upwardDistance > 0.08, dy < -0.01 else { return 90 }
+    let previewAngle = verticalAngle(
+      wrist: wrist.location,
+      middleMCP: middleMCP.location,
+      middleTip: middleTip.location,
+      yAxisDown: true
+    )
+    let visionAngle = verticalAngle(
+      wrist: wrist.visionLocation,
+      middleMCP: middleMCP.visionLocation,
+      middleTip: middleTip.visionLocation,
+      yAxisDown: false
+    )
 
-    let radians = atan2(abs(dx), max(0.0001, -dy))
+    let candidates = [previewAngle, visionAngle].compactMap { $0 }
+    return candidates.min()
+  }
+
+  private func verticalAngle(
+    wrist: CGPoint,
+    middleMCP: CGPoint,
+    middleTip: CGPoint,
+    yAxisDown: Bool
+  ) -> Double? {
+    let dx = Double(middleMCP.x - wrist.x)
+    let dy = Double(middleMCP.y - wrist.y)
+    let tipDy = Double(middleTip.y - wrist.y)
+    let mcpMovesUp = yAxisDown ? dy < -0.01 : dy > 0.01
+    let tipMovesUpEnough = yAxisDown ? tipDy < -0.08 : tipDy > 0.08
+    guard mcpMovesUp, tipMovesUpEnough else { return nil }
+
+    let verticalDy = yAxisDown ? -dy : dy
+    let radians = atan2(abs(dx), max(0.0001, verticalDy))
     return radians * 180.0 / .pi
   }
 

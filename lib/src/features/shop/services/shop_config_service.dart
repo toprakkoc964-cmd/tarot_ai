@@ -15,6 +15,8 @@ class ShopConfigService {
   bool _initialized = false;
   ShopConfig? _cachedConfig;
 
+  ShopConfig? get cachedConfig => _cachedConfig;
+
   Future<ShopConfig> fetchConfig() async {
     if (_cachedConfig != null) return SynchronousFuture(_cachedConfig!);
 
@@ -24,8 +26,9 @@ class ShopConfigService {
         await remoteConfig.setConfigSettings(
           RemoteConfigSettings(
             fetchTimeout: const Duration(seconds: 10),
-            minimumFetchInterval:
-                kDebugMode ? Duration.zero : const Duration(hours: 1),
+            minimumFetchInterval: kDebugMode
+                ? Duration.zero
+                : const Duration(hours: 1),
           ),
         );
         await remoteConfig.setDefaults(<String, dynamic>{
@@ -79,7 +82,11 @@ const Map<String, dynamic> _fallbackConfig = {
       'productId': ShopProductCatalog.credits50,
       'titleKey': 'creditsPack50',
       'subtitleKey': 'creditsPackSubtitle',
-      'featureKeys': ['creditsConsumableInfo'],
+      'featureKeys': [
+        'creditsPack50Feature1',
+        'creditsPack50Feature2',
+        'creditsPack50Feature3',
+      ],
       'iconKey': 'token',
       'sortOrder': 10,
       'isActive': true,
@@ -89,7 +96,11 @@ const Map<String, dynamic> _fallbackConfig = {
       'productId': ShopProductCatalog.credits250,
       'titleKey': 'creditsPack250',
       'subtitleKey': 'creditsPackSubtitle',
-      'featureKeys': ['creditsConsumableInfo'],
+      'featureKeys': [
+        'creditsPack250Feature1',
+        'creditsPack250Feature2',
+        'creditsPack250Feature3',
+      ],
       'badgeKey': 'premiumBadgePopular',
       'iconKey': 'moon',
       'sortOrder': 20,
@@ -100,7 +111,11 @@ const Map<String, dynamic> _fallbackConfig = {
       'productId': ShopProductCatalog.credits1000,
       'titleKey': 'creditsPack1000',
       'subtitleKey': 'creditsPackSubtitle',
-      'featureKeys': ['creditsConsumableInfo'],
+      'featureKeys': [
+        'creditsPack1000Feature1',
+        'creditsPack1000Feature2',
+        'creditsPack1000Feature3',
+      ],
       'iconKey': 'sun',
       'sortOrder': 30,
       'isActive': true,

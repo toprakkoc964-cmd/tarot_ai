@@ -75,11 +75,13 @@ class PurchaseServiceState {
       products: products ?? this.products,
       notFoundIds: notFoundIds ?? this.notFoundIds,
       queriedProductIds: queriedProductIds ?? this.queriedProductIds,
-      activeProductId:
-          clearActiveProductId ? null : activeProductId ?? this.activeProductId,
+      activeProductId: clearActiveProductId
+          ? null
+          : activeProductId ?? this.activeProductId,
       messageKey: clearMessageKey ? null : messageKey ?? this.messageKey,
-      queryErrorCode:
-          clearQueryErrorCode ? null : queryErrorCode ?? this.queryErrorCode,
+      queryErrorCode: clearQueryErrorCode
+          ? null
+          : queryErrorCode ?? this.queryErrorCode,
     );
   }
 }
@@ -88,9 +90,9 @@ class PurchaseService {
   PurchaseService({
     InAppPurchase? inAppPurchase,
     BackendPurchaseVerificationService? verificationService,
-  })  : _iap = inAppPurchase ?? InAppPurchase.instance,
-        _verificationService =
-            verificationService ?? BackendPurchaseVerificationService();
+  }) : _iap = inAppPurchase ?? InAppPurchase.instance,
+       _verificationService =
+           verificationService ?? BackendPurchaseVerificationService();
 
   final InAppPurchase _iap;
   final BackendPurchaseVerificationService _verificationService;
@@ -138,8 +140,14 @@ class PurchaseService {
         .toSet();
     if (ids.isEmpty) return;
 
+    final hasCachedProducts =
+        state.value.storeAvailable &&
+        ids.every((id) => state.value.products.containsKey(id));
+
     state.value = state.value.copyWith(
-      phase: PurchaseServicePhase.loadingProducts,
+      phase: hasCachedProducts
+          ? state.value.phase
+          : PurchaseServicePhase.loadingProducts,
       queriedProductIds: ids,
       clearMessageKey: true,
       clearQueryErrorCode: true,
@@ -191,9 +199,10 @@ class PurchaseService {
       messageKey: queryFailed
           ? 'shopPurchaseUnavailable'
           : (products.isEmpty && response.notFoundIDs.isNotEmpty)
-              ? 'shopProductsNotFoundHint'
-              : null,
-      clearMessageKey: !queryFailed &&
+          ? 'shopProductsNotFoundHint'
+          : null,
+      clearMessageKey:
+          !queryFailed &&
           !(products.isEmpty && response.notFoundIDs.isNotEmpty),
     );
   }
@@ -262,9 +271,7 @@ class PurchaseService {
     }
   }
 
-  Future<void> _handlePurchaseUpdates(
-    List<PurchaseDetails> purchases,
-  ) async {
+  Future<void> _handlePurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       await _handleSinglePurchase(purchase);
     }

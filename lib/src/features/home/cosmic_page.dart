@@ -11,11 +11,7 @@ import '../auth/user_profile_contract.dart';
 import 'home_palette.dart';
 
 class CosmicPage extends StatelessWidget {
-  const CosmicPage({
-    super.key,
-    required this.bottomInset,
-    required this.uid,
-  });
+  const CosmicPage({super.key, required this.bottomInset, required this.uid});
 
   final double bottomInset;
   final String uid;
@@ -139,8 +135,8 @@ class _CosmicHeader extends StatelessWidget {
             final wallet = Map<String, dynamic>.from(
               data?[UserProfileContract.wallet] as Map? ?? const {},
             );
-            final credits =
-                (wallet[UserProfileContract.walletCredits] as num?)?.toInt();
+            final credits = (wallet[UserProfileContract.walletCredits] as num?)
+                ?.toInt();
             final creditsText = credits?.toString() ?? '--';
 
             return Container(
@@ -208,7 +204,7 @@ class _CosmicPageTitle extends StatelessWidget {
         Text(
           AppTexts.t('home.cosmic.title'),
           style: GoogleFonts.newsreader(
-            color: HomePalette.onSurface,
+            color: HomePalette.primary,
             fontSize: 42,
             height: 1.02,
             fontWeight: FontWeight.w700,
@@ -303,11 +299,7 @@ class CosmicFeatureCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 22),
-                    CosmicButton(
-                      text: buttonText,
-                      icon: icon,
-                      onTap: onTap,
-                    ),
+                    CosmicButton(text: buttonText, icon: icon, onTap: onTap),
                   ],
                 ),
               ),
@@ -339,10 +331,7 @@ class CosmicButton extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            HomePalette.primary,
-            HomePalette.primaryContainer,
-          ],
+          colors: [HomePalette.primary, HomePalette.primaryContainer],
         ),
         boxShadow: [
           BoxShadow(
