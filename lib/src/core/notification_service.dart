@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_locale.dart';
@@ -41,7 +43,8 @@ class AppNotificationItem {
       id: map['id'] as String? ?? '',
       title: map['title'] as String? ?? '',
       body: map['body'] as String? ?? '',
-      receivedAt: DateTime.tryParse(map['receivedAt'] as String? ?? '') ??
+      receivedAt:
+          DateTime.tryParse(map['receivedAt'] as String? ?? '') ??
           DateTime.now(),
       source: map['source'] as String? ?? 'unknown',
     );
@@ -62,8 +65,9 @@ class NotificationService {
       ValueNotifier<List<AppNotificationItem>>(const []);
   final ValueNotifier<String?> apnsToken = ValueNotifier<String?>(null);
   final ValueNotifier<String?> fcmToken = ValueNotifier<String?>(null);
-  final ValueNotifier<String> permissionStatus =
-      ValueNotifier<String>('unknown');
+  final ValueNotifier<String> permissionStatus = ValueNotifier<String>(
+    'unknown',
+  );
 
   bool _initialized = false;
   bool _isIosSimulator = false;
@@ -101,10 +105,12 @@ class NotificationService {
         debugPrint(
           'Running on iOS Simulator. Skipping APNs and FCM token setup.',
         );
+        await syncNotificationContextForCurrentUser();
         return;
       }
 
       if (!_isPermissionGranted(settings.authorizationStatus)) {
+        await syncNotificationContextForCurrentUser();
         return;
       }
 
@@ -114,6 +120,7 @@ class NotificationService {
           'APNs token was not available within 10 seconds. '
           'Skipping FCM token fetch on iOS.',
         );
+        await syncNotificationContextForCurrentUser();
         return;
       }
 
@@ -122,6 +129,7 @@ class NotificationService {
     }
 
     await _syncFcmToken();
+    await syncNotificationContextForCurrentUser();
   }
 
   Future<String> requestNotificationPermissions() async {
@@ -152,12 +160,14 @@ class NotificationService {
     }
 
     await _syncFcmToken();
+    await syncNotificationContextForCurrentUser();
     return settings.authorizationStatus.name;
   }
 
   Future<void> _handleAuthChange(User? user) async {
     if (user != null) {
       await _syncFcmToken();
+      await syncNotificationContextForCurrentUser();
     }
   }
 
@@ -168,6 +178,7 @@ class NotificationService {
     debugPrint('FCM Token refreshed: $token');
     await _persistTokenForCurrentUser(token);
     await _syncCampaignTopicForCurrentLanguage();
+    await syncNotificationContextForCurrentUser();
   }
 
   Future<void> _syncFcmToken() async {
@@ -189,10 +200,65 @@ class NotificationService {
         .collection(UserProfileContract.usersCollection)
         .doc(user.uid)
         .set({
-      UserProfileContract.fcmTokens: FieldValue.arrayUnion([token]),
-      UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
-      UserProfileContract.fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+          UserProfileContract.fcmTokens: FieldValue.arrayUnion([token]),
+          UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+          UserProfileContract.fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
+  Future<String?> _resolveDeviceTimezone() async {
+    try {
+      final dynamic timezone = await FlutterTimezone.getLocalTimezone();
+      if (timezone is String) return timezone;
+
+      final dynamic identifier = timezone.identifier;
+      return identifier is String ? identifier : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> _defaultNotificationPrefs() => <String, dynamic>{
+    'enabled': true,
+    'dailyBirthChart': <String, dynamic>{'enabled': true, 'hourLocal': 9},
+    'dailyCard': <String, dynamic>{'enabled': true, 'hourLocal': 9},
+    'coffeePalmFollowup': <String, dynamic>{'enabled': true},
+    'walletOffers': <String, dynamic>{'enabled': true},
+  };
+
+  Future<void> syncNotificationContextForCurrentUser() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final docRef = FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(user.uid);
+
+      final timezone = (await _resolveDeviceTimezone())?.trim();
+      final update = <String, dynamic>{
+        UserProfileContract.language: AppLocale.current,
+        UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      if (timezone != null && timezone.isNotEmpty) {
+        update[UserProfileContract.timezone] = timezone;
+        update[UserProfileContract.timezoneUpdatedAt] =
+            FieldValue.serverTimestamp();
+      }
+
+      final snapshot = await docRef.get();
+      final data = snapshot.data();
+      if (data == null ||
+          !data.containsKey(UserProfileContract.notificationPrefs)) {
+        update[UserProfileContract.notificationPrefs] =
+            _defaultNotificationPrefs();
+      }
+
+      await docRef.set(update, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('Notification context sync skipped: $error');
+    }
   }
 
   void _registerMessageListeners() {
@@ -226,7 +292,8 @@ class NotificationService {
     _languageListenerRegistered = true;
 
     AppLocale.notifier.addListener(() {
-      _syncCampaignTopicForCurrentLanguage();
+      unawaited(_syncCampaignTopicForCurrentLanguage());
+      unawaited(syncNotificationContextForCurrentUser());
     });
   }
 
@@ -258,8 +325,9 @@ class NotificationService {
 
   Future<void> deleteNotification(String id) async {
     if (id.trim().isEmpty) return;
-    inbox.value =
-        inbox.value.where((item) => item.id != id).toList(growable: false);
+    inbox.value = inbox.value
+        .where((item) => item.id != id)
+        .toList(growable: false);
     await _persistNotifications();
   }
 
@@ -286,17 +354,17 @@ class NotificationService {
       title: (overrideTitle?.trim().isNotEmpty ?? false)
           ? overrideTitle!.trim()
           : (title?.isNotEmpty ?? false)
-              ? title!
-              : (fallbackTitle?.isNotEmpty ?? false)
-                  ? fallbackTitle!
-                  : 'New notification',
+          ? title!
+          : (fallbackTitle?.isNotEmpty ?? false)
+          ? fallbackTitle!
+          : 'New notification',
       body: (overrideBody?.trim().isNotEmpty ?? false)
           ? overrideBody!.trim()
           : (body?.isNotEmpty ?? false)
-              ? body!
-              : (fallbackBody?.isNotEmpty ?? false)
-                  ? fallbackBody!
-                  : 'Open the app to view the latest update.',
+          ? body!
+          : (fallbackBody?.isNotEmpty ?? false)
+          ? fallbackBody!
+          : 'Open the app to view the latest update.',
       source: source,
     );
   }

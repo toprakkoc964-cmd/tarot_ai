@@ -50,6 +50,10 @@ class UserProfileContract {
   static const String walletLastFreeDrawAt = 'lastFreeDrawAt';
   static const String fcmTokens = 'fcmTokens';
   static const String fcmTokenUpdatedAt = 'fcmTokenUpdatedAt';
+  static const String timezone = 'timezone';
+  static const String timezoneUpdatedAt = 'timezoneUpdatedAt';
+  static const String language = 'language';
+  static const String notificationPrefs = 'notificationPrefs';
   static const String legalConsent = 'legalConsent';
 
   static const int maxNameLength = 25;
