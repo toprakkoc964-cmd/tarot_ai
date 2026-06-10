@@ -237,7 +237,7 @@ function interpolate(text: string, vars: NotifVars): string {
   });
 }
 
-function normalizeLang(lang?: string): NotifLang {
+export function normalizeLang(lang?: string): NotifLang {
   const code = (lang ?? "").trim().toLowerCase().split(/[-_]/)[0];
   return (["tr", "en", "de", "es", "fr"] as const).includes(code as NotifLang)
     ? (code as NotifLang)
