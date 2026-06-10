@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "aris_sessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "updatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "readings",
       "queryScope": "COLLECTION",
       "fields": [
@@ -35,6 +28,30 @@
         { "order": "DESCENDING", "queryScope": "COLLECTION" },
         { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
         { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "fieldPath": "nextDailyCardAt",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "fieldPath": "coffeeFollowupAt",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "fieldPath": "palmFollowupAt",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
       ]
     }
   ]

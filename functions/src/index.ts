@@ -2,10 +2,10 @@ import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentDeleted, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as functionsV1 from 'firebase-functions/v1';
 import * as logger from 'firebase-functions/logger';
@@ -67,6 +67,11 @@ const readingWindowLimit = Number(process.env.READING_WINDOW_LIMIT ?? '5');
 const readingDailyLimit = Number(process.env.READING_DAILY_LIMIT ?? '30');
 const walletLowThreshold = 10;
 const readingFollowupMs = 48 * 60 * 60 * 1000;
+const dailyNudgeFallbackTimezone = process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul';
+const dailyNudgeDefaultHour = 9;
+const dailyNudgeBatchLimit = 400;
+const followupStartHour = 10;
+const followupEndHour = 21;
 const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
 const appleAuthSecretNames = [
   'APPLE_TEAM_ID',
@@ -182,6 +187,197 @@ function timestampToMillis(value: unknown): number | null {
     return Number.isFinite(millis) ? millis : null;
   }
   return null;
+}
+
+function normalizeDailyHour(value: unknown): number {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 23
+    ? Number(value)
+    : dailyNudgeDefaultHour;
+}
+
+function resolveNotificationTimezone(value: unknown): string {
+  const candidate = typeof value === 'string' && value.trim()
+    ? value.trim()
+    : dailyNudgeFallbackTimezone;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    logger.warn('invalid notification timezone, falling back', { candidate });
+    return dailyNudgeFallbackTimezone;
+  }
+}
+
+function zonedDateParts(instant: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+    second: get('second'),
+  };
+}
+
+function localDateKeyForTimezone(instant: Date, timeZone: string): string {
+  const parts = zonedDateParts(instant, timeZone);
+  return [
+    String(parts.year).padStart(4, '0'),
+    String(parts.month).padStart(2, '0'),
+    String(parts.day).padStart(2, '0'),
+  ].join('-');
+}
+
+function localHourForTimezone(instant: Date, timeZone: string): number {
+  return zonedDateParts(instant, timeZone).hour;
+}
+
+function zonedWallTimeToUtcMs(
+  timeZone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute = 0,
+  second = 0
+): number {
+  const targetLocalMs = Date.UTC(year, month - 1, day, hour, minute, second, 0);
+  let guessMs = targetLocalMs;
+
+  for (let i = 0; i < 4; i += 1) {
+    const rendered = zonedDateParts(new Date(guessMs), timeZone);
+    const renderedLocalMs = Date.UTC(
+      rendered.year,
+      rendered.month - 1,
+      rendered.day,
+      rendered.hour,
+      rendered.minute,
+      rendered.second,
+      0
+    );
+    const delta = renderedLocalMs - targetLocalMs;
+    if (delta === 0) break;
+    guessMs -= delta;
+  }
+
+  return guessMs;
+}
+
+function computeNextDailyCardAt(
+  timezone: unknown,
+  hourLocal: unknown,
+  fromInstant: Date
+): Date {
+  const timeZone = resolveNotificationTimezone(timezone);
+  const targetHour = normalizeDailyHour(hourLocal);
+  const localNow = zonedDateParts(fromInstant, timeZone);
+
+  let candidateMs = zonedWallTimeToUtcMs(
+    timeZone,
+    localNow.year,
+    localNow.month,
+    localNow.day,
+    targetHour
+  );
+
+  if (candidateMs <= fromInstant.getTime()) {
+    candidateMs = zonedWallTimeToUtcMs(
+      timeZone,
+      localNow.year,
+      localNow.month,
+      localNow.day + 1,
+      targetHour
+    );
+  }
+
+  return new Date(candidateMs);
+}
+
+function computeNextFollowupWindowAt(timezone: unknown, fromInstant: Date): Date {
+  const timeZone = resolveNotificationTimezone(timezone);
+  const localNow = zonedDateParts(fromInstant, timeZone);
+  let targetDay = localNow.day;
+  let targetHour = followupStartHour;
+
+  if (localNow.hour < followupStartHour) {
+    targetHour = followupStartHour;
+  } else if (localNow.hour > followupEndHour) {
+    targetDay += 1;
+    targetHour = followupStartHour;
+  } else {
+    return fromInstant;
+  }
+
+  return new Date(
+    zonedWallTimeToUtcMs(
+      timeZone,
+      localNow.year,
+      localNow.month,
+      targetDay,
+      targetHour
+    )
+  );
+}
+
+function notificationPrefsEnabled(data: Record<string, any> | undefined): boolean {
+  const prefs = data?.notificationPrefs;
+  return Boolean(prefs) && prefs.enabled !== false;
+}
+
+function dailyCardPrefsEnabled(data: Record<string, any> | undefined): boolean {
+  const prefs = data?.notificationPrefs;
+  return notificationPrefsEnabled(data) && prefs?.dailyCard?.enabled !== false;
+}
+
+function followupPrefsEnabled(data: Record<string, any> | undefined): boolean {
+  const prefs = data?.notificationPrefs;
+  return notificationPrefsEnabled(data) && prefs?.coffeePalmFollowup?.enabled !== false;
+}
+
+function userCanReceiveScheduledNotifications(data: Record<string, any> | undefined): boolean {
+  return data?.isProfileComplete === true;
+}
+
+function timestampsEqual(left: unknown, right: Timestamp | null): boolean {
+  const leftMs = timestampToMillis(left);
+  const rightMs = right?.toMillis() ?? null;
+  return leftMs === rightMs;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function scheduleDailyTimestamp(data: Record<string, any>, fromInstant: Date): Timestamp | null {
+  if (!userCanReceiveScheduledNotifications(data) || !dailyCardPrefsEnabled(data)) {
+    return null;
+  }
+  const timezone = resolveNotificationTimezone(data.timezone);
+  const hourLocal = normalizeDailyHour(data.notificationPrefs?.dailyCard?.hourLocal);
+  return Timestamp.fromDate(computeNextDailyCardAt(timezone, hourLocal, fromInstant));
+}
+
+function scheduleFollowupTimestamp(
+  data: Record<string, any>,
+  readingField: 'lastCoffeeReadingAt' | 'lastPalmReadingAt'
+): Timestamp | null {
+  if (!userCanReceiveScheduledNotifications(data) || !followupPrefsEnabled(data)) {
+    return null;
+  }
+  const readingAtMs = timestampToMillis(data[readingField]);
+  if (!readingAtMs) return null;
+  return Timestamp.fromMillis(readingAtMs + readingFollowupMs);
 }
 
 function errorCode(error: unknown): string {
@@ -2713,156 +2909,163 @@ export const onWalletCreditsChanged = onDocumentUpdated('users/{uid}', async (ev
   }
 });
 
+export const onUserDocWrite = onDocumentWritten(
+  {
+    document: 'users/{uid}',
+    region: 'us-central1',
+  },
+  async (event) => {
+    const before = event.data?.before.data() as Record<string, any> | undefined;
+    const after = event.data?.after.data() as Record<string, any> | undefined;
+    if (!after) return;
+
+    const now = new Date();
+    const updates: Record<string, unknown> = {};
+
+    const dailyInputChanged =
+      !before ||
+      before.timezone !== after.timezone ||
+      before.isProfileComplete !== after.isProfileComplete ||
+      stableJson(before.notificationPrefs?.dailyCard) !== stableJson(after.notificationPrefs?.dailyCard) ||
+      before.notificationPrefs?.enabled !== after.notificationPrefs?.enabled;
+
+    if (dailyInputChanged) {
+      const nextDailyCardAt = scheduleDailyTimestamp(after, now);
+      if (!timestampsEqual(after.nextDailyCardAt, nextDailyCardAt)) {
+        updates.nextDailyCardAt = nextDailyCardAt;
+      }
+    }
+
+    const followupInputChanged =
+      !before ||
+      before.isProfileComplete !== after.isProfileComplete ||
+      before.notificationPrefs?.enabled !== after.notificationPrefs?.enabled ||
+      stableJson(before.notificationPrefs?.coffeePalmFollowup) !==
+        stableJson(after.notificationPrefs?.coffeePalmFollowup);
+
+    const coffeeChanged =
+      followupInputChanged ||
+      timestampToMillis(before?.lastCoffeeReadingAt) !== timestampToMillis(after.lastCoffeeReadingAt);
+    if (coffeeChanged) {
+      const coffeeFollowupAt = scheduleFollowupTimestamp(after, 'lastCoffeeReadingAt');
+      if (!timestampsEqual(after.coffeeFollowupAt, coffeeFollowupAt)) {
+        updates.coffeeFollowupAt = coffeeFollowupAt;
+      }
+    }
+
+    const palmChanged =
+      followupInputChanged ||
+      timestampToMillis(before?.lastPalmReadingAt) !== timestampToMillis(after.lastPalmReadingAt);
+    if (palmChanged) {
+      const palmFollowupAt = scheduleFollowupTimestamp(after, 'lastPalmReadingAt');
+      if (!timestampsEqual(after.palmFollowupAt, palmFollowupAt)) {
+        updates.palmFollowupAt = palmFollowupAt;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) return;
+
+    await event.data!.after.ref.set(
+      {
+        ...updates,
+        notificationScheduleUpdatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+);
+
 export const sendDailyCardNudges = onSchedule(
   {
     schedule: 'every 1 hours',
     timeZone: 'Etc/UTC',
+    region: 'us-central1',
     timeoutSeconds: 300,
   },
   async () => {
-    let scanned = 0;
+    let dueDaily = 0;
+    let dueCoffeeFollowups = 0;
+    let duePalmFollowups = 0;
     let sent = 0;
     let skipped = 0;
     let failed = 0;
-    let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
     const now = new Date();
+    const nowTimestamp = Timestamp.fromDate(now);
 
+    const refreshDailySchedule = async (
+      userDoc: FirebaseFirestore.QueryDocumentSnapshot,
+      data: Record<string, any>,
+      fromInstant = now
+    ) => {
+      const nextDailyCardAt = scheduleDailyTimestamp(data, fromInstant);
+      await userDoc.ref.set(
+        {
+          nextDailyCardAt,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    };
+
+    const clearFollowup = async (
+      userDoc: FirebaseFirestore.QueryDocumentSnapshot,
+      field: 'coffeeFollowupAt' | 'palmFollowupAt',
+      lastSentField?: 'lastCoffeeFollowupAt' | 'lastPalmFollowupAt'
+    ) => {
+      await userDoc.ref.set(
+        {
+          [field]: null,
+          ...(lastSentField ? { [lastSentField]: FieldValue.serverTimestamp() } : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    };
+
+    const rescheduleFollowupWindow = async (
+      userDoc: FirebaseFirestore.QueryDocumentSnapshot,
+      field: 'coffeeFollowupAt' | 'palmFollowupAt',
+      data: Record<string, any>
+    ) => {
+      await userDoc.ref.set(
+        {
+          [field]: Timestamp.fromDate(computeNextFollowupWindowAt(data.timezone, now)),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    };
+
+    let dailyCursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
     while (true) {
       let query = db
         .collection('users')
-        .where('isProfileComplete', '==', true)
-        .orderBy(FieldPath.documentId())
-        .limit(400);
+        .where('nextDailyCardAt', '<=', nowTimestamp)
+        .orderBy('nextDailyCardAt')
+        .limit(dailyNudgeBatchLimit);
 
-      if (cursor) {
-        query = query.startAfter(cursor);
-      }
+      if (dailyCursor) query = query.startAfter(dailyCursor);
 
       const snap = await query.get();
       if (snap.empty) break;
 
       for (const userDoc of snap.docs) {
-        scanned += 1;
+        dueDaily += 1;
         try {
           const data = userDoc.data() as Record<string, any>;
-          const timezone =
-            typeof data.timezone === 'string' && data.timezone.trim()
-              ? data.timezone.trim()
-              : null;
-          if (!timezone) {
+          if (!userCanReceiveScheduledNotifications(data) || !dailyCardPrefsEnabled(data)) {
+            await refreshDailySchedule(userDoc, data);
             skipped += 1;
             continue;
           }
 
-          const prefs = data.notificationPrefs;
-          if (!prefs || prefs.enabled === false) {
-            skipped += 1;
-            continue;
-          }
-
-          let localHour: number;
-          let localDate: string;
-          try {
-            const parts = new Intl.DateTimeFormat('en-CA', {
-              timeZone: timezone,
-              hourCycle: 'h23',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-            }).formatToParts(now);
-            const get = (type: string) =>
-              parts.find((part) => part.type === type)?.value ?? '';
-
-            localHour = Number(get('hour'));
-            localDate = `${get('year')}-${get('month')}-${get('day')}`;
-          } catch {
-            skipped += 1;
-            continue;
-          }
-
+          const timezone = resolveNotificationTimezone(data.timezone);
+          const localDate = localDateKeyForTimezone(now, timezone);
           const lang = resolveUserLang(data);
           const vars = buildNotifVars(data, lang);
-          const nowMs = now.getTime();
-          const followupPrefs = prefs.coffeePalmFollowup;
-          if (followupPrefs && followupPrefs.enabled !== false && localHour >= 10 && localHour <= 21) {
-            const lastCoffee = timestampToMillis(data.lastCoffeeReadingAt);
-            const lastCoffeeFollowup = timestampToMillis(data.lastCoffeeFollowupAt);
-            if (
-              lastCoffee &&
-              nowMs - lastCoffee >= readingFollowupMs &&
-              (!lastCoffeeFollowup || lastCoffeeFollowup < lastCoffee)
-            ) {
-              const variant = pickNotification(lang, 'coffee_followup', vars);
-              const result = await sendNotificationToUser({
-                uid: userDoc.id,
-                title: variant.title,
-                body: variant.body,
-                data: {
-                  type: 'coffee_followup',
-                  route: '/coffee',
-                },
-              });
-
-              if (result.tokenCount > 0) {
-                await userDoc.ref.set(
-                  {
-                    lastCoffeeFollowupAt: FieldValue.serverTimestamp(),
-                    updatedAt: FieldValue.serverTimestamp(),
-                  },
-                  { merge: true }
-                );
-                sent += 1;
-              }
-            }
-
-            const lastPalm = timestampToMillis(data.lastPalmReadingAt);
-            const lastPalmFollowup = timestampToMillis(data.lastPalmFollowupAt);
-            if (
-              lastPalm &&
-              nowMs - lastPalm >= readingFollowupMs &&
-              (!lastPalmFollowup || lastPalmFollowup < lastPalm)
-            ) {
-              const variant = pickNotification(lang, 'palm_followup', vars);
-              const result = await sendNotificationToUser({
-                uid: userDoc.id,
-                title: variant.title,
-                body: variant.body,
-                data: {
-                  type: 'palm_followup',
-                  route: '/palm',
-                },
-              });
-
-              if (result.tokenCount > 0) {
-                await userDoc.ref.set(
-                  {
-                    lastPalmFollowupAt: FieldValue.serverTimestamp(),
-                    updatedAt: FieldValue.serverTimestamp(),
-                  },
-                  { merge: true }
-                );
-                sent += 1;
-              }
-            }
-          }
-
-          const dailyCard = prefs.dailyCard;
-          if (!dailyCard || dailyCard.enabled === false) {
-            skipped += 1;
-            continue;
-          }
-
-          const hourLocal = Number.isInteger(dailyCard.hourLocal)
-            ? dailyCard.hourLocal
-            : 9;
-
-          if (localHour !== hourLocal) {
-            skipped += 1;
-            continue;
-          }
 
           if (data.lastDailyCardSent === localDate) {
+            await refreshDailySchedule(userDoc, data);
             skipped += 1;
             continue;
           }
@@ -2883,28 +3086,139 @@ export const sendDailyCardNudges = onSchedule(
             await userDoc.ref.set(
               {
                 lastDailyCardSent: localDate,
+                nextDailyCardAt: Timestamp.fromDate(
+                  computeNextDailyCardAt(
+                    timezone,
+                    data.notificationPrefs?.dailyCard?.hourLocal,
+                    new Date(now.getTime() + 60 * 1000)
+                  )
+                ),
                 updatedAt: FieldValue.serverTimestamp(),
               },
               { merge: true }
             );
             sent += 1;
           } else {
+            await refreshDailySchedule(userDoc, data);
             skipped += 1;
           }
         } catch (error) {
           failed += 1;
-          logger.warn('sendDailyCardNudges failed for user', {
+          logger.warn('sendDailyCardNudges daily failed for user', {
             uid: userDoc.id,
             error,
           });
         }
       }
 
-      cursor = snap.docs[snap.docs.length - 1];
+      dailyCursor = snap.docs[snap.docs.length - 1];
     }
 
+    const processFollowups = async (input: {
+      dueField: 'coffeeFollowupAt' | 'palmFollowupAt';
+      lastReadingField: 'lastCoffeeReadingAt' | 'lastPalmReadingAt';
+      lastSentField: 'lastCoffeeFollowupAt' | 'lastPalmFollowupAt';
+      category: 'coffee_followup' | 'palm_followup';
+      route: '/coffee' | '/palm';
+    }) => {
+      let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      while (true) {
+        let query = db
+          .collection('users')
+          .where(input.dueField, '<=', nowTimestamp)
+          .orderBy(input.dueField)
+          .limit(dailyNudgeBatchLimit);
+
+        if (cursor) query = query.startAfter(cursor);
+
+        const snap = await query.get();
+        if (snap.empty) break;
+
+        for (const userDoc of snap.docs) {
+          if (input.dueField === 'coffeeFollowupAt') {
+            dueCoffeeFollowups += 1;
+          } else {
+            duePalmFollowups += 1;
+          }
+
+          try {
+            const data = userDoc.data() as Record<string, any>;
+            if (!userCanReceiveScheduledNotifications(data) || !followupPrefsEnabled(data)) {
+              await clearFollowup(userDoc, input.dueField);
+              skipped += 1;
+              continue;
+            }
+
+            const timezone = resolveNotificationTimezone(data.timezone);
+            const localHour = localHourForTimezone(now, timezone);
+            if (localHour < followupStartHour || localHour > followupEndHour) {
+              await rescheduleFollowupWindow(userDoc, input.dueField, data);
+              skipped += 1;
+              continue;
+            }
+
+            const lastReading = timestampToMillis(data[input.lastReadingField]);
+            const lastSentFollowup = timestampToMillis(data[input.lastSentField]);
+            if (!lastReading || (lastSentFollowup && lastSentFollowup >= lastReading)) {
+              await clearFollowup(userDoc, input.dueField);
+              skipped += 1;
+              continue;
+            }
+
+            const lang = resolveUserLang(data);
+            const vars = buildNotifVars(data, lang);
+            const variant = pickNotification(lang, input.category, vars);
+            const result = await sendNotificationToUser({
+              uid: userDoc.id,
+              title: variant.title,
+              body: variant.body,
+              data: {
+                type: input.category,
+                route: input.route,
+              },
+            });
+
+            if (result.tokenCount > 0) {
+              await clearFollowup(userDoc, input.dueField, input.lastSentField);
+              sent += 1;
+            } else {
+              await rescheduleFollowupWindow(userDoc, input.dueField, data);
+              skipped += 1;
+            }
+          } catch (error) {
+            failed += 1;
+            logger.warn('sendDailyCardNudges followup failed for user', {
+              uid: userDoc.id,
+              dueField: input.dueField,
+              error,
+            });
+          }
+        }
+
+        cursor = snap.docs[snap.docs.length - 1];
+      }
+    };
+
+    await processFollowups({
+      dueField: 'coffeeFollowupAt',
+      lastReadingField: 'lastCoffeeReadingAt',
+      lastSentField: 'lastCoffeeFollowupAt',
+      category: 'coffee_followup',
+      route: '/coffee',
+    });
+
+    await processFollowups({
+      dueField: 'palmFollowupAt',
+      lastReadingField: 'lastPalmReadingAt',
+      lastSentField: 'lastPalmFollowupAt',
+      category: 'palm_followup',
+      route: '/palm',
+    });
+
     logger.info('sendDailyCardNudges completed', {
-      scanned,
+      dueDaily,
+      dueCoffeeFollowups,
+      duePalmFollowups,
       sent,
       skipped,
       failed,
