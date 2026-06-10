@@ -31,8 +31,10 @@ import { checkAndBumpThrottle } from './lib/rate-limit';
 import { AIPersonaDoc, UserDoc } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
-import { sendAudioReadyNotification, sendDailyNudge } from './lib/fcm';
+import { sendAudioReadyNotification, sendNotificationToUser } from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
+import { buildNotifVars, resolveUserLang } from './lib/notif-personalization';
+import { pickNotification } from './notif-templates';
 import {
   arisSpreadSystemRules,
   isOffTopicArisMessage,
@@ -63,6 +65,8 @@ const coffeeDailyAttemptLimit = 10;
 const readingThrottleWindowMs = 10 * 60 * 1000;
 const readingWindowLimit = Number(process.env.READING_WINDOW_LIMIT ?? '5');
 const readingDailyLimit = Number(process.env.READING_DAILY_LIMIT ?? '30');
+const walletLowThreshold = 10;
+const readingFollowupMs = 48 * 60 * 60 * 1000;
 const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
 const appleAuthSecretNames = [
   'APPLE_TEAM_ID',
@@ -1693,6 +1697,7 @@ export const analyzeCoffeeReading = onCall(
           'coffeeAnalysis.activeReservationId': null,
           'coffeeAnalysis.activeReservationExpiresAtMs': null,
           'coffeeAnalysis.activeReservationAmount': null,
+          lastCoffeeReadingAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
         tx.update(reservationRef, {
@@ -2648,26 +2653,262 @@ export const restoreIosPurchases = onCall({ enforceAppCheck: false }, async (req
   }
 });
 
+export const onWalletCreditsChanged = onDocumentUpdated('users/{uid}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+
+  const beforeCredits = Number(before.wallet?.credits ?? 0);
+  const afterCredits = Number(after.wallet?.credits ?? 0);
+  if (beforeCredits === afterCredits) return;
+
+  const prefs = after.notificationPrefs;
+  if (!prefs || prefs.enabled === false || prefs.walletOffers?.enabled === false) return;
+
+  const uid = event.params.uid;
+  const userRef = db.collection('users').doc(uid);
+
+  if (afterCredits < walletLowThreshold) {
+    if (after.walletLowNotified === true) return;
+
+    const lang = resolveUserLang(after);
+    const vars = buildNotifVars(after, lang);
+    const category = Math.random() < 0.5 ? 'wallet_low' : 'wallet_offer';
+    const variant = pickNotification(lang, category, {
+      ...vars,
+      credits: afterCredits,
+    });
+
+    const result = await sendNotificationToUser({
+      uid,
+      title: variant.title,
+      body: variant.body,
+      data: {
+        type: 'wallet_low',
+        route: '/shop',
+      },
+    });
+
+    await userRef.set(
+      {
+        walletLowNotified: true,
+        walletLowNotifiedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    logger.info('wallet low notification sent', {
+      uid,
+      afterCredits,
+      category,
+      tokenCount: result.tokenCount,
+    });
+  } else if (after.walletLowNotified) {
+    await userRef.set(
+      {
+        walletLowNotified: false,
+      },
+      { merge: true }
+    );
+  }
+});
+
 export const sendDailyCardNudges = onSchedule(
   {
-    schedule: 'every day 08:00',
-    timeZone: process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul'
+    schedule: 'every 1 hours',
+    timeZone: 'Etc/UTC',
+    timeoutSeconds: 300,
   },
   async () => {
-    const usersSnap = await db.collection('users').where('isProfileComplete', '==', true).limit(500).get();
-    for (const userDoc of usersSnap.docs) {
-      const user = userDoc.data() as UserDoc;
-      if (user.settings?.notificationsEnabled === false) continue;
-      const birthDate = resolveUserBirthDate(user);
-      if (!birthDate) continue;
+    let scanned = 0;
+    let sent = 0;
+    let skipped = 0;
+    let failed = 0;
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    const now = new Date();
 
-      await sendDailyNudge({
-        uid: userDoc.id,
-        lang: resolveLanguage(user.settings?.lang),
-        zodiac: zodiacFromBirthDate(birthDate),
-        deepLink: process.env.DAILY_NUDGE_DEEP_LINK ?? 'https://tarotai.app/daily'
-      });
+    while (true) {
+      let query = db
+        .collection('users')
+        .where('isProfileComplete', '==', true)
+        .orderBy(FieldPath.documentId())
+        .limit(400);
+
+      if (cursor) {
+        query = query.startAfter(cursor);
+      }
+
+      const snap = await query.get();
+      if (snap.empty) break;
+
+      for (const userDoc of snap.docs) {
+        scanned += 1;
+        try {
+          const data = userDoc.data() as Record<string, any>;
+          const timezone =
+            typeof data.timezone === 'string' && data.timezone.trim()
+              ? data.timezone.trim()
+              : null;
+          if (!timezone) {
+            skipped += 1;
+            continue;
+          }
+
+          const prefs = data.notificationPrefs;
+          if (!prefs || prefs.enabled === false) {
+            skipped += 1;
+            continue;
+          }
+
+          let localHour: number;
+          let localDate: string;
+          try {
+            const parts = new Intl.DateTimeFormat('en-CA', {
+              timeZone: timezone,
+              hourCycle: 'h23',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+            }).formatToParts(now);
+            const get = (type: string) =>
+              parts.find((part) => part.type === type)?.value ?? '';
+
+            localHour = Number(get('hour'));
+            localDate = `${get('year')}-${get('month')}-${get('day')}`;
+          } catch {
+            skipped += 1;
+            continue;
+          }
+
+          const lang = resolveUserLang(data);
+          const vars = buildNotifVars(data, lang);
+          const nowMs = now.getTime();
+          const followupPrefs = prefs.coffeePalmFollowup;
+          if (followupPrefs && followupPrefs.enabled !== false && localHour >= 10 && localHour <= 21) {
+            const lastCoffee = timestampToMillis(data.lastCoffeeReadingAt);
+            const lastCoffeeFollowup = timestampToMillis(data.lastCoffeeFollowupAt);
+            if (
+              lastCoffee &&
+              nowMs - lastCoffee >= readingFollowupMs &&
+              (!lastCoffeeFollowup || lastCoffeeFollowup < lastCoffee)
+            ) {
+              const variant = pickNotification(lang, 'coffee_followup', vars);
+              const result = await sendNotificationToUser({
+                uid: userDoc.id,
+                title: variant.title,
+                body: variant.body,
+                data: {
+                  type: 'coffee_followup',
+                  route: '/coffee',
+                },
+              });
+
+              if (result.tokenCount > 0) {
+                await userDoc.ref.set(
+                  {
+                    lastCoffeeFollowupAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                  },
+                  { merge: true }
+                );
+                sent += 1;
+              }
+            }
+
+            const lastPalm = timestampToMillis(data.lastPalmReadingAt);
+            const lastPalmFollowup = timestampToMillis(data.lastPalmFollowupAt);
+            if (
+              lastPalm &&
+              nowMs - lastPalm >= readingFollowupMs &&
+              (!lastPalmFollowup || lastPalmFollowup < lastPalm)
+            ) {
+              const variant = pickNotification(lang, 'palm_followup', vars);
+              const result = await sendNotificationToUser({
+                uid: userDoc.id,
+                title: variant.title,
+                body: variant.body,
+                data: {
+                  type: 'palm_followup',
+                  route: '/palm',
+                },
+              });
+
+              if (result.tokenCount > 0) {
+                await userDoc.ref.set(
+                  {
+                    lastPalmFollowupAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                  },
+                  { merge: true }
+                );
+                sent += 1;
+              }
+            }
+          }
+
+          const dailyCard = prefs.dailyCard;
+          if (!dailyCard || dailyCard.enabled === false) {
+            skipped += 1;
+            continue;
+          }
+
+          const hourLocal = Number.isInteger(dailyCard.hourLocal)
+            ? dailyCard.hourLocal
+            : 9;
+
+          if (localHour !== hourLocal) {
+            skipped += 1;
+            continue;
+          }
+
+          if (data.lastDailyCardSent === localDate) {
+            skipped += 1;
+            continue;
+          }
+
+          const variant = pickNotification(lang, 'daily_card', vars);
+
+          const result = await sendNotificationToUser({
+            uid: userDoc.id,
+            title: variant.title,
+            body: variant.body,
+            data: {
+              type: 'daily_card',
+              route: '/daily',
+            },
+          });
+
+          if (result.tokenCount > 0) {
+            await userDoc.ref.set(
+              {
+                lastDailyCardSent: localDate,
+                updatedAt: FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+            sent += 1;
+          } else {
+            skipped += 1;
+          }
+        } catch (error) {
+          failed += 1;
+          logger.warn('sendDailyCardNudges failed for user', {
+            uid: userDoc.id,
+            error,
+          });
+        }
+      }
+
+      cursor = snap.docs[snap.docs.length - 1];
     }
+
+    logger.info('sendDailyCardNudges completed', {
+      scanned,
+      sent,
+      skipped,
+      failed,
+    });
   }
 );
 
@@ -2936,6 +3177,14 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
         analysis.rejectionCode ?? 'NOT_A_PALM'
       );
     }
+
+    await userRef.set(
+      {
+        lastPalmReadingAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 
     return {
       isValid: true,

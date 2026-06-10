@@ -16,6 +16,11 @@ export interface NotifVariant {
   body: string;
 }
 
+interface NamedNotifVariant {
+  withName: NotifVariant;
+  noName: NotifVariant;
+}
+
 export interface NotifVars {
   name?: string;
   zodiac?: string;
@@ -25,16 +30,24 @@ export interface NotifVars {
 
 const DEFAULT_LANG: NotifLang = "en";
 
-type NotifData = Record<NotifLang, Record<NotifCategory, NotifVariant[]>>;
+type NotifTemplateVariant = NotifVariant | NamedNotifVariant;
+type NotifData = Record<NotifLang, Record<NotifCategory, NotifTemplateVariant[]>>;
 
 export const NOTIF_TEMPLATES: NotifData = {
   tr: {
     daily_card: [
-      { title: "Günaydın {name} 🌅", body: "Bugünün kartı seni bekliyor. Evren sana ne fısıldıyor, bir bak ✨" },
-      { title: "Yeni gün, yeni kart 🔮", body: "{name}, bugün hangi enerji seninle? Günün kartını çek." },
-      { title: "Kartların hazır ✨", body: "{name}, güne bir rehberlikle başla — günün kartını aç." },
-      { title: "Bugün sana ne diyor? 🌙", body: "{name}, günün kartı bir mesaj saklıyor. Açmaya hazır mısın?" },
-      { title: "Kahveni al, kartını çek ☕🔮", body: "{name}, güne minik bir kehanetle başla. Günün kartı seni bekliyor." },
+      {
+        withName: { title: "Günaydın {name} ☀️", body: "Bugünün doğum haritası yorumu ve günün kartı hazır 🔮 Açıp keşfet ✨" },
+        noName: { title: "Günaydın ☀️", body: "Bugünün doğum haritası yorumu ve günün kartı hazır 🔮 Açıp keşfet ✨" },
+      },
+      {
+        withName: { title: "Yeni bir gün başladı 🌅", body: "{name}, yıldızların bugün ne fısıldıyor? Doğum haritası yorumun ve günün kartı seni bekliyor 🔮" },
+        noName: { title: "Yeni bir gün başladı 🌅", body: "Yıldızların bugün ne fısıldıyor? Doğum haritası yorumun ve günün kartı seni bekliyor 🔮" },
+      },
+      {
+        withName: { title: "Kartların hazır 🃏✨", body: "Günaydın {name}! Bugünün doğum haritası rehberliği ve günün kartı seni bekliyor 🌙" },
+        noName: { title: "Kartların hazır 🃏✨", body: "Günaydın! Bugünün doğum haritası rehberliği ve günün kartı seni bekliyor 🌙" },
+      },
     ],
     birth_chart_fallback: [
       { title: "Yıldızların bugünkü mesajı 🌙", body: "{zodiac} burcu için bugün özel bir gün. Yorumunu gör." },
@@ -44,16 +57,13 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Yıldız haritan güncellendi ⭐", body: "{name}, {zodiac} enerjisi bugün güçlü. Yorumunu kaçırma." },
     ],
     coffee_followup: [
-      { title: "Fincanın hâlâ konuşuyor ☕", body: "{name}, kahve falının detaylarına tekrar bak — kaçırdığın bir işaret olabilir." },
-      { title: "Telvenin sırrı çözülmeyi bekliyor ☕", body: "{name}, kahve falı yorumunu yeniden oku." },
-      { title: "Fincanında bir mesaj kaldı mı? ☕", body: "{name}, kahve falına dönüp bir kez daha bak." },
-      { title: "O fincan ne anlatıyordu? ✨", body: "{name}, kahve falı yorumunu tekrar incele, ipuçları derin." },
+      { title: "Bir fincan daha? ☕", body: "{name}, telve yeni bir hikâye anlatmaya hazır. Canın isterse tekrar bakalım ✨" },
+      { title: "Fincan seni özledi ☕", body: "{name}, yeni bir kahve falına ne dersin? Acelesi yok, sen hazır olunca 🔮" },
+      { title: "Telve fısıldıyor ☕", body: "{name}, içinden geldiğinde yeni bir fala birlikte bakabiliriz 🌙" },
     ],
     palm_followup: [
-      { title: "Avucundaki çizgiler ne diyordu? ✋", body: "{name}, el falı yorumunu yeniden incele." },
-      { title: "Elindeki harita seni bekliyor 🤚", body: "{name}, el falının detaylarına tekrar göz at." },
-      { title: "Çizgilerin bir şey saklıyor olabilir ✋", body: "{name}, el falı yorumunu yeniden oku." },
-      { title: "Kaderin avucunda ✨", body: "{name}, el falı sonucunu tekrar incele, derin bir anlamı var." },
+      { title: "Avuçların yeni bir şey saklıyor ✋", body: "{name}, canın isterse yeni bir el falına bakabiliriz ✨" },
+      { title: "Çizgilerin değişiyor olabilir 🤚", body: "{name}, tekrar el falına bakmak ister misin? Sen hazır olunca 🌙" },
     ],
     wallet_low: [
       { title: "Jetonların azalıyor ⚡", body: "{name}, {credits} jetonun kaldı. Falların yarıda kalmasın." },
@@ -70,11 +80,18 @@ export const NOTIF_TEMPLATES: NotifData = {
   },
   en: {
     daily_card: [
-      { title: "Good morning {name} 🌅", body: "Today's card is waiting. See what the universe whispers to you ✨" },
-      { title: "New day, new card 🔮", body: "{name}, which energy is with you today? Draw your daily card." },
-      { title: "Your cards are ready ✨", body: "{name}, start the day with some guidance — reveal today's card." },
-      { title: "What does today hold? 🌙", body: "{name}, your daily card hides a message. Ready to open it?" },
-      { title: "Grab your coffee, draw your card ☕🔮", body: "{name}, start the day with a little prophecy. Today's card awaits." },
+      {
+        withName: { title: "Good morning {name} ☀️", body: "Your daily birth chart reading and card of the day are ready 🔮 Tap to explore ✨" },
+        noName: { title: "Good morning ☀️", body: "Your daily birth chart reading and card of the day are ready 🔮 Tap to explore ✨" },
+      },
+      {
+        withName: { title: "A new day begins 🌅", body: "{name}, what are the stars whispering today? Your birth chart reading and daily card await 🔮" },
+        noName: { title: "A new day begins 🌅", body: "What are the stars whispering today? Your birth chart reading and daily card await 🔮" },
+      },
+      {
+        withName: { title: "Your cards are ready 🃏✨", body: "Good morning {name}! Today's birth chart guidance and card of the day are waiting 🌙" },
+        noName: { title: "Your cards are ready 🃏✨", body: "Good morning! Today's birth chart guidance and card of the day are waiting 🌙" },
+      },
     ],
     birth_chart_fallback: [
       { title: "Today's message from the stars 🌙", body: "It's a special day for {zodiac}. See your reading." },
@@ -84,16 +101,13 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Your star chart is updated ⭐", body: "{name}, {zodiac} energy is strong today. Don't miss your reading." },
     ],
     coffee_followup: [
-      { title: "Your cup is still speaking ☕", body: "{name}, revisit your coffee reading — you may have missed a sign." },
-      { title: "The grounds still hold a secret ☕", body: "{name}, read your coffee reading again." },
-      { title: "Is there a message left in your cup? ☕", body: "{name}, go back and take another look at your coffee reading." },
-      { title: "What was that cup telling you? ✨", body: "{name}, review your coffee reading — the clues run deep." },
+      { title: "One more cup? ☕", body: "{name}, the grounds have a new story. Shall we look again whenever you feel like it? ✨" },
+      { title: "Your cup misses you ☕", body: "{name}, fancy a new coffee reading? No rush — whenever you're ready 🔮" },
+      { title: "The grounds are whispering ☕", body: "{name}, we can explore a fresh reading whenever you feel like it 🌙" },
     ],
     palm_followup: [
-      { title: "What did your palm lines say? ✋", body: "{name}, take another look at your palm reading." },
-      { title: "The map in your hand awaits 🤚", body: "{name}, revisit the details of your palm reading." },
-      { title: "Your lines may be hiding something ✋", body: "{name}, read your palm reading again." },
-      { title: "Your destiny is in your hand ✨", body: "{name}, review your palm reading — it holds deeper meaning." },
+      { title: "Your palms hold something new ✋", body: "{name}, we can explore a new palm reading whenever you like ✨" },
+      { title: "Your lines may be shifting 🤚", body: "{name}, fancy another palm reading? Whenever you're ready 🌙" },
     ],
     wallet_low: [
       { title: "Your tokens are running low ⚡", body: "{name}, you have {credits} tokens left. Don't let your readings stop." },
@@ -110,11 +124,18 @@ export const NOTIF_TEMPLATES: NotifData = {
   },
   de: {
     daily_card: [
-      { title: "Guten Morgen {name} 🌅", body: "Deine Karte des Tages wartet. Sieh, was das Universum dir zuflüstert ✨" },
-      { title: "Neuer Tag, neue Karte 🔮", body: "{name}, welche Energie begleitet dich heute? Zieh deine Tageskarte." },
-      { title: "Deine Karten sind bereit ✨", body: "{name}, beginne den Tag mit etwas Führung — deck deine Tageskarte auf." },
-      { title: "Was hält der Tag bereit? 🌙", body: "{name}, deine Tageskarte verbirgt eine Botschaft. Bereit, sie aufzudecken?" },
-      { title: "Schnapp dir deinen Kaffee, zieh deine Karte ☕🔮", body: "{name}, beginne den Tag mit einer kleinen Prophezeiung. Deine Tageskarte wartet." },
+      {
+        withName: { title: "Guten Morgen {name} ☀️", body: "Deine tägliche Geburtshoroskop-Deutung und die Tageskarte sind da 🔮 Zum Entdecken tippen ✨" },
+        noName: { title: "Guten Morgen ☀️", body: "Deine tägliche Geburtshoroskop-Deutung und die Tageskarte sind da 🔮 Zum Entdecken tippen ✨" },
+      },
+      {
+        withName: { title: "Ein neuer Tag beginnt 🌅", body: "{name}, was flüstern dir die Sterne heute? Deine Geburtshoroskop-Deutung und die Tageskarte warten 🔮" },
+        noName: { title: "Ein neuer Tag beginnt 🌅", body: "Was flüstern dir die Sterne heute? Deine Geburtshoroskop-Deutung und die Tageskarte warten 🔮" },
+      },
+      {
+        withName: { title: "Deine Karten sind bereit 🃏✨", body: "Guten Morgen {name}! Die heutige Geburtshoroskop-Deutung und die Tageskarte warten auf dich 🌙" },
+        noName: { title: "Deine Karten sind bereit 🃏✨", body: "Guten Morgen! Die heutige Geburtshoroskop-Deutung und die Tageskarte warten auf dich 🌙" },
+      },
     ],
     birth_chart_fallback: [
       { title: "Die heutige Botschaft der Sterne 🌙", body: "Ein besonderer Tag für {zodiac}. Sieh dir deine Deutung an." },
@@ -124,16 +145,13 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Deine Sternenkarte ist aktualisiert ⭐", body: "{name}, die {zodiac}-Energie ist heute stark. Verpasse deine Deutung nicht." },
     ],
     coffee_followup: [
-      { title: "Deine Tasse spricht noch ☕", body: "{name}, sieh dir deine Kaffeesatzdeutung noch einmal an — vielleicht ein übersehenes Zeichen." },
-      { title: "Der Satz birgt noch ein Geheimnis ☕", body: "{name}, lies deine Kaffeesatzdeutung erneut." },
-      { title: "Ist noch eine Botschaft in deiner Tasse? ☕", body: "{name}, wirf noch einen Blick auf deine Kaffeesatzdeutung." },
-      { title: "Was sagte dir diese Tasse? ✨", body: "{name}, sieh dir deine Kaffeesatzdeutung noch einmal an — die Zeichen sind tief." },
+      { title: "Noch eine Tasse? ☕", body: "{name}, der Satz hat eine neue Geschichte. Schauen wir wieder, wann immer dir danach ist ✨" },
+      { title: "Deine Tasse vermisst dich ☕", body: "{name}, Lust auf eine neue Kaffeesatzdeutung? Kein Stress — wann du bereit bist 🔮" },
+      { title: "Der Satz flüstert ☕", body: "{name}, wir können jederzeit eine frische Deutung machen 🌙" },
     ],
     palm_followup: [
-      { title: "Was sagten deine Handlinien? ✋", body: "{name}, wirf noch einen Blick auf deine Handlesung." },
-      { title: "Die Karte in deiner Hand wartet 🤚", body: "{name}, sieh dir die Details deiner Handlesung noch einmal an." },
-      { title: "Deine Linien verbergen vielleicht etwas ✋", body: "{name}, lies deine Handlesung erneut." },
-      { title: "Dein Schicksal liegt in deiner Hand ✨", body: "{name}, sieh dir deine Handlesung noch einmal an — sie hat eine tiefere Bedeutung." },
+      { title: "Deine Hände bergen Neues ✋", body: "{name}, wir können jederzeit eine neue Handlesung machen ✨" },
+      { title: "Deine Linien verändern sich vielleicht 🤚", body: "{name}, Lust auf eine neue Handlesung? Wann du bereit bist 🌙" },
     ],
     wallet_low: [
       { title: "Deine Token werden knapp ⚡", body: "{name}, du hast noch {credits} Token. Lass deine Deutungen nicht stoppen." },
@@ -150,11 +168,18 @@ export const NOTIF_TEMPLATES: NotifData = {
   },
   es: {
     daily_card: [
-      { title: "Buenos días {name} 🌅", body: "Tu carta del día te espera. Descubre lo que el universo te susurra ✨" },
-      { title: "Nuevo día, nueva carta 🔮", body: "{name}, ¿qué energía te acompaña hoy? Saca tu carta del día." },
-      { title: "Tus cartas están listas ✨", body: "{name}, empieza el día con una guía — revela tu carta del día." },
-      { title: "¿Qué te depara hoy? 🌙", body: "{name}, tu carta del día esconde un mensaje. ¿Quieres abrirla?" },
-      { title: "Toma tu café y saca tu carta ☕🔮", body: "{name}, empieza el día con una pequeña profecía. Tu carta del día te espera." },
+      {
+        withName: { title: "Buenos días {name} ☀️", body: "Tu lectura diaria de carta astral y la carta del día están listas 🔮 Toca para explorar ✨" },
+        noName: { title: "Buenos días ☀️", body: "Tu lectura diaria de carta astral y la carta del día están listas 🔮 Toca para explorar ✨" },
+      },
+      {
+        withName: { title: "Comienza un nuevo día 🌅", body: "{name}, ¿qué te susurran hoy las estrellas? Tu lectura de carta astral y la carta del día te esperan 🔮" },
+        noName: { title: "Comienza un nuevo día 🌅", body: "¿Qué te susurran hoy las estrellas? Tu lectura de carta astral y la carta del día te esperan 🔮" },
+      },
+      {
+        withName: { title: "Tus cartas están listas 🃏✨", body: "¡Buenos días {name}! La guía de tu carta astral de hoy y la carta del día te esperan 🌙" },
+        noName: { title: "Tus cartas están listas 🃏✨", body: "¡Buenos días! La guía de tu carta astral de hoy y la carta del día te esperan 🌙" },
+      },
     ],
     birth_chart_fallback: [
       { title: "El mensaje de hoy de las estrellas 🌙", body: "Es un día especial para {zodiac}. Mira tu lectura." },
@@ -164,16 +189,13 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Tu carta astral se ha actualizado ⭐", body: "{name}, la energía de {zodiac} es fuerte hoy. No te pierdas tu lectura." },
     ],
     coffee_followup: [
-      { title: "Tu taza aún habla ☕", body: "{name}, vuelve a mirar tu lectura del café — quizá pasaste por alto una señal." },
-      { title: "Los posos guardan un secreto ☕", body: "{name}, vuelve a leer tu lectura del café." },
-      { title: "¿Queda un mensaje en tu taza? ☕", body: "{name}, regresa y echa otro vistazo a tu lectura del café." },
-      { title: "¿Qué te decía esa taza? ✨", body: "{name}, revisa tu lectura del café — las pistas son profundas." },
+      { title: "¿Otra taza? ☕", body: "{name}, los posos tienen una nueva historia. Miremos otra vez cuando te apetezca ✨" },
+      { title: "Tu taza te extraña ☕", body: "{name}, ¿te apetece una nueva lectura del café? Sin prisa, cuando quieras 🔮" },
+      { title: "Los posos susurran ☕", body: "{name}, podemos explorar una nueva lectura cuando quieras 🌙" },
     ],
     palm_followup: [
-      { title: "¿Qué decían las líneas de tu mano? ✋", body: "{name}, vuelve a revisar tu lectura de la palma." },
-      { title: "El mapa de tu mano te espera 🤚", body: "{name}, vuelve a mirar los detalles de tu lectura de la palma." },
-      { title: "Tus líneas podrían esconder algo ✋", body: "{name}, vuelve a leer tu lectura de la palma." },
-      { title: "Tu destino está en tu mano ✨", body: "{name}, revisa tu lectura de la palma — tiene un significado más profundo." },
+      { title: "Tus palmas guardan algo nuevo ✋", body: "{name}, podemos explorar una nueva lectura de la palma cuando quieras ✨" },
+      { title: "Tus líneas podrían cambiar 🤚", body: "{name}, ¿te apetece otra lectura de la palma? Cuando estés listo 🌙" },
     ],
     wallet_low: [
       { title: "Tus fichas se están agotando ⚡", body: "{name}, te quedan {credits} fichas. Que no se detengan tus lecturas." },
@@ -190,11 +212,18 @@ export const NOTIF_TEMPLATES: NotifData = {
   },
   fr: {
     daily_card: [
-      { title: "Bonjour {name} 🌅", body: "Ta carte du jour t'attend. Découvre ce que l'univers te murmure ✨" },
-      { title: "Nouveau jour, nouvelle carte 🔮", body: "{name}, quelle énergie t'accompagne aujourd'hui ? Tire ta carte du jour." },
-      { title: "Tes cartes sont prêtes ✨", body: "{name}, commence la journée avec un peu de guidance — révèle ta carte du jour." },
-      { title: "Que te réserve aujourd'hui ? 🌙", body: "{name}, ta carte du jour cache un message. Envie de la dévoiler ?" },
-      { title: "Prends ton café, tire ta carte ☕🔮", body: "{name}, commence la journée avec une petite prophétie. Ta carte du jour t'attend." },
+      {
+        withName: { title: "Bonjour {name} ☀️", body: "Ta lecture quotidienne de thème astral et la carte du jour sont prêtes 🔮 Touche pour explorer ✨" },
+        noName: { title: "Bonjour ☀️", body: "Ta lecture quotidienne de thème astral et la carte du jour sont prêtes 🔮 Touche pour explorer ✨" },
+      },
+      {
+        withName: { title: "Un nouveau jour commence 🌅", body: "{name}, que te murmurent les étoiles aujourd'hui ? Ta lecture de thème astral et la carte du jour t'attendent 🔮" },
+        noName: { title: "Un nouveau jour commence 🌅", body: "Que te murmurent les étoiles aujourd'hui ? Ta lecture de thème astral et la carte du jour t'attendent 🔮" },
+      },
+      {
+        withName: { title: "Tes cartes sont prêtes 🃏✨", body: "Bonjour {name} ! Les conseils de ton thème astral du jour et la carte du jour t'attendent 🌙" },
+        noName: { title: "Tes cartes sont prêtes 🃏✨", body: "Bonjour ! Les conseils de ton thème astral du jour et la carte du jour t'attendent 🌙" },
+      },
     ],
     birth_chart_fallback: [
       { title: "Le message des étoiles aujourd'hui 🌙", body: "C'est un jour spécial pour {zodiac}. Vois ta lecture." },
@@ -204,16 +233,13 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Ta carte du ciel est mise à jour ⭐", body: "{name}, l'énergie {zodiac} est forte aujourd'hui. Ne manque pas ta lecture." },
     ],
     coffee_followup: [
-      { title: "Ta tasse parle encore ☕", body: "{name}, reviens sur ta lecture du café — tu as peut-être manqué un signe." },
-      { title: "Le marc garde encore un secret ☕", body: "{name}, relis ta lecture du café." },
-      { title: "Reste-t-il un message dans ta tasse ? ☕", body: "{name}, reviens jeter un œil à ta lecture du café." },
-      { title: "Que te disait cette tasse ? ✨", body: "{name}, revois ta lecture du café — les indices sont profonds." },
+      { title: "Encore une tasse ? ☕", body: "{name}, le marc a une nouvelle histoire. On regarde à nouveau quand tu veux ✨" },
+      { title: "Ta tasse te réclame ☕", body: "{name}, envie d'une nouvelle lecture du café ? Pas de précipitation, quand tu es prêt 🔮" },
+      { title: "Le marc murmure ☕", body: "{name}, on peut explorer une nouvelle lecture quand tu veux 🌙" },
     ],
     palm_followup: [
-      { title: "Que disaient les lignes de ta main ? ✋", body: "{name}, reviens sur ta lecture des lignes de la main." },
-      { title: "La carte de ta main t'attend 🤚", body: "{name}, reviens sur les détails de ta lecture de la main." },
-      { title: "Tes lignes cachent peut-être quelque chose ✋", body: "{name}, relis ta lecture de la main." },
-      { title: "Ton destin est dans ta main ✨", body: "{name}, revois ta lecture de la main — elle a un sens plus profond." },
+      { title: "Tes paumes cachent du nouveau ✋", body: "{name}, on peut explorer une nouvelle lecture de la main quand tu veux ✨" },
+      { title: "Tes lignes changent peut-être 🤚", body: "{name}, envie d'une nouvelle lecture de la main ? Quand tu es prêt 🌙" },
     ],
     wallet_low: [
       { title: "Tes jetons s'épuisent ⚡", body: "{name}, il te reste {credits} jetons. Ne laisse pas tes lectures s'arrêter." },
@@ -237,6 +263,18 @@ function interpolate(text: string, vars: NotifVars): string {
   });
 }
 
+function resolveVariant(
+  variant: NotifTemplateVariant,
+  vars: NotifVars,
+): NotifVariant {
+  if ("withName" in variant) {
+    const name = vars.name?.toString().trim();
+    return name ? variant.withName : variant.noName;
+  }
+
+  return variant;
+}
+
 export function normalizeLang(lang?: string): NotifLang {
   const code = (lang ?? "").trim().toLowerCase().split(/[-_]/)[0];
   return (["tr", "en", "de", "es", "fr"] as const).includes(code as NotifLang)
@@ -255,8 +293,9 @@ export function pickNotification(
     NOTIF_TEMPLATES[normalizedLang][category] ??
     NOTIF_TEMPLATES[DEFAULT_LANG][category];
   const chosen = variants[Math.floor(Math.random() * variants.length)];
+  const variant = resolveVariant(chosen, vars);
   return {
-    title: interpolate(chosen.title, vars),
-    body: interpolate(chosen.body, vars),
+    title: interpolate(variant.title, vars),
+    body: interpolate(variant.body, vars),
   };
 }
