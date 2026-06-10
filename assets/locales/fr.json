@@ -320,5 +320,21 @@
   "creditsPack250Feature3": "20 chats profonds",
   "creditsPack1000Feature1": "100 lectures vocales",
   "creditsPack1000Feature2": "40 lectures vidéo",
-  "creditsPack1000Feature3": "80 chats profonds"
+  "creditsPack1000Feature3": "80 chats profonds",
+  "notificationsCategoryTarot": "Tarot",
+  "notificationsCategoryCoffee": "Lecture du café",
+  "notificationsCategoryPalm": "Lecture de la main",
+  "notificationsEmpty": "Aucune notification pour le moment",
+  "notificationSettingsTitle": "Paramètres des notifications",
+  "notificationSettingsGeneral": "Général",
+  "notificationSettingsDailyCard": "Carte du jour",
+  "notificationSettingsTime": "Heure de notification",
+  "notificationSettingsCoffeePalm": "Suivis café et main",
+  "notificationSettingsWalletOffers": "Offres du portefeuille",
+  "notificationSettingsEnabled": "Notifications activées",
+  "notificationSettingsDisabled": "Notifications désactivées",
+  "notificationsPrimingTitle": "Activer les notifications",
+  "notificationsPrimingBody": "Sois averti lorsque ta carte du jour et tes lectures café/main sont prêtes.",
+  "notificationsPrimingAllow": "Autoriser",
+  "notificationsPrimingNotNow": "Pas maintenant"
 }

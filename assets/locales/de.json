@@ -568,5 +568,21 @@
   "creditsPack250Feature3": "20 tiefe Chats",
   "creditsPack1000Feature1": "100 Sprachdeutungen",
   "creditsPack1000Feature2": "40 Video-Deutungen",
-  "creditsPack1000Feature3": "80 tiefe Chats"
+  "creditsPack1000Feature3": "80 tiefe Chats",
+  "notificationsCategoryTarot": "Tarot",
+  "notificationsCategoryCoffee": "Kaffeesatzlesen",
+  "notificationsCategoryPalm": "Handlesung",
+  "notificationsEmpty": "Noch keine Benachrichtigungen",
+  "notificationSettingsTitle": "Benachrichtigungseinstellungen",
+  "notificationSettingsGeneral": "Allgemein",
+  "notificationSettingsDailyCard": "Tageskarte",
+  "notificationSettingsTime": "Benachrichtigungszeit",
+  "notificationSettingsCoffeePalm": "Kaffee- & Hand-Follow-ups",
+  "notificationSettingsWalletOffers": "Wallet-Angebote",
+  "notificationSettingsEnabled": "Benachrichtigungen aktiviert",
+  "notificationSettingsDisabled": "Benachrichtigungen deaktiviert",
+  "notificationsPrimingTitle": "Benachrichtigungen erlauben",
+  "notificationsPrimingBody": "Lass dich benachrichtigen, wenn deine Tageskarte und Kaffee-/Handlesungen bereit sind.",
+  "notificationsPrimingAllow": "Erlauben",
+  "notificationsPrimingNotNow": "Nicht jetzt"
 }

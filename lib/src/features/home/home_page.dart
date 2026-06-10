@@ -19,6 +19,7 @@ import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
 import '../../core/app_locale.dart';
 import '../../core/notification_service.dart';
+import '../../core/notification_router.dart';
 import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
@@ -91,6 +92,17 @@ class HomePage extends StatefulWidget {
   final AuthService authService;
   final String uid;
 
+  static final GlobalKey<_HomePageState> _homeKey = GlobalKey<_HomePageState>();
+
+  static Key get rootKey => _homeKey;
+
+  static bool openTab(int index) {
+    final state = _homeKey.currentState;
+    if (state == null) return false;
+    state._onNavTap(index);
+    return true;
+  }
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -105,25 +117,15 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _scheduleNotificationQueues();
-  }
-
-  Future<void> _scheduleNotificationQueues() async {
-    try {
-      await local_notifications.NotificationService.instance
-          .scheduleMorningNotifications();
-      await local_notifications.NotificationService.instance
-          .scheduleMiddayReminders();
-    } catch (e, st) {
-      debugPrint('Notification queue scheduling skipped: $e');
-      debugPrintStack(stackTrace: st);
-    }
+    unawaited(_maybePromptNotificationPermission());
   }
 
   Future<void> _maybePromptNotificationPermission() async {
     final prefs = await SharedPreferences.getInstance();
     final alreadyPrompted = prefs.getBool(_permissionPromptSeenKey) ?? false;
     if (alreadyPrompted || !mounted) return;
+    final status = NotificationService.instance.permissionStatus.value;
+    if (status != 'notDetermined' && status != 'unknown') return;
 
     if (!mounted) return;
     await showDialog<void>(
@@ -2359,6 +2361,15 @@ class _NotificationsPage extends StatelessWidget {
       body: ValueListenableBuilder<List<AppNotificationItem>>(
         valueListenable: NotificationService.instance.inbox,
         builder: (context, notifications, _) {
+          final tarot = notifications
+              .where((item) => item.category == 'tarot')
+              .toList(growable: false);
+          final coffee = notifications
+              .where((item) => item.category == 'coffee')
+              .toList(growable: false);
+          final palm = notifications
+              .where((item) => item.category == 'palm')
+              .toList(growable: false);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
@@ -2375,13 +2386,70 @@ class _NotificationsPage extends StatelessWidget {
                     ),
                   ),
                 ),
-              for (final item in notifications) ...[
-                _NotificationListCard(item: item),
-                const SizedBox(height: 12),
+              if (notifications.isNotEmpty) ...[
+                _NotificationSection(
+                  title: AppTexts.t('notificationsCategoryTarot'),
+                  items: tarot,
+                ),
+                _NotificationSection(
+                  title: AppTexts.t('notificationsCategoryCoffee'),
+                  items: coffee,
+                ),
+                _NotificationSection(
+                  title: AppTexts.t('notificationsCategoryPalm'),
+                  items: palm,
+                ),
               ],
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _NotificationSection extends StatelessWidget {
+  const _NotificationSection({required this.title, required this.items});
+
+  final String title;
+  final List<AppNotificationItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 13,
+              letterSpacing: 1.2,
+              color: _kTertiary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            _GlassCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  AppTexts.t('notificationsEmpty'),
+                  style: GoogleFonts.manrope(
+                    fontSize: 13,
+                    color: _kSecondary.withValues(alpha: 0.76),
+                  ),
+                ),
+              ),
+            )
+          else
+            for (final item in items) ...[
+              _NotificationListCard(item: item),
+              const SizedBox(height: 12),
+            ],
+        ],
       ),
     );
   }
@@ -2441,69 +2509,73 @@ class _NotificationListCard extends StatelessWidget {
         ),
       ),
       onDismissed: (_) => deleteItem(),
-      child: _GlassCard(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _kPrimary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.notifications_active_rounded,
-                      color: _kTertiary,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      presentation.title,
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 15,
-                        color: _kOnSurface,
-                        fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => NotificationRouter.handleNotificationTap(item.toMap()),
+        child: _GlassCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _kPrimary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.notifications_active_rounded,
+                        color: _kTertiary,
+                        size: 18,
                       ),
                     ),
-                  ),
-                  Tooltip(
-                    message: deleteLabel,
-                    child: IconButton(
-                      onPressed: deleteItem,
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      color: _kSecondary.withValues(alpha: 0.85),
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        presentation.title,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 15,
+                          color: _kOnSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
+                    Tooltip(
+                      message: deleteLabel,
+                      child: IconButton(
+                        onPressed: deleteItem,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        color: _kSecondary.withValues(alpha: 0.85),
+                        iconSize: 20,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  presentation.body,
+                  style: GoogleFonts.manrope(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: _kSecondary.withValues(alpha: 0.95),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                presentation.body,
-                style: GoogleFonts.manrope(
-                  fontSize: 14,
-                  height: 1.45,
-                  color: _kSecondary.withValues(alpha: 0.95),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '${presentation.sourceLabel}  •  $timestamp',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 11,
-                  letterSpacing: 1.1,
-                  color: _kSecondary.withValues(alpha: 0.7),
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 12),
+                Text(
+                  '${presentation.sourceLabel}  •  $timestamp',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 11,
+                    letterSpacing: 1.1,
+                    color: _kSecondary.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2524,7 +2596,7 @@ class _NotificationPresentation {
 
   factory _NotificationPresentation.fromItem(AppNotificationItem item) {
     final lang = AppLocale.current;
-    final type = _notificationType(item.source);
+    final type = _notificationType(item.type, item.source);
     final cleanTitle = _cleanNotificationText(item.title);
     final cleanBody = _cleanNotificationText(item.body);
     final extractedCard = _extractCardName(cleanBody);
@@ -2541,7 +2613,11 @@ class _NotificationPresentation {
     );
   }
 
-  static String _notificationType(String source) {
+  static String _notificationType(String type, String source) {
+    final normalizedType = type.toLowerCase();
+    if (normalizedType != 'general' && normalizedType.isNotEmpty) {
+      return normalizedType;
+    }
     final normalized = source.toLowerCase();
     if (normalized.contains('arcana_chat')) return 'arcana_chat';
     if (normalized.contains('tarot_reminder')) return 'tarot_reminder';
@@ -2558,12 +2634,32 @@ class _NotificationPresentation {
     required String fallback,
   }) {
     switch (type) {
+      case 'daily_card':
       case 'daily_tarot':
         return lang == 'tr' ? 'Günün Kozmik Mesajı' : "Today's Cosmic Message";
       case 'tarot_reminder':
         return lang == 'tr' ? 'Kartın Seni Bekliyor' : 'Your Card Awaits';
       case 'arcana_chat':
         return lang == 'tr' ? 'Arcana Fısıldıyor...' : 'Arcana Whispers...';
+      case 'coffee_followup':
+        return fallback.isEmpty
+            ? AppTexts.t('notificationsCategoryCoffee')
+            : fallback;
+      case 'palm_followup':
+        return fallback.isEmpty
+            ? AppTexts.t('notificationsCategoryPalm')
+            : fallback;
+      case 'wallet_low':
+      case 'wallet_offer':
+        return fallback.isEmpty ? AppTexts.t('shopTitle') : fallback;
+      case 'reading_audio_ready':
+        return fallback.isEmpty
+            ? AppTexts.t('home.notifications.title')
+            : fallback;
+      case 'birth_chart_fallback':
+        return fallback.isEmpty
+            ? AppTexts.t('notificationsCategoryTarot')
+            : fallback;
       default:
         return fallback.isEmpty
             ? (lang == 'tr' ? 'Bildirim' : 'Notification')
@@ -2578,6 +2674,7 @@ class _NotificationPresentation {
     String? cardName,
   }) {
     switch (type) {
+      case 'daily_card':
       case 'daily_tarot':
         return lang == 'tr'
             ? 'Doğum haritandaki enerji bugün senin için şekillendi. Yorumun hazır!'
@@ -2601,6 +2698,18 @@ class _NotificationPresentation {
 
   static String _sourceLabelForType(String type, String lang) {
     switch (type) {
+      case 'coffee_followup':
+        return AppTexts.t('notificationsCategoryCoffee');
+      case 'palm_followup':
+        return AppTexts.t('notificationsCategoryPalm');
+      case 'wallet_low':
+      case 'wallet_offer':
+        return AppTexts.t('shopTitle');
+      case 'reading_audio_ready':
+        return lang == 'tr' ? 'Sesli yorum' : 'Audio reading';
+      case 'birth_chart_fallback':
+        return lang == 'tr' ? 'Doğum frekansı' : 'Birth frequency';
+      case 'daily_card':
       case 'daily_tarot':
         return lang == 'tr' ? 'Günlük mesaj' : 'Daily message';
       case 'tarot_reminder':

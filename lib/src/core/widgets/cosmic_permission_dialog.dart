@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../app_texts.dart';
+
 class CosmicPermissionDialog extends StatelessWidget {
   const CosmicPermissionDialog({
     super.key,
@@ -55,9 +57,7 @@ class CosmicPermissionDialog extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _iconBackground,
-                    border: Border.all(
-                      color: _border.withValues(alpha: 0.7),
-                    ),
+                    border: Border.all(color: _border.withValues(alpha: 0.7)),
                     boxShadow: [
                       BoxShadow(
                         color: _primaryStart.withValues(alpha: 0.18),
@@ -72,8 +72,8 @@ class CosmicPermissionDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text(
-                  'Yildizlarin Rehberligi',
+                Text(
+                  AppTexts.t('notificationsPrimingTitle'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _titleColor,
@@ -82,8 +82,8 @@ class CosmicPermissionDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Yarinki yorumun hazir oldugunda sana haber vermemizi ister misin?',
+                Text(
+                  AppTexts.t('notificationsPrimingBody'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _bodyColor,
@@ -102,8 +102,8 @@ class CosmicPermissionDialog extends StatelessWidget {
                           foregroundColor: _secondaryText,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        child: const Text(
-                          'Simdi Degil',
+                        child: Text(
+                          AppTexts.t('notificationsPrimingNotNow'),
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -138,8 +138,8 @@ class CosmicPermissionDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Izin Ver',
+                          child: Text(
+                            AppTexts.t('notificationsPrimingAllow'),
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'services/notification_service.dart' as local_notifications;
 import 'src/core/app_check.dart';
+import 'src/core/app_navigator.dart';
 import 'src/core/app_texts.dart';
 import 'src/core/di/service_locator.dart';
 import 'src/core/localization_service.dart';
@@ -35,10 +36,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<String?> _bootstrapApp() async {
   try {
-    await _runRequiredBootstrapTask(
-      'Firebase',
-      () => Firebase.initializeApp(),
-    );
+    await _runRequiredBootstrapTask('Firebase', () => Firebase.initializeApp());
     await _runOptionalBootstrapTask(
       'App Check',
       () => activateAppCheck(isDebug: kDebugMode),
@@ -111,6 +109,7 @@ class TarotAiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       title: AppTexts.t('app.title'),
       theme: ThemeData.dark(useMaterial3: true).copyWith(
@@ -174,9 +173,7 @@ class AppStartupLoadingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Color(0xFF17081C),
-      body: Center(
-        child: CircularProgressIndicator(color: Color(0xFFD4AF37)),
-      ),
+      body: Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37))),
     );
   }
 }

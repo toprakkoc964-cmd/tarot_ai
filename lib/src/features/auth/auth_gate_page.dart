@@ -157,9 +157,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
                                     if (registrationCompletedOnboardingUid ==
                                         user.uid) {
                                       return OnboardingPage(
-                                        key: ValueKey(
-                                          'onboarding_${user.uid}',
-                                        ),
+                                        key: ValueKey('onboarding_${user.uid}'),
                                         authService: _authService,
                                         uid: user.uid,
                                       );
@@ -323,6 +321,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
                                                 }
 
                                                 return HomePage(
+                                                  key: HomePage.rootKey,
                                                   authService: _authService,
                                                   uid: user.uid,
                                                 );

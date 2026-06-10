@@ -627,5 +627,21 @@
   "creditsPack250Feature3": "20 deep chats",
   "creditsPack1000Feature1": "100 voice readings",
   "creditsPack1000Feature2": "40 video readings",
-  "creditsPack1000Feature3": "80 deep chats"
+  "creditsPack1000Feature3": "80 deep chats",
+  "notificationsCategoryTarot": "Tarot",
+  "notificationsCategoryCoffee": "Coffee Reading",
+  "notificationsCategoryPalm": "Palm Reading",
+  "notificationsEmpty": "No notifications yet",
+  "notificationSettingsTitle": "Notification Settings",
+  "notificationSettingsGeneral": "General",
+  "notificationSettingsDailyCard": "Daily Card",
+  "notificationSettingsTime": "Notification time",
+  "notificationSettingsCoffeePalm": "Coffee & Palm Follow-ups",
+  "notificationSettingsWalletOffers": "Wallet Offers",
+  "notificationSettingsEnabled": "Notifications enabled",
+  "notificationSettingsDisabled": "Notifications disabled",
+  "notificationsPrimingTitle": "Enable notifications",
+  "notificationsPrimingBody": "Get notified when your daily card and coffee/palm readings are ready.",
+  "notificationsPrimingAllow": "Allow",
+  "notificationsPrimingNotNow": "Not now"
 }

@@ -627,5 +627,21 @@
   "creditsPack250Feature3": "20 derin sohbet",
   "creditsPack1000Feature1": "100 sesli yorum",
   "creditsPack1000Feature2": "40 görüntülü görüşme",
-  "creditsPack1000Feature3": "80 derin sohbet"
+  "creditsPack1000Feature3": "80 derin sohbet",
+  "notificationsCategoryTarot": "Tarot",
+  "notificationsCategoryCoffee": "Kahve Falı",
+  "notificationsCategoryPalm": "El Falı",
+  "notificationsEmpty": "Henüz bildirim yok",
+  "notificationSettingsTitle": "Bildirim Ayarları",
+  "notificationSettingsGeneral": "Genel",
+  "notificationSettingsDailyCard": "Günün Kartı",
+  "notificationSettingsTime": "Bildirim saati",
+  "notificationSettingsCoffeePalm": "Kahve & El Falı Takibi",
+  "notificationSettingsWalletOffers": "Cüzdan Teklifleri",
+  "notificationSettingsEnabled": "Bildirimler açık",
+  "notificationSettingsDisabled": "Bildirimler kapalı",
+  "notificationsPrimingTitle": "Bildirimlere izin ver",
+  "notificationsPrimingBody": "Günün kartı, kahve ve el falı yorumların hazır olduğunda haberdar ol.",
+  "notificationsPrimingAllow": "İzin ver",
+  "notificationsPrimingNotNow": "Şimdi değil"
 }

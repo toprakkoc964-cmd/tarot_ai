@@ -11,6 +11,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_locale.dart';
+import 'notification_router.dart';
 import '../features/auth/user_profile_contract.dart';
 
 class AppNotificationItem {
@@ -20,6 +21,8 @@ class AppNotificationItem {
     required this.body,
     required this.receivedAt,
     required this.source,
+    required this.type,
+    this.route,
   });
 
   final String id;
@@ -27,6 +30,16 @@ class AppNotificationItem {
   final String body;
   final DateTime receivedAt;
   final String source;
+  final String type;
+  final String? route;
+
+  String get category {
+    return switch (type) {
+      'coffee_followup' => 'coffee',
+      'palm_followup' => 'palm',
+      _ => 'tarot',
+    };
+  }
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
@@ -35,6 +48,8 @@ class AppNotificationItem {
       'body': body,
       'receivedAt': receivedAt.toIso8601String(),
       'source': source,
+      'type': type,
+      if (route != null) 'route': route,
     };
   }
 
@@ -47,6 +62,8 @@ class AppNotificationItem {
           DateTime.tryParse(map['receivedAt'] as String? ?? '') ??
           DateTime.now(),
       source: map['source'] as String? ?? 'unknown',
+      type: map['type'] as String? ?? 'general',
+      route: map['route'] as String?,
     );
   }
 }
@@ -56,7 +73,8 @@ class NotificationService {
 
   static final NotificationService instance = NotificationService._();
 
-  static const _storedNotificationsKey = 'stored_notifications_v1';
+  static const _storedNotificationsKey = 'stored_notifications_v2';
+  static const _legacyStoredNotificationsKey = 'stored_notifications_v1';
   static const _campaignTopicKey = 'campaign_topic_v1';
   static const _maxStoredNotifications = 25;
   static const _deviceInfoChannel = MethodChannel('tarot_ai/device_info');
@@ -268,13 +286,15 @@ class NotificationService {
     FirebaseMessaging.onMessage.listen(
       (message) => recordRemoteMessage(message, source: 'foreground'),
     );
-    FirebaseMessaging.onMessageOpenedApp.listen(
-      (message) => recordRemoteMessage(message, source: 'opened_app'),
-    );
+    FirebaseMessaging.onMessageOpenedApp.listen((message) async {
+      await recordRemoteMessage(message, source: 'opened_app');
+      await NotificationRouter.handleNotificationTap(message.data);
+    });
 
     FirebaseMessaging.instance.getInitialMessage().then((initialMessage) async {
       if (initialMessage != null) {
         await recordRemoteMessage(initialMessage, source: 'launch');
+        await NotificationRouter.handleNotificationTap(initialMessage.data);
       }
     });
   }
@@ -348,6 +368,8 @@ class NotificationService {
 
     final fallbackTitle = message.data['title']?.toString().trim();
     final fallbackBody = message.data['body']?.toString().trim();
+    final messageType = message.data['type']?.toString().trim();
+    final messageRoute = message.data['route']?.toString().trim();
 
     await storeNotification(
       id: message.messageId ?? DateTime.now().microsecondsSinceEpoch.toString(),
@@ -366,6 +388,8 @@ class NotificationService {
           ? fallbackBody!
           : 'Open the app to view the latest update.',
       source: source,
+      type: messageType?.isNotEmpty == true ? messageType! : 'general',
+      route: messageRoute?.isNotEmpty == true ? messageRoute : null,
     );
   }
 
@@ -374,6 +398,8 @@ class NotificationService {
     required String title,
     required String body,
     required String source,
+    String type = 'general',
+    String? route,
     DateTime? receivedAt,
   }) async {
     final item = AppNotificationItem(
@@ -382,6 +408,8 @@ class NotificationService {
       body: body,
       receivedAt: receivedAt ?? DateTime.now(),
       source: source,
+      type: type.trim().isEmpty ? 'general' : type.trim(),
+      route: (route?.trim().isEmpty ?? true) ? null : route!.trim(),
     );
     final current = inbox.value;
     final deduped = current.where((entry) => entry.id != item.id).toList();
@@ -396,7 +424,15 @@ class NotificationService {
 
   Future<void> _loadStoredNotifications() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storedNotificationsKey);
+    var raw = prefs.getString(_storedNotificationsKey);
+    var migratedLegacy = false;
+    if (raw == null || raw.isEmpty) {
+      raw = prefs.getString(_legacyStoredNotificationsKey);
+      if (raw != null && raw.isNotEmpty) {
+        migratedLegacy = true;
+        await prefs.remove(_legacyStoredNotificationsKey);
+      }
+    }
     if (raw == null || raw.isEmpty) return;
 
     try {
@@ -405,6 +441,9 @@ class NotificationService {
           .whereType<Map<String, dynamic>>()
           .map(AppNotificationItem.fromMap)
           .toList(growable: false);
+      if (migratedLegacy) {
+        await _persistNotifications();
+      }
     } catch (_) {
       inbox.value = const [];
     }

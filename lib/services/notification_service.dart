@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -10,7 +11,19 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../src/core/notification_service.dart' as app_notifications;
+import '../src/core/notification_router.dart';
 import '../src/core/utils/notification_translator.dart';
+
+@pragma('vm:entry-point')
+void onDidReceiveBackgroundNotificationResponse(NotificationResponse response) {
+  _handleLocalNotificationResponse(response);
+}
+
+void _handleLocalNotificationResponse(NotificationResponse response) {
+  final data = _dataFromPayload(response.payload);
+  if (data.isEmpty) return;
+  unawaited(NotificationRouter.handleNotificationTap(data));
+}
 
 class NotificationService {
   NotificationService._();
@@ -19,11 +32,11 @@ class NotificationService {
 
   static const AndroidNotificationChannel _dailyReadingsChannel =
       AndroidNotificationChannel(
-    'high_importance_channel',
-    'Daily Readings',
-    description: 'Daily tarot and spiritual reminder notifications.',
-    importance: Importance.high,
-  );
+        'high_importance_channel',
+        'Daily Readings',
+        description: 'Daily tarot and spiritual reminder notifications.',
+        importance: Importance.high,
+      );
 
   static const DarwinNotificationCategory _dailyCategory =
       DarwinNotificationCategory('daily_readings');
@@ -36,114 +49,13 @@ class NotificationService {
 
   Future<void> init() async {
     await _ensureInitialized();
+    await _cancelLegacyQueuedNotifications();
     await _backfillPendingNotificationsIntoInboxQueue();
     await syncDeliveredScheduledNotificationsToInbox();
-
-    await scheduleMorningNotifications();
-    await scheduleMiddayReminders();
   }
 
   Future<void> initializeForBackgroundMessages() async {
     await _ensureInitialized();
-  }
-
-  Future<void> scheduleMorningNotifications() async {
-    final pending = await _plugin.pendingNotificationRequests();
-    final hasQueuedDailyTarot = pending.any(
-      (request) => request.payload?.startsWith('daily_tarot:') ?? false,
-    );
-    if (hasQueuedDailyTarot) return;
-
-    final languageCode = _resolveLanguageCode();
-    final title = await NotificationTranslator.getTranslation(
-      languageCode,
-      'daily_tarot',
-      'title',
-    );
-    final body = await NotificationTranslator.getTranslation(
-      languageCode,
-      'daily_tarot',
-      'body',
-    );
-
-    final random = Random();
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduledCount = 0;
-    var dayOffset = 0;
-
-    while (scheduledCount < 7) {
-      final baseDate = tz.TZDateTime(
-        tz.local,
-        now.year,
-        now.month,
-        now.day + dayOffset,
-        7,
-      );
-      final randomMinutes = random.nextInt(121);
-      final scheduledAt = baseDate.add(Duration(minutes: randomMinutes));
-
-      dayOffset += 1;
-      if (!scheduledAt.isAfter(now)) {
-        continue;
-      }
-
-      await _scheduleNotification(
-        id: _morningNotificationId(scheduledAt),
-        type: 'daily_tarot',
-        title: title,
-        body: body,
-        scheduledAt: scheduledAt,
-      );
-      scheduledCount += 1;
-    }
-  }
-
-  Future<void> scheduleMiddayReminders() async {
-    final pending = await _plugin.pendingNotificationRequests();
-    final hasQueuedReminders = pending.any(
-      (request) => request.payload?.startsWith('tarot_reminder:') ?? false,
-    );
-    if (hasQueuedReminders) return;
-
-    final languageCode = _resolveLanguageCode();
-    final title = await NotificationTranslator.getTranslation(
-      languageCode,
-      'tarot_reminder',
-      'title',
-    );
-    final body = await NotificationTranslator.getTranslation(
-      languageCode,
-      'tarot_reminder',
-      'body',
-    );
-
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduledCount = 0;
-    var dayOffset = 0;
-
-    while (scheduledCount < 7) {
-      final scheduledAt = tz.TZDateTime(
-        tz.local,
-        now.year,
-        now.month,
-        now.day + dayOffset,
-        11,
-        30,
-      );
-      dayOffset += 1;
-      if (!scheduledAt.isAfter(now)) {
-        continue;
-      }
-
-      await _scheduleNotification(
-        id: _middayReminderId(scheduledAt),
-        type: 'tarot_reminder',
-        title: title,
-        body: body,
-        scheduledAt: scheduledAt,
-      );
-      scheduledCount += 1;
-    }
   }
 
   Future<void> cancelAllNotifications() async {
@@ -195,7 +107,8 @@ class NotificationService {
     final scheduledAt = _randomEveningTime(now);
     if (scheduledAt == null) {
       debugPrint(
-          'Arcana chat notification skipped: evening window has passed.');
+        'Arcana chat notification skipped: evening window has passed.',
+      );
       return;
     }
 
@@ -209,30 +122,34 @@ class NotificationService {
   }
 
   Future<void> _configureNotificationChannels() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.createNotificationChannel(_dailyReadingsChannel);
   }
 
   Future<void> _requestPermissions() async {
-    final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
-    await iosPlugin?.requestPermissions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    final iosPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
 
-    final macOsPlugin = _plugin.resolvePlatformSpecificImplementation<
-        MacOSFlutterLocalNotificationsPlugin>();
+    final macOsPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >();
     await macOsPlugin?.requestPermissions(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.requestNotificationsPermission();
   }
 
@@ -242,8 +159,8 @@ class NotificationService {
     final data = message.data;
     final langCode =
         (data['lang']?.toString().trim().toLowerCase().isNotEmpty ?? false)
-            ? data['lang']!.toString().trim().toLowerCase()
-            : _resolveLanguageCode();
+        ? data['lang']!.toString().trim().toLowerCase()
+        : _resolveLanguageCode();
     final type = data['type']?.toString().trim() ?? 'daily_tarot';
 
     final title = _resolvedMessageTitle(message, data, langCode, type);
@@ -271,7 +188,7 @@ class NotificationService {
           presentSound: true,
         ),
       ),
-      payload: data.isEmpty ? null : data.toString(),
+      payload: data.isEmpty ? null : jsonEncode(data),
     );
 
     await app_notifications.NotificationService.instance.storeNotification(
@@ -279,6 +196,8 @@ class NotificationService {
       title: title,
       body: body,
       source: 'background',
+      type: type,
+      route: data['route']?.toString(),
     );
   }
 
@@ -313,7 +232,9 @@ class NotificationService {
           ),
         ),
         androidScheduleMode: scheduleMode,
-        payload: '$type:${scheduledAt.toIso8601String()}',
+        payload: jsonEncode(
+          _payloadForScheduledNotification(type, scheduledAt),
+        ),
       );
     } on PlatformException catch (e) {
       if (e.code != 'exact_alarms_not_permitted' ||
@@ -345,7 +266,9 @@ class NotificationService {
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          payload: '$type:${scheduledAt.toIso8601String()}',
+          payload: jsonEncode(
+            _payloadForScheduledNotification(type, scheduledAt),
+          ),
         );
       } on PlatformException catch (retryError) {
         debugPrint('Notification schedule skipped ($type): $retryError');
@@ -369,10 +292,12 @@ class NotificationService {
       return AndroidScheduleMode.exactAllowWhileIdle;
     }
 
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    final canScheduleExact =
-        await androidPlugin?.canScheduleExactNotifications();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final canScheduleExact = await androidPlugin
+        ?.canScheduleExactNotifications();
     if (canScheduleExact == true) {
       return AndroidScheduleMode.exactAllowWhileIdle;
     }
@@ -425,6 +350,8 @@ class NotificationService {
         title: item.title,
         body: item.body,
         source: 'local_${item.type}',
+        type: item.type,
+        route: item.route,
         receivedAt: item.scheduledAt,
       );
     }
@@ -467,9 +394,7 @@ class NotificationService {
     }
   }
 
-  Future<void> _saveScheduledInboxQueue(
-    List<_ScheduledInboxItem> items,
-  ) async {
+  Future<void> _saveScheduledInboxQueue(List<_ScheduledInboxItem> items) async {
     final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(
       items.map((item) => item.toMap()).toList(growable: false),
@@ -497,7 +422,12 @@ class NotificationService {
       iOS: iosSettings,
     );
 
-    await _plugin.initialize(settings: settings);
+    await _plugin.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse:
+          onDidReceiveBackgroundNotificationResponse,
+    );
     await _configureNotificationChannels();
     _initialized = true;
   }
@@ -600,6 +530,11 @@ class NotificationService {
   }
 
   DateTime? _scheduledAtFromPayload(String? payload) {
+    final data = _dataFromPayload(payload);
+    final scheduledAt = data['scheduledAt']?.toString();
+    if (scheduledAt != null && scheduledAt.isNotEmpty) {
+      return DateTime.tryParse(scheduledAt);
+    }
     if (payload == null || !payload.contains(':')) return null;
     final parts = payload.split(':');
     if (parts.length < 2) return null;
@@ -608,6 +543,11 @@ class NotificationService {
   }
 
   String? _typeFromPayload(String? payload) {
+    final data = _dataFromPayload(payload);
+    final typeFromJson = data['type']?.toString().trim();
+    if (typeFromJson != null && typeFromJson.isNotEmpty) {
+      return typeFromJson;
+    }
     if (payload == null || !payload.contains(':')) return null;
     final type = payload.split(':').first.trim();
     return type.isEmpty ? null : type;
@@ -727,6 +667,48 @@ class NotificationService {
     };
     return names[cardName] ?? cardName;
   }
+
+  Future<void> _cancelLegacyQueuedNotifications() async {
+    final pending = await _plugin.pendingNotificationRequests();
+    for (final request in pending) {
+      final payload = request.payload ?? '';
+      if (payload.startsWith('daily_tarot:') ||
+          payload.startsWith('tarot_reminder:')) {
+        await _plugin.cancel(id: request.id);
+        await _removeScheduledInboxItem(request.id);
+      }
+    }
+  }
+
+  Map<String, String> _payloadForScheduledNotification(
+    String type,
+    DateTime scheduledAt,
+  ) {
+    return <String, String>{
+      'type': type,
+      'scheduledAt': scheduledAt.toIso8601String(),
+      if (type == 'arcana_chat') 'route': '/daily',
+    };
+  }
+}
+
+Map<String, dynamic> _dataFromPayload(String? payload) {
+  if (payload == null || payload.trim().isEmpty) return const {};
+
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map) {
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+      );
+    }
+  } catch (_) {
+    // Fall back to the legacy "type:iso" payload.
+  }
+
+  if (!payload.contains(':')) return const {};
+  final type = payload.split(':').first.trim();
+  return type.isEmpty ? const {} : <String, String>{'type': type};
 }
 
 class _ScheduledInboxItem {
@@ -743,6 +725,7 @@ class _ScheduledInboxItem {
   final String title;
   final String body;
   final DateTime scheduledAt;
+  String? get route => type == 'arcana_chat' ? '/daily' : null;
 
   String get inboxId => 'local_${id}_${scheduledAt.microsecondsSinceEpoch}';
 
@@ -762,7 +745,8 @@ class _ScheduledInboxItem {
       type: map['type'] as String? ?? 'unknown',
       title: map['title'] as String? ?? '',
       body: map['body'] as String? ?? '',
-      scheduledAt: DateTime.tryParse(map['scheduledAt'] as String? ?? '') ??
+      scheduledAt:
+          DateTime.tryParse(map['scheduledAt'] as String? ?? '') ??
           DateTime.now(),
     );
   }

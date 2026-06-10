@@ -1,7 +1,6 @@
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -10,6 +9,7 @@ import '../../core/app_texts.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
 import '../auth/widgets/mystic_toast.dart';
+import '../settings/notification_settings_page.dart';
 import 'cosmic_personalization_screen.dart';
 
 const _kBg = Color(0xFF17081C);
@@ -88,9 +88,9 @@ class _ProfilePageState extends State<ProfilePage> {
       final storedBirthDate = _parseStoredBirthDate(
         data[UserProfileContract.birthDate] as String?,
       );
-      final settings = data['settings'] as Map<String, dynamic>?;
-      final storedNotificationsEnabled =
-          settings?['notificationsEnabled'] as bool?;
+      final notificationPrefs =
+          data[UserProfileContract.notificationPrefs] as Map<String, dynamic>?;
+      final storedNotificationsEnabled = notificationPrefs?['enabled'] as bool?;
 
       setState(() {
         if (storedName.isNotEmpty) _name = storedName;
@@ -114,10 +114,14 @@ class _ProfilePageState extends State<ProfilePage> {
     }, SetOptions(merge: true));
   }
 
-  Future<void> _updateNotificationPreference(bool value) async {
-    await _updateProfileFields({
-      'settings': {'notificationsEnabled': value},
-    });
+  Future<void> _openNotificationSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NotificationSettingsPage(uid: widget.uid),
+      ),
+    );
+    if (!mounted) return;
+    await _loadProfileFromFirestore();
   }
 
   String _formatBirthDate(DateTime dt) {
@@ -536,45 +540,14 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 _ActionRow(
                   icon: Icons.notifications_rounded,
-                  title: 'Bildirimler',
-                  subtitle: 'Gunluk kart yorumlari ve hatirlatmalar',
-                  onTap: () async {
-                    final nextValue = !_notificationsEnabled;
-                    setState(() => _notificationsEnabled = nextValue);
-                    try {
-                      await _updateNotificationPreference(nextValue);
-                      if (!mounted) return;
-                      _showSnack(
-                        nextValue
-                            ? 'Bildirimler acildi'
-                            : 'Bildirimler kapatildi',
-                      );
-                    } catch (_) {
-                      if (!mounted) return;
-                      setState(() => _notificationsEnabled = !nextValue);
-                      _showSnack('Bildirim ayari kaydedilemedi');
-                    }
-                  },
-                  trailing: CupertinoSwitch(
-                    value: _notificationsEnabled,
-                    activeTrackColor: _kPrimary,
-                    inactiveTrackColor: const Color(0xFF26112E),
-                    onChanged: (value) async {
-                      setState(() => _notificationsEnabled = value);
-                      try {
-                        await _updateNotificationPreference(value);
-                        if (!mounted) return;
-                        _showSnack(
-                          value
-                              ? 'Bildirimler acildi'
-                              : 'Bildirimler kapatildi',
-                        );
-                      } catch (_) {
-                        if (!mounted) return;
-                        setState(() => _notificationsEnabled = !value);
-                        _showSnack('Bildirim ayari kaydedilemedi');
-                      }
-                    },
+                  title: AppTexts.t('notificationSettingsTitle'),
+                  subtitle: _notificationsEnabled
+                      ? AppTexts.t('notificationSettingsEnabled')
+                      : AppTexts.t('notificationSettingsDisabled'),
+                  onTap: _openNotificationSettings,
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: _kSecondary.withValues(alpha: 0.85),
                   ),
                 ),
                 _ActionRow(
