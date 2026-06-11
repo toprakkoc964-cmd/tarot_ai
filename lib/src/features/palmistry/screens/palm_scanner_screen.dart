@@ -25,13 +25,7 @@ import '../widgets/palm_overlay_painter.dart';
 import '../widgets/scanner_laser_painter.dart';
 import 'palmistry_result_screen.dart';
 
-enum _PalmLivenessPhase {
-  idle,
-  detecting,
-  palmLocked,
-  livenessChallenge,
-  verified,
-}
+enum _PalmLivenessPhase { idle, detecting, challenge, verified, scanning }
 
 class PalmScannerScreen extends StatefulWidget {
   const PalmScannerScreen({super.key});
@@ -44,7 +38,7 @@ class PalmScannerScreen extends StatefulWidget {
 
 class _PalmScannerScreenState extends State<PalmScannerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  static const bool _debugLiveness = true;
+  static const bool _debugLiveness = kDebugMode;
 
   late final AnimationController _scanAnimation;
 
@@ -63,6 +57,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   bool _showScanAnyway = false;
   int _stableValidFrameCount = 0;
   int _verifiedOpenFrameCount = 0;
+  int _stableAimFrames = 0;
   bool _challengeSawClosed = false;
   Timer? _challengeTimer;
   Timer? _fallbackTimer;
@@ -107,17 +102,6 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       return false;
     }
     return !Platform.isIOS || _livenessPhase == _PalmLivenessPhase.verified;
-  }
-
-  bool get _canStartPalmDetection {
-    final controller = _controller;
-    return Platform.isIOS &&
-        !_isScanning &&
-        controller != null &&
-        controller.value.isInitialized &&
-        (_livenessPhase == _PalmLivenessPhase.idle ||
-            _livenessPhase == _PalmLivenessPhase.detecting ||
-            _livenessPhase == _PalmLivenessPhase.palmLocked);
   }
 
   Future<void> _initializeCamera() async {
@@ -181,7 +165,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _controller = controller;
         _isInitializing = false;
         _livenessPhase = Platform.isIOS
-            ? _PalmLivenessPhase.idle
+            ? _PalmLivenessPhase.detecting
             : _PalmLivenessPhase.verified;
         _detectionResult = Platform.isIOS
             ? const PalmDetectionResult.noHand()
@@ -199,6 +183,9 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                 fingerSpreadRatio: 1,
               );
       });
+      if (Platform.isIOS) {
+        unawaited(_beginPalmDetection());
+      }
     } on CameraException catch (e) {
       if (!mounted) return;
       final code = e.code.toLowerCase();
@@ -268,6 +255,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     if (!mounted) return;
     setState(() {
       _isScanning = true;
+      _livenessPhase = _PalmLivenessPhase.scanning;
       _showScanAnyway = false;
       _errorTitle = null;
       _errorMessage = null;
@@ -313,13 +301,17 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _frozenImage = null;
         _stableValidFrameCount = 0;
         _verifiedOpenFrameCount = 0;
+        _stableAimFrames = 0;
         _showScanAnyway = false;
         _livenessPhase = Platform.isIOS
-            ? _PalmLivenessPhase.idle
+            ? _PalmLivenessPhase.detecting
             : _PalmLivenessPhase.verified;
         _errorTitle = AppTexts.t('palmScanErrorTitle');
         _errorMessage = _mapScanError(error);
       });
+      if (Platform.isIOS) {
+        unawaited(_beginPalmDetection());
+      }
     }
   }
 
@@ -328,7 +320,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _isImageStreamActive ||
         _isScanning ||
         _livenessPhase == _PalmLivenessPhase.idle ||
-        _livenessPhase == _PalmLivenessPhase.verified) {
+        _livenessPhase == _PalmLivenessPhase.scanning) {
       return;
     }
     if (!controller.value.isInitialized) return;
@@ -354,15 +346,21 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     }
   }
 
-  Future<void> _startPalmDetection() async {
+  Future<void> _beginPalmDetection() async {
     final controller = _controller;
-    if (!_canStartPalmDetection || controller == null) return;
+    if (!Platform.isIOS ||
+        _isScanning ||
+        controller == null ||
+        !controller.value.isInitialized) {
+      return;
+    }
     _challengeTimer?.cancel();
     _fallbackTimer?.cancel();
     setState(() {
       _livenessPhase = _PalmLivenessPhase.detecting;
       _stableValidFrameCount = 0;
       _verifiedOpenFrameCount = 0;
+      _stableAimFrames = 0;
       _challengeSawClosed = false;
       _showScanAnyway = false;
       _livenessStatusOverride = null;
@@ -375,24 +373,17 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       if (!mounted ||
           _isScanning ||
           !Platform.isIOS ||
-          _livenessPhase == _PalmLivenessPhase.verified) {
+          _livenessPhase == _PalmLivenessPhase.scanning) {
         return;
       }
       setState(() => _showScanAnyway = true);
     });
   }
 
-  void _startLivenessChallenge() {
-    if (_livenessPhase != _PalmLivenessPhase.palmLocked) return;
+  void _startChallengeTimeout() {
     _challengeTimer?.cancel();
-    setState(() {
-      _livenessPhase = _PalmLivenessPhase.livenessChallenge;
-      _challengeSawClosed = false;
-      _verifiedOpenFrameCount = 0;
-      _livenessStatusOverride = null;
-    });
     _challengeTimer = Timer(const Duration(seconds: 6), () {
-      if (!mounted || _livenessPhase != _PalmLivenessPhase.livenessChallenge) {
+      if (!mounted || _livenessPhase != _PalmLivenessPhase.challenge) {
         return;
       }
       HapticFeedback.selectionClick();
@@ -400,25 +391,31 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _livenessPhase = _PalmLivenessPhase.detecting;
         _stableValidFrameCount = 0;
         _verifiedOpenFrameCount = 0;
+        _stableAimFrames = 0;
         _challengeSawClosed = false;
         _livenessStatusOverride = AppTexts.t('palmLivenessTimeout');
       });
     });
   }
 
-  Future<void> _completeLivenessChallenge() async {
+  void _enterVerifiedPhase() {
     if (!mounted || _isScanning) return;
     _challengeTimer?.cancel();
-    _fallbackTimer?.cancel();
     setState(() {
       _livenessPhase = _PalmLivenessPhase.verified;
       _livenessStatusOverride = null;
       _showScanAnyway = false;
+      _stableAimFrames = 0;
     });
     HapticFeedback.mediumImpact();
-    await _stopImageStreamIfNeeded();
-    if (!mounted) return;
-    await _startScan();
+    _challengeTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted ||
+          _isScanning ||
+          _livenessPhase != _PalmLivenessPhase.verified) {
+        return;
+      }
+      setState(() => _showScanAnyway = true);
+    });
   }
 
   Future<void> _scanAnyway() async {
@@ -439,7 +436,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   void _handleCameraImage(CameraImage image) {
     if (!mounted || _isScanning || _isProcessingFrame) return;
     if (_livenessPhase == _PalmLivenessPhase.idle ||
-        _livenessPhase == _PalmLivenessPhase.verified) {
+        _livenessPhase == _PalmLivenessPhase.scanning) {
       return;
     }
 
@@ -487,21 +484,21 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     var nextStableCount = _stableValidFrameCount;
     var nextSawClosed = _challengeSawClosed;
     var nextVerifiedOpenCount = _verifiedOpenFrameCount;
+    var nextStableAimFrames = _stableAimFrames;
     var shouldVerify = false;
-    var shouldStartChallenge = false;
+    var shouldStartChallengeTimer = false;
+    var shouldScan = false;
 
     if (phase == _PalmLivenessPhase.detecting) {
       nextStableCount = result.handDetected ? nextStableCount + 1 : 0;
       if (nextStableCount >= 2) {
-        nextPhase = _PalmLivenessPhase.palmLocked;
-        shouldStartChallenge = true;
+        nextPhase = _PalmLivenessPhase.challenge;
+        nextSawClosed = false;
+        nextVerifiedOpenCount = 0;
+        nextStableAimFrames = 0;
+        shouldStartChallengeTimer = true;
       }
-    } else if (phase == _PalmLivenessPhase.palmLocked) {
-      nextStableCount = result.handDetected ? nextStableCount : 0;
-      if (!result.handDetected || result.confidence < 0.45) {
-        nextPhase = _PalmLivenessPhase.detecting;
-      }
-    } else if (phase == _PalmLivenessPhase.livenessChallenge) {
+    } else if (phase == _PalmLivenessPhase.challenge) {
       final closed =
           result.extendedFingerCount <= 1 || result.fingerSpreadRatio < 0.30;
       final opened =
@@ -516,16 +513,23 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       } else if (nextSawClosed) {
         nextVerifiedOpenCount = 0;
       }
+    } else if (phase == _PalmLivenessPhase.verified) {
+      final rotation = result.rotationAngle?.abs();
+      final aligned =
+          result.extendedFingerCount >= 4 &&
+          result.openPalmScore >= 0.6 &&
+          rotation != null &&
+          rotation <= 18 &&
+          result.reliablePointCount >= 12;
+      nextStableAimFrames = aligned ? nextStableAimFrames + 1 : 0;
+      shouldScan = nextStableAimFrames >= 4;
     }
-
-    final becameLocked =
-        _livenessPhase != _PalmLivenessPhase.palmLocked &&
-        nextPhase == _PalmLivenessPhase.palmLocked;
 
     setState(() {
       _detectionResult = result;
       _stableValidFrameCount = nextStableCount;
       _verifiedOpenFrameCount = nextVerifiedOpenCount;
+      _stableAimFrames = nextStableAimFrames;
       _challengeSawClosed = nextSawClosed;
       _livenessPhase = nextPhase;
       if (phase == _PalmLivenessPhase.detecting && result.handDetected) {
@@ -533,21 +537,17 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       }
     });
 
-    if (becameLocked) {
+    if (shouldStartChallengeTimer) {
       HapticFeedback.lightImpact();
-    }
-
-    if (shouldStartChallenge) {
-      Future<void>.delayed(const Duration(milliseconds: 220), () {
-        if (!mounted || _livenessPhase != _PalmLivenessPhase.palmLocked) {
-          return;
-        }
-        _startLivenessChallenge();
-      });
+      _startChallengeTimeout();
     }
 
     if (shouldVerify) {
-      unawaited(_completeLivenessChallenge());
+      _enterVerifiedPhase();
+    }
+
+    if (shouldScan) {
+      unawaited(_startScan());
     }
   }
 
@@ -595,19 +595,19 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     return switch (_livenessPhase) {
       _PalmLivenessPhase.idle => AppTexts.t('palmReadyToScan'),
       _PalmLivenessPhase.detecting => AppTexts.t('palmLivenessFrame'),
-      _PalmLivenessPhase.palmLocked => AppTexts.t('palmLivenessReady'),
-      _PalmLivenessPhase.livenessChallenge =>
+      _PalmLivenessPhase.challenge =>
         _challengeSawClosed
             ? AppTexts.t('palmLivenessOpen')
             : AppTexts.t('palmLivenessClose'),
-      _PalmLivenessPhase.verified => AppTexts.t('palmDetected'),
+      _PalmLivenessPhase.verified => AppTexts.t('palmHoldSteady'),
+      _PalmLivenessPhase.scanning => AppTexts.t('palmScanningLoading'),
     };
   }
 
   String? _challengeOverlayText() {
     if (!Platform.isIOS ||
         _isScanning ||
-        _livenessPhase != _PalmLivenessPhase.livenessChallenge) {
+        _livenessPhase != _PalmLivenessPhase.challenge) {
       return null;
     }
     return _challengeSawClosed
@@ -845,9 +845,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
                 style: GoogleFonts.spaceGrotesk(
                   color:
                       _canTapScan ||
-                          _livenessPhase == _PalmLivenessPhase.palmLocked ||
-                          _livenessPhase ==
-                              _PalmLivenessPhase.livenessChallenge ||
+                          _livenessPhase == _PalmLivenessPhase.challenge ||
+                          _livenessPhase == _PalmLivenessPhase.verified ||
                           _isScanning
                       ? AppColors.primaryPink
                       : AppColors.secondaryLavender,
@@ -860,15 +859,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
               if (Platform.isIOS)
                 Column(
                   children: [
-                    CosmicScanButton(
-                      text: AppTexts.t('palmScanStart'),
-                      icon: Icons.front_hand_rounded,
-                      enabled: _canStartPalmDetection,
-                      isLoading: _isScanning,
-                      onTap: _startPalmDetection,
-                    ),
                     if (_showScanAnyway) ...[
-                      const SizedBox(height: 10),
                       CosmicScanButton(
                         text: AppTexts.t('palmScanAnyway'),
                         icon: Icons.camera_alt_rounded,

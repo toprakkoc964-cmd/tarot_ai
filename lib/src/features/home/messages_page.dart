@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_texts.dart';
 import 'aris_session_service.dart';
@@ -39,21 +41,82 @@ class _MessagesPageState extends State<MessagesPage> {
   final _service = ArisSessionService();
   StreamSubscription<List<ArisSessionRecord>>? _subscription;
   List<ArisSessionRecord> _sessions = const [];
+  ArisSessionCategory _selectedCategory = ArisSessionCategory.tarot;
   bool _loading = true;
   String? _errorMessage;
   bool _usingServerFallback = false;
 
+  String get _cacheKey => 'aris_archive_cache_${widget.uid}';
+
+  List<ArisSessionRecord> get _filteredSessions => _sessions
+      .where((session) => session.category == _selectedCategory)
+      .toList(growable: false);
+
   @override
   void initState() {
     super.initState();
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadCachedSessions();
+    if (!mounted) return;
     _startListening();
-    unawaited(_loadFromFirestoreIfNeeded());
+    unawaited(_refreshAll());
   }
 
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
     super.dispose();
+  }
+
+  Future<void> _loadCachedSessions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null || raw.trim().isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+
+      final sessions = <ArisSessionRecord>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final sessionId = (map['sessionId'] as String?)?.trim() ?? '';
+        if (sessionId.isEmpty) continue;
+        sessions.add(
+          ArisSessionRecord.fromMap(sessionId: sessionId, data: map),
+        );
+      }
+
+      if (!mounted || sessions.isEmpty) return;
+      setState(() {
+        _sessions = ArisSessionService.mapAndSortSessions(sessions);
+        _loading = false;
+        _errorMessage = null;
+      });
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('aris archive cache read failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
+  }
+
+  Future<void> _persistSessions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode(
+        _sessions.map((session) => session.toMap()).toList(),
+      );
+      await prefs.setString(_cacheKey, payload);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('aris archive cache write failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }
   }
 
   void _applySessions(List<ArisSessionRecord> sessions) {
@@ -63,6 +126,7 @@ class _MessagesPageState extends State<MessagesPage> {
       _loading = false;
       _errorMessage = null;
     });
+    unawaited(_persistSessions());
   }
 
   void _mergeAndApply({
@@ -77,6 +141,7 @@ class _MessagesPageState extends State<MessagesPage> {
       _errorMessage = null;
       if (fromServer) _usingServerFallback = true;
     });
+    unawaited(_persistSessions());
   }
 
   void _startListening() {
@@ -86,30 +151,26 @@ class _MessagesPageState extends State<MessagesPage> {
       _errorMessage = null;
     });
 
-    _subscription = _service.watchSessions(widget.uid).listen(
-      (sessions) {
-        if (!mounted) return;
-        if (_usingServerFallback && _sessions.isNotEmpty) {
-          _mergeAndApply(incoming: sessions);
-        } else {
-          _applySessions(sessions);
-          _usingServerFallback = false;
-        }
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        if (kDebugMode) {
-          debugPrint('aris_sessions stream error: $error');
-          debugPrintStack(stackTrace: stackTrace);
-        }
-        unawaited(_loadFromFirestore(showLoading: !_usingServerFallback));
-      },
-    );
-  }
-
-  Future<void> _loadFromFirestoreIfNeeded() async {
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted || !_loading || _sessions.isNotEmpty) return;
-    await _loadFromFirestore(showLoading: false);
+    _subscription = _service
+        .watchSessions(widget.uid)
+        .listen(
+          (sessions) {
+            if (!mounted) return;
+            if (_usingServerFallback && _sessions.isNotEmpty) {
+              _mergeAndApply(incoming: sessions);
+            } else {
+              _applySessions(sessions);
+              _usingServerFallback = false;
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (kDebugMode) {
+              debugPrint('aris_sessions stream error: $error');
+              debugPrintStack(stackTrace: stackTrace);
+            }
+            unawaited(_loadFromFirestore(showLoading: !_usingServerFallback));
+          },
+        );
   }
 
   Future<void> _loadFromFirestore({bool showLoading = true}) async {
@@ -159,19 +220,19 @@ class _MessagesPageState extends State<MessagesPage> {
   void _openSession(ArisSessionRecord session) {
     Navigator.of(context)
         .push(
-      MaterialPageRoute<String>(
-        builder: (_) => KozmikBilgePage(
-          uid: widget.uid,
-          resumeSessionId: session.sessionId,
-          spreadCards: session.toDrawnCards(),
-          spreadSessionId: session.sessionId,
-          cardTitle: session.isSpread ? '' : session.cardName,
-        ),
-      ),
-    )
+          MaterialPageRoute<String>(
+            builder: (_) => KozmikBilgePage(
+              uid: widget.uid,
+              resumeSessionId: session.sessionId,
+              spreadCards: session.toDrawnCards(),
+              spreadSessionId: session.sessionId,
+              cardTitle: session.isSpread ? '' : session.cardName,
+            ),
+          ),
+        )
         .then((_) {
-      if (mounted) unawaited(_refreshAll());
-    });
+          if (mounted) unawaited(_refreshAll());
+        });
   }
 
   @override
@@ -187,6 +248,12 @@ class _MessagesPageState extends State<MessagesPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _MessagesTopBar(showBackButton: widget.showBackButton),
+                _ArchiveCategoryTabs(
+                  selectedCategory: _selectedCategory,
+                  onChanged: (category) {
+                    setState(() => _selectedCategory = category);
+                  },
+                ),
                 Expanded(child: _buildBody(context)),
               ],
             ),
@@ -198,27 +265,25 @@ class _MessagesPageState extends State<MessagesPage> {
 
   Widget _buildBody(BuildContext context) {
     if (_loading && _sessions.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: _kPrimary),
-      );
+      return const Center(child: CircularProgressIndicator(color: _kPrimary));
     }
 
     if (_errorMessage != null && _sessions.isEmpty) {
-      return _MessagesError(
-        message: _errorMessage!,
-        onRetry: _refreshAll,
-      );
+      return _MessagesError(message: _errorMessage!, onRetry: _refreshAll);
     }
 
-    if (_sessions.isEmpty) {
+    final visibleSessions = _filteredSessions;
+
+    if (visibleSessions.isEmpty) {
       return RefreshIndicator(
         color: _kPrimary,
         onRefresh: _refreshAll,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
           children: [
-            SizedBox(height: MediaQuery.sizeOf(context).height * 0.22),
-            const _MessagesEmpty(),
+            SizedBox(height: MediaQuery.sizeOf(context).height * 0.16),
+            _MessagesEmpty(category: _selectedCategory),
           ],
         ),
       );
@@ -230,10 +295,10 @@ class _MessagesPageState extends State<MessagesPage> {
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
-        itemCount: _sessions.length,
+        itemCount: visibleSessions.length,
         separatorBuilder: (_, __) => const SizedBox(height: 14),
         itemBuilder: (context, index) {
-          final session = _sessions[index];
+          final session = visibleSessions[index];
           return _MessageSessionTile(
             session: session,
             locale: Localizations.localeOf(context).toString(),
@@ -266,7 +331,10 @@ class _MessagesTopBar extends StatelessWidget {
                   child: IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(
                       Icons.arrow_back_ios_new_rounded,
@@ -275,21 +343,148 @@ class _MessagesTopBar extends StatelessWidget {
                     ),
                   ),
                 ),
-              Text(
-                AppTexts.t('messages.title'),
-                style: GoogleFonts.newsreader(
-                  fontSize: 38,
-                  fontStyle: FontStyle.italic,
-                  color: _kPrimary,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  AppTexts.t('messages.title'),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: GoogleFonts.newsreader(
+                    fontSize: 48,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w700,
+                    color: _kPrimary,
+                    shadows: [
+                      Shadow(
+                        color: _kPrimary.withValues(alpha: 0.48),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                AppTexts.t('messages.subtitle'),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.manrope(
-                  fontSize: 13,
-                  color: _kSecondary.withValues(alpha: 0.85),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchiveCategoryTabs extends StatelessWidget {
+  const _ArchiveCategoryTabs({
+    required this.selectedCategory,
+    required this.onChanged,
+  });
+
+  final ArisSessionCategory selectedCategory;
+  final ValueChanged<ArisSessionCategory> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: _kBg.withValues(alpha: 0.82),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ArchiveCategoryPill(
+              category: ArisSessionCategory.tarot,
+              selectedCategory: selectedCategory,
+              label: AppTexts.t('archive.tab.tarot'),
+              icon: Icons.auto_awesome_rounded,
+              onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ArchiveCategoryPill(
+              category: ArisSessionCategory.coffee,
+              selectedCategory: selectedCategory,
+              label: AppTexts.t('archive.tab.coffee'),
+              icon: Icons.local_cafe_rounded,
+              onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ArchiveCategoryPill(
+              category: ArisSessionCategory.palm,
+              selectedCategory: selectedCategory,
+              label: AppTexts.t('archive.tab.palm'),
+              icon: Icons.back_hand_rounded,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchiveCategoryPill extends StatelessWidget {
+  const _ArchiveCategoryPill({
+    required this.category,
+    required this.selectedCategory,
+    required this.label,
+    required this.icon,
+    required this.onChanged,
+  });
+
+  final ArisSessionCategory category;
+  final ArisSessionCategory selectedCategory;
+  final String label;
+  final IconData icon;
+  final ValueChanged<ArisSessionCategory> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = category == selectedCategory;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () => onChanged(category),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            color: selected
+                ? _kPrimary.withValues(alpha: 0.2)
+                : _kGlassBg.withValues(alpha: 0.72),
+            border: Border.all(
+              color: selected
+                  ? _kPrimary.withValues(alpha: 0.62)
+                  : _kGlassBorder.withValues(alpha: 0.8),
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: _kPrimary.withValues(alpha: 0.2),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: selected ? _kTertiary : _kSecondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? _kOnSurface : _kSecondary,
+                  ),
                 ),
               ),
             ],
@@ -314,6 +509,11 @@ class _MessageSessionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateLabel = _formatDate(session.updatedAt, locale);
+    final title =
+        session.category == ArisSessionCategory.coffee &&
+            session.cardNames.isEmpty
+        ? AppTexts.t('archive.coffee_title')
+        : session.titleLabel;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -335,9 +535,7 @@ class _MessageSessionTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: _kPrimary.withValues(alpha: 0.14),
-                  border: Border.all(
-                    color: _kPrimary.withValues(alpha: 0.35),
-                  ),
+                  border: Border.all(color: _kPrimary.withValues(alpha: 0.35)),
                 ),
                 child: Icon(
                   session.isSpread
@@ -356,7 +554,7 @@ class _MessageSessionTile extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            session.titleLabel,
+                            title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.spaceGrotesk(
@@ -393,8 +591,9 @@ class _MessageSessionTile extends StatelessWidget {
                     if (session.messageCount > 1) ...[
                       const SizedBox(height: 8),
                       Text(
-                        AppTexts.t('messages.thread_count')
-                            .replaceAll('{count}', '${session.messageCount}'),
+                        AppTexts.t(
+                          'messages.thread_count',
+                        ).replaceAll('{count}', '${session.messageCount}'),
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 10,
                           letterSpacing: 1,
@@ -424,39 +623,37 @@ class _MessageSessionTile extends StatelessWidget {
 }
 
 class _MessagesEmpty extends StatelessWidget {
-  const _MessagesEmpty();
+  const _MessagesEmpty({required this.category});
+
+  final ArisSessionCategory category;
 
   @override
   Widget build(BuildContext context) {
+    final bodyKey = switch (category) {
+      ArisSessionCategory.tarot => 'archive.empty.tarot',
+      ArisSessionCategory.coffee => 'archive.empty.coffee',
+      ArisSessionCategory.palm => 'archive.empty.palm',
+    };
+    final icon = switch (category) {
+      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
+      ArisSessionCategory.palm => Icons.back_hand_rounded,
+    };
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.forum_outlined,
-              size: 56,
-              color: _kSecondary.withValues(alpha: 0.45),
-            ),
+            Icon(icon, size: 56, color: _kSecondary.withValues(alpha: 0.45)),
             const SizedBox(height: 16),
             Text(
-              AppTexts.t('messages.empty_title'),
+              AppTexts.t(bodyKey),
               textAlign: TextAlign.center,
               style: GoogleFonts.newsreader(
                 fontSize: 26,
                 fontStyle: FontStyle.italic,
                 color: _kOnSurface,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              AppTexts.t('messages.empty_body'),
-              textAlign: TextAlign.center,
-              style: GoogleFonts.manrope(
-                fontSize: 14,
-                height: 1.45,
-                color: _kSecondary.withValues(alpha: 0.85),
               ),
             ),
           ],
@@ -467,10 +664,7 @@ class _MessagesEmpty extends StatelessWidget {
 }
 
 class _MessagesError extends StatelessWidget {
-  const _MessagesError({
-    required this.message,
-    this.onRetry,
-  });
+  const _MessagesError({required this.message, this.onRetry});
 
   final String message;
   final VoidCallback? onRetry;
@@ -486,10 +680,7 @@ class _MessagesError extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: GoogleFonts.manrope(
-                fontSize: 14,
-                color: _kPrimary,
-              ),
+              style: GoogleFonts.manrope(fontSize: 14, color: _kPrimary),
             ),
             if (onRetry != null) ...[
               const SizedBox(height: 16),
@@ -520,11 +711,7 @@ class _MessagesBackground extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              _kBg,
-              const Color(0xFF1A0B22),
-              _kBg,
-            ],
+            colors: [_kBg, const Color(0xFF1A0B22), _kBg],
           ),
         ),
       ),

@@ -14,7 +14,11 @@ class ArisChatHistoryEntry {
   final String text;
 
   bool get isUser => role == 'user';
+
+  Map<String, dynamic> toMap() => {'role': role, 'text': text};
 }
+
+enum ArisSessionCategory { tarot, coffee, palm }
 
 class ArisSessionRecord {
   const ArisSessionRecord({
@@ -25,6 +29,9 @@ class ArisSessionRecord {
     required this.recentMessages,
     required this.updatedAt,
     this.day,
+    this.mode,
+    this.persona,
+    this.coffeeReadingId,
   });
 
   final String sessionId;
@@ -34,8 +41,27 @@ class ArisSessionRecord {
   final List<ArisChatHistoryEntry> recentMessages;
   final DateTime? updatedAt;
   final String? day;
+  final String? mode;
+  final String? persona;
+  final String? coffeeReadingId;
 
   bool get isSpread => cardNames.length > 1;
+
+  ArisSessionCategory get category {
+    final normalizedMode = (mode ?? '').trim();
+    final normalizedPersona = (persona ?? '').trim();
+    final normalizedCoffeeReadingId = (coffeeReadingId ?? '').trim();
+    final normalizedCardName = cardName.trim().toLowerCase();
+    if (normalizedMode == 'coffeeReading' ||
+        normalizedPersona == 'madamAris' ||
+        normalizedCoffeeReadingId.isNotEmpty ||
+        normalizedCardName.contains('kahve') ||
+        normalizedCardName.contains('coffee') ||
+        normalizedCardName.contains('madam aris')) {
+      return ArisSessionCategory.coffee;
+    }
+    return ArisSessionCategory.tarot;
+  }
 
   String get titleLabel =>
       isSpread ? cardNames.join(' · ') : (cardName.isNotEmpty ? cardName : '—');
@@ -110,7 +136,7 @@ class ArisSessionRecord {
       }
     }
 
-    final updatedAtMs = data['updatedAtMs'];
+    final updatedAtMs = data['updatedAtMs'] ?? data['updatedAt'];
     DateTime? updatedAt;
     if (updatedAtMs is num && updatedAtMs > 0) {
       updatedAt = DateTime.fromMillisecondsSinceEpoch(updatedAtMs.toInt());
@@ -127,10 +153,41 @@ class ArisSessionRecord {
       recentMessages: recentMessages,
       updatedAt: updatedAt,
       day: (data['day'] as String?)?.trim(),
+      mode: (data['mode'] as String?)?.trim(),
+      persona: (data['persona'] as String?)?.trim(),
+      coffeeReadingId: (data['coffeeReadingId'] as String?)?.trim(),
     );
   }
 
   bool get hasHistory => openingMessage.isNotEmpty || recentMessages.isNotEmpty;
+
+  Map<String, dynamic> toMap() => {
+    'sessionId': sessionId,
+    'cardName': cardName,
+    'cardNames': cardNames,
+    'openingMessage': openingMessage,
+    'recentMessages': recentMessages.map((message) => message.toMap()).toList(),
+    'updatedAt': updatedAt?.millisecondsSinceEpoch,
+    'day': day,
+    'mode': mode,
+    'persona': persona,
+    'coffeeReadingId': coffeeReadingId,
+  };
+
+  ArisSessionRecord withFallbackMetadata(ArisSessionRecord fallback) {
+    return ArisSessionRecord(
+      sessionId: sessionId,
+      cardName: cardName,
+      cardNames: cardNames,
+      openingMessage: openingMessage,
+      recentMessages: recentMessages,
+      updatedAt: updatedAt,
+      day: day ?? fallback.day,
+      mode: mode ?? fallback.mode,
+      persona: persona ?? fallback.persona,
+      coffeeReadingId: coffeeReadingId ?? fallback.coffeeReadingId,
+    );
+  }
 
   static DateTime? _timestamp(Object? value) {
     if (value is Timestamp) return value.toDate();
@@ -185,7 +242,9 @@ class ArisSessionService {
       final existingMs = existing.updatedAt?.millisecondsSinceEpoch ?? 0;
       final sessionMs = session.updatedAt?.millisecondsSinceEpoch ?? 0;
       if (sessionMs >= existingMs) {
-        byId[session.sessionId] = session;
+        byId[session.sessionId] = session.withFallbackMetadata(existing);
+      } else {
+        byId[session.sessionId] = existing.withFallbackMetadata(session);
       }
     }
     return mapAndSortSessions(byId.values);
