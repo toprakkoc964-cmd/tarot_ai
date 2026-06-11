@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/app_locale.dart';
+import '../../core/app_language.dart';
+import '../../core/localization_service.dart';
 import '../home/home_page.dart';
 import 'auth_service.dart';
 import 'login_page.dart';
@@ -24,6 +27,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
   bool _showRegister = false;
   String? _sessionCheckUid;
   Future<bool>? _sessionCheckFuture;
+  String? _lastSyncedProfileLanguage;
 
   Widget _buildLoading() {
     return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -60,6 +64,18 @@ class _AuthGatePageState extends State<AuthGatePage> {
     Future<void>.microtask(() async {
       await _authService.markPostDeletionRedirectPending();
       await _authService.signOut();
+    });
+  }
+
+  void _syncProfileLanguage(String? storedLanguage) {
+    final raw = storedLanguage?.trim();
+    if (raw == null || raw.isEmpty) return;
+    final normalized = AppLanguage.normalize(raw);
+    if (!AppLanguage.isSupported(normalized)) return;
+    if (_lastSyncedProfileLanguage == normalized) return;
+    _lastSyncedProfileLanguage = normalized;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(LocalizationService.instance.applyUserLanguage(normalized));
     });
   }
 
@@ -115,10 +131,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
                       builder: (context, socialProfileSyncInProgress, _____) {
                         return Stack(
                           children: [
-                            ValueListenableBuilder<String>(
-                              valueListenable: AppLocale.notifier,
-                              builder: (context, _, __) {
-                                return StreamBuilder<User?>(
+                            StreamBuilder<User?>(
                                   stream: _authService.authChanges(),
                                   builder: (context, authSnapshot) {
                                     if (registrationRedirectSuppressed) {
@@ -229,6 +242,14 @@ class _AuthGatePageState extends State<AuthGatePage> {
                                                 final data = profileSnapshot
                                                     .data
                                                     ?.data();
+                                                final storedLanguage =
+                                                    (data?[UserProfileContract
+                                                                .language]
+                                                            as String?)
+                                                        ?.trim();
+                                                _syncProfileLanguage(
+                                                  storedLanguage,
+                                                );
                                                 final accountStatus =
                                                     data?[UserProfileContract
                                                             .accountStatus]
@@ -332,9 +353,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
                                       },
                                     );
                                   },
-                                );
-                              },
-                            ),
+                                ),
                             if (registrationPortalActive)
                               const RegistrationPortalTransitionOverlay(),
                           ],

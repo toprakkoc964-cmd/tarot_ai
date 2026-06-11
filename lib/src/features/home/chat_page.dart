@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../core/app_locale.dart';
+import '../../core/app_language.dart';
 import '../../core/app_texts.dart';
 import '../../core/idempotency_key.dart';
 import '../../core/tarot_functions_client.dart';
@@ -215,17 +215,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     }
   }
 
-  String _activeArisLanguage() {
-    const supported = {'tr', 'en', 'de', 'es', 'fr', 'it', 'pt'};
-    final appLang = AppLocale.current.trim().toLowerCase();
-    if (supported.contains(appLang)) return appLang;
-
-    final deviceLang = PlatformDispatcher.instance.locale.languageCode
-        .trim()
-        .toLowerCase();
-    if (supported.contains(deviceLang)) return deviceLang;
-    return 'en';
-  }
+  String _activeArisLanguage() => AppLanguage.forAi();
 
   Future<void> _loadResumedSession(String sessionId) async {
     if (mounted) {

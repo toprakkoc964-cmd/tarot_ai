@@ -93,7 +93,7 @@ class CreditRemoteConfigService {
         return _fallbackFor(localeCode);
       }
 
-      final langMap = decoded[localeCode] ?? decoded['tr'] ?? decoded['en'];
+      final langMap = decoded[localeCode];
 
       if (langMap is! Map<String, dynamic>) {
         return _fallbackFor(localeCode);
@@ -137,22 +137,91 @@ class CreditRemoteConfigService {
   }
 
   CreditPageData _fallbackFor(String localeCode) {
-    final langMap = Map<String, dynamic>.from(
-      (_fallbackPayload[localeCode] ??
-          _fallbackPayload['tr'] ??
-          _fallbackPayload['en']) as Map,
-    );
-    return CreditPageData.fromMap(langMap, localeCode);
+    return CreditPageData.fromMap(_localizedFallbackPayload(), localeCode);
+  }
+
+  Map<String, dynamic> _localizedFallbackPayload() {
+    return <String, dynamic>{
+      'title': AppTexts.t('home.credit.title'),
+      'advantages_title': AppTexts.t('home.credit.perks.title'),
+      'recharge_cta': AppTexts.t('home.credit.cta.recharge'),
+      'restore_label': AppTexts.t('home.credit.restore'),
+      'terms_label': AppTexts.t('home.credit.terms'),
+      'privacy_label': AppTexts.t('home.credit.privacy'),
+      'legal_disclaimer': AppTexts.t('home.credit.legal_disclaimer'),
+      'advantages_cards': [
+        {
+          'icon_key': 'mic_external_on',
+          'title': AppTexts.t('home.credit.perk.voice.title'),
+          'description': AppTexts.t('home.credit.perk.voice.desc'),
+          'accent': 'primary',
+        },
+        {
+          'icon_key': 'stars',
+          'title': AppTexts.t('home.credit.perk.personalized.title'),
+          'description': AppTexts.t('home.credit.perk.personalized.desc'),
+          'accent': 'secondary',
+        },
+        {
+          'icon_key': 'wand',
+          'title': AppTexts.t('home.credit.perk.clarity.title'),
+          'description': AppTexts.t('home.credit.perk.clarity.desc'),
+          'accent': 'tertiary',
+        },
+      ],
+      'packages': [
+        {
+          'coins': AppTexts.t('home.credit.package.50.coins'),
+          'title': AppTexts.t('home.credit.package.50.title'),
+          'price': AppTexts.t('home.credit.package.50.price'),
+          'icon_key': 'star',
+          'accent': 'secondary',
+          'is_popular': false,
+          'features': [
+            AppTexts.t('home.credit.package.50.feature1'),
+            AppTexts.t('home.credit.package.50.feature2'),
+            AppTexts.t('home.credit.package.50.feature3'),
+          ],
+        },
+        {
+          'coins': AppTexts.t('home.credit.package.250.coins'),
+          'title': AppTexts.t('home.credit.package.250.title'),
+          'price': AppTexts.t('home.credit.package.250.price'),
+          'icon_key': 'dark_mode',
+          'accent': 'primary',
+          'badge': AppTexts.t('home.credit.package.250.badge'),
+          'is_popular': true,
+          'features': [
+            AppTexts.t('home.credit.package.250.feature1'),
+            AppTexts.t('home.credit.package.250.feature2'),
+            AppTexts.t('home.credit.package.250.feature3'),
+          ],
+        },
+        {
+          'coins': AppTexts.t('home.credit.package.1000.coins'),
+          'title': AppTexts.t('home.credit.package.1000.title'),
+          'price': AppTexts.t('home.credit.package.1000.price'),
+          'icon_key': 'light_mode',
+          'accent': 'tertiary',
+          'is_popular': false,
+          'features': [
+            AppTexts.t('home.credit.package.1000.feature1'),
+            AppTexts.t('home.credit.package.1000.feature2'),
+            AppTexts.t('home.credit.package.1000.feature3'),
+          ],
+        },
+      ],
+    };
   }
 
   String _resolvedLocaleCode() {
     final current = AppLocale.current.trim().toLowerCase();
-    if (current == 'tr' || current == 'en') return current;
+    if (current.isNotEmpty) return current;
 
     final deviceCode =
         PlatformDispatcher.instance.locale.languageCode.trim().toLowerCase();
-    if (deviceCode == 'tr' || deviceCode == 'en') return deviceCode;
-    return 'tr';
+    if (deviceCode.isNotEmpty) return deviceCode;
+    return 'en';
   }
 
   static IconData iconFor(String iconKey) {

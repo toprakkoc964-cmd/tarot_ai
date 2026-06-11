@@ -226,14 +226,32 @@ class NotificationService {
 
   Future<String?> _resolveDeviceTimezone() async {
     try {
-      final dynamic timezone = await FlutterTimezone.getLocalTimezone();
-      if (timezone is String) return timezone;
-
-      final dynamic identifier = timezone.identifier;
-      return identifier is String ? identifier : null;
-    } catch (_) {
-      return null;
+      final timezone = await FlutterTimezone.getLocalTimezone();
+      final identifier = timezone.identifier.trim();
+      if (identifier.isNotEmpty) return identifier;
+    } on MissingPluginException catch (error) {
+      debugPrint(
+        'flutter_timezone not linked; use flutter clean && flutter run. '
+        'Falling back to offset timezone. ($error)',
+      );
+    } catch (error) {
+      debugPrint('Device timezone lookup failed: $error');
     }
+    return _timezoneFallbackFromOffset();
+  }
+
+  String _timezoneFallbackFromOffset() {
+    final minutes = DateTime.now().timeZoneOffset.inMinutes;
+    return switch (minutes) {
+      180 => 'Europe/Istanbul',
+      0 => 'UTC',
+      60 => 'Europe/London',
+      120 => 'Europe/Berlin',
+      -300 => 'America/New_York',
+      -420 => 'America/Denver',
+      -480 => 'America/Los_Angeles',
+      _ => 'UTC',
+    };
   }
 
   Map<String, dynamic> _defaultNotificationPrefs() => <String, dynamic>{

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'services/notification_service.dart' as local_notifications;
 import 'src/core/app_check.dart';
+import 'src/core/app_locale.dart';
 import 'src/core/app_navigator.dart';
 import 'src/core/app_texts.dart';
 import 'src/core/di/service_locator.dart';
@@ -36,7 +37,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<String?> _bootstrapApp() async {
   try {
-    await _runRequiredBootstrapTask('Firebase', () => Firebase.initializeApp());
+    final firebaseError = await _runRequiredBootstrapTask(
+      'Firebase',
+      () => Firebase.initializeApp(),
+    );
+    if (firebaseError != null) return firebaseError;
     await _runOptionalBootstrapTask(
       'App Check',
       () => activateAppCheck(isDebug: kDebugMode),
@@ -50,10 +55,11 @@ Future<String?> _bootstrapApp() async {
       'Local notifications',
       () => local_notifications.NotificationService.instance.init(),
     );
-    await _runRequiredBootstrapTask(
+    final localizationError = await _runRequiredBootstrapTask(
       'Localization',
       () => LocalizationService.instance.initialize(),
     );
+    if (localizationError != null) return localizationError;
     _startTarotImagePreloadInBackground();
     await _runOptionalBootstrapTask(
       'Purchase service',
@@ -67,16 +73,22 @@ Future<String?> _bootstrapApp() async {
   }
 }
 
-Future<void> _runRequiredBootstrapTask(
+Future<String?> _runRequiredBootstrapTask(
   String name,
   Future<void> Function() task,
 ) async {
-  await task().timeout(
-    const Duration(seconds: 12),
-    onTimeout: () {
-      throw TimeoutException('$name bootstrap timed out');
-    },
-  );
+  try {
+    final completed = await _runBootstrapTaskWithTimeout(
+      task,
+      const Duration(seconds: 12),
+    );
+    if (!completed) {
+      return '$name bootstrap timed out';
+    }
+    return null;
+  } catch (e) {
+    return e.toString();
+  }
 }
 
 Future<void> _runOptionalBootstrapTask(
@@ -85,18 +97,44 @@ Future<void> _runOptionalBootstrapTask(
   Duration timeout = const Duration(seconds: 8),
 }) async {
   try {
-    await task().timeout(
-      timeout,
-      onTimeout: () {
-        throw TimeoutException('$name bootstrap timed out');
-      },
-    );
+    final completed = await _runBootstrapTaskWithTimeout(task, timeout);
+    if (!completed) {
+      debugPrint('Optional bootstrap task skipped ($name): timed out');
+    }
   } catch (e, st) {
     debugPrint('Optional bootstrap task skipped ($name): $e');
     if (kDebugMode && name != 'App Check') {
       debugPrintStack(stackTrace: st);
     }
   }
+}
+
+Future<bool> _runBootstrapTaskWithTimeout(
+  Future<void> Function() task,
+  Duration timeout,
+) async {
+  final completer = Completer<bool>();
+
+  unawaited(() async {
+    try {
+      await task();
+      if (!completer.isCompleted) {
+        completer.complete(true);
+      }
+    } catch (e, st) {
+      if (!completer.isCompleted) {
+        completer.completeError(e, st);
+      }
+    }
+  }());
+
+  unawaited(Future<void>.delayed(timeout, () {
+    if (!completer.isCompleted) {
+      completer.complete(false);
+    }
+  }));
+
+  return completer.future;
 }
 
 void _startTarotImagePreloadInBackground() {
@@ -108,24 +146,35 @@ class TarotAiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: appNavigatorKey,
-      debugShowCheckedModeBanner: false,
-      title: AppTexts.t('app.title'),
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: const Color(0xFF17081C),
-        canvasColor: const Color(0xFF17081C),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF690DAB),
-          secondary: Color(0xFFD4AF37),
-          surface: Color(0xFF17081C),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF17081C),
-          surfaceTintColor: Colors.transparent,
-        ),
-      ),
-      home: const AppBootstrapPage(),
+    return ValueListenableBuilder<int>(
+      valueListenable: LocalizationService.instance.revision,
+      builder: (context, _, __) {
+        return ValueListenableBuilder<String>(
+          valueListenable: AppLocale.notifier,
+          builder: (context, localeCode, ___) {
+            return MaterialApp(
+              navigatorKey: appNavigatorKey,
+              debugShowCheckedModeBanner: false,
+              locale: Locale(localeCode),
+              title: AppTexts.t('app.title'),
+              theme: ThemeData.dark(useMaterial3: true).copyWith(
+                scaffoldBackgroundColor: const Color(0xFF17081C),
+                canvasColor: const Color(0xFF17081C),
+                colorScheme: const ColorScheme.dark(
+                  primary: Color(0xFF690DAB),
+                  secondary: Color(0xFFD4AF37),
+                  surface: Color(0xFF17081C),
+                ),
+                appBarTheme: const AppBarTheme(
+                  backgroundColor: Color(0xFF17081C),
+                  surfaceTintColor: Colors.transparent,
+                ),
+              ),
+              home: const AppBootstrapPage(),
+            );
+          },
+        );
+      },
     );
   }
 }

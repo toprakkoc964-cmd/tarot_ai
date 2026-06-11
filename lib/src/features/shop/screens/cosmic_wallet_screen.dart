@@ -40,6 +40,11 @@ class CosmicWalletScreen extends StatefulWidget {
 
 class _CosmicWalletScreenState extends State<CosmicWalletScreen> {
   final ScrollController _scrollController = ScrollController();
+  static const Set<String> _localeReloadSuppressedMessages = <String>{
+    'shopPurchaseUnavailable',
+    'shopProductsNotFoundHint',
+    'shopPriceUnavailable',
+  };
   late Future<ShopConfig> _configFuture;
   late final PurchaseService _purchaseService;
   late final ShopConfigService _shopConfigService;
@@ -48,6 +53,7 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen> {
   String? _expandedCreditProductId;
   bool _hasTouchedCreditExpansion = false;
   bool _premiumExpanded = false;
+  bool _suppressLocaleReloadMessage = false;
 
   @override
   void initState() {
@@ -176,6 +182,8 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen> {
 
   void _reloadForLocale() {
     if (!mounted) return;
+    _suppressLocaleReloadMessage = true;
+    _lastNotifiedPhase = null;
     setState(() {
       _shopConfigService.invalidate();
       _configFuture = _loadShopConfig();
@@ -188,6 +196,19 @@ class _CosmicWalletScreenState extends State<CosmicWalletScreen> {
     _lastNotifiedPhase = current.phase;
 
     final messageKey = current.messageKey;
+    if (_suppressLocaleReloadMessage &&
+        current.phase != PurchaseServicePhase.loadingProducts) {
+      if (messageKey == null ||
+          messageKey.isEmpty ||
+          _localeReloadSuppressedMessages.contains(messageKey)) {
+        _suppressLocaleReloadMessage = false;
+        if (messageKey != null &&
+            messageKey.isNotEmpty &&
+            _localeReloadSuppressedMessages.contains(messageKey)) {
+          return;
+        }
+      }
+    }
     if (messageKey == null || messageKey.isEmpty) return;
     if (current.phase == PurchaseServicePhase.loadingProducts ||
         current.phase == PurchaseServicePhase.purchasing) {
@@ -331,9 +352,9 @@ class _WalletContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _WalletHeroTitle(),
+        _WalletHeroTitle(),
         const SizedBox(height: 26),
-        const CosmicBenefitsRow(),
+        CosmicBenefitsRow(),
         const SizedBox(height: 18),
         for (final item in creditItems) ...[
           Builder(

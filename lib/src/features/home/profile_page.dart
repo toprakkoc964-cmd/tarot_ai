@@ -4,8 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/app_language.dart';
 import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
+import '../../core/localization_service.dart';
+import '../../core/notification_service.dart' as fcm_notifications;
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
 import '../auth/widgets/mystic_toast.dart';
@@ -45,7 +48,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String _name = 'Toprak Koc';
   DateTime _birthDate = DateTime(1996, 2, 14);
   String _email = 'ornek@email.com';
-  String _language = 'Turkce';
+  String _languageCode = AppLocale.current;
   bool _profileLoading = true;
 
   DocumentReference<Map<String, dynamic>> get _userDocRef => FirebaseFirestore
@@ -91,6 +94,8 @@ class _ProfilePageState extends State<ProfilePage> {
       final notificationPrefs =
           data[UserProfileContract.notificationPrefs] as Map<String, dynamic>?;
       final storedNotificationsEnabled = notificationPrefs?['enabled'] as bool?;
+      final storedLanguage =
+          (data[UserProfileContract.language] as String?)?.trim();
 
       setState(() {
         if (storedName.isNotEmpty) _name = storedName;
@@ -98,6 +103,9 @@ class _ProfilePageState extends State<ProfilePage> {
         if (storedBirthDate != null) _birthDate = storedBirthDate;
         if (storedNotificationsEnabled != null) {
           _notificationsEnabled = storedNotificationsEnabled;
+        }
+        if (storedLanguage != null && AppLanguage.isSupported(storedLanguage)) {
+          _languageCode = AppLanguage.normalize(storedLanguage);
         }
       });
     } catch (_) {
@@ -125,7 +133,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   String _formatBirthDate(DateTime dt) {
-    const months = [
+    const trMonths = [
       '',
       'Ocak',
       'Subat',
@@ -140,6 +148,73 @@ class _ProfilePageState extends State<ProfilePage> {
       'Kasim',
       'Aralik',
     ];
+    const enMonths = [
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    const deMonths = [
+      '',
+      'Januar',
+      'Februar',
+      'Maerz',
+      'April',
+      'Mai',
+      'Juni',
+      'Juli',
+      'August',
+      'September',
+      'Oktober',
+      'November',
+      'Dezember',
+    ];
+    const esMonths = [
+      '',
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+    const frMonths = [
+      '',
+      'janvier',
+      'fevrier',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'aout',
+      'septembre',
+      'octobre',
+      'novembre',
+      'decembre',
+    ];
+    final months = switch (AppLocale.current) {
+      'tr' => trMonths,
+      'de' => deMonths,
+      'es' => esMonths,
+      'fr' => frMonths,
+      _ => enMonths,
+    };
     return '${dt.day} ${months[dt.month]} ${dt.year}';
   }
 
@@ -187,7 +262,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 18),
             Text(
-              'Adini Guncelle',
+              AppTexts.t('profile.name.edit_title'),
               style: GoogleFonts.newsreader(
                 fontSize: 28,
                 fontStyle: FontStyle.italic,
@@ -196,7 +271,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Profilde gorunecek adini yaz.',
+              AppTexts.t('profile.name.edit_hint'),
               style: GoogleFonts.manrope(
                 fontSize: 13,
                 color: _kOnSurface.withValues(alpha: 0.72),
@@ -209,7 +284,7 @@ class _ProfilePageState extends State<ProfilePage> {
               style: GoogleFonts.manrope(color: _kOnSurface, fontSize: 16),
               decoration: InputDecoration(
                 counterText: '',
-                hintText: 'Ad Soyad',
+                hintText: AppTexts.t('profile.name.placeholder'),
                 hintStyle: GoogleFonts.manrope(
                   color: _kOnSurface.withValues(alpha: 0.4),
                 ),
@@ -252,7 +327,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  'Kaydet',
+                  AppTexts.t('common.save_profile'),
                   style: GoogleFonts.spaceGrotesk(
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,
@@ -271,9 +346,11 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _name = normalized);
     try {
       await _updateProfileFields({UserProfileContract.name: normalized});
-      _showSnack('Ad soyad guncellendi');
+      _showSnack(AppTexts.t('profile.name.updated'));
     } catch (e) {
-      _showSnack('Ad soyad kaydedilemedi: $e');
+      _showSnack(
+        AppTexts.t('profile.name.save_error').replaceAll('{error}', '$e'),
+      );
     }
   }
 
@@ -291,9 +368,11 @@ class _ProfilePageState extends State<ProfilePage> {
       await _updateProfileFields({
         UserProfileContract.birthDate: _toStoredBirthDate(picked),
       });
-      _showSnack('Dogum tarihi guncellendi');
+      _showSnack(AppTexts.t('profile.birth.updated'));
     } catch (e) {
-      _showSnack('Dogum tarihi kaydedilemedi: $e');
+      _showSnack(
+        AppTexts.t('profile.birth.save_error').replaceAll('{error}', '$e'),
+      );
     }
   }
 
@@ -307,14 +386,16 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _email = normalized);
     try {
       await _updateProfileFields({UserProfileContract.email: normalized});
-      _showSnack('E-posta guncellendi');
+      _showSnack(AppTexts.t('profile.email.updated'));
     } catch (e) {
-      _showSnack('E-posta kaydedilemedi: $e');
+      _showSnack(
+        AppTexts.t('profile.email.save_error').replaceAll('{error}', '$e'),
+      );
     }
   }
 
   Future<void> _pickLanguage() async {
-    final options = <String>['Turkce', 'English', 'Deutsch', 'Espanol'];
+    final options = AppLanguage.supported;
     final selected = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: const Color(0xFF26112E),
@@ -329,7 +410,7 @@ class _ProfilePageState extends State<ProfilePage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Text(
-                'Dil Secimi',
+                AppTexts.t('common.select_language'),
                 style: GoogleFonts.spaceGrotesk(
                   color: _kOnSurface,
                   fontSize: 14,
@@ -337,17 +418,17 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
             ),
-            for (final option in options)
+            for (final code in options)
               ListTile(
-                onTap: () => Navigator.of(sheetContext).pop(option),
+                onTap: () => Navigator.of(sheetContext).pop(code),
                 leading: Icon(
-                  option == _language
+                  code == _languageCode
                       ? Icons.check_circle_rounded
                       : Icons.circle_outlined,
-                  color: option == _language ? _kPrimary : _kSecondary,
+                  color: code == _languageCode ? _kPrimary : _kSecondary,
                 ),
                 title: Text(
-                  option,
+                  AppLanguage.displayName(code),
                   style: GoogleFonts.manrope(color: _kOnSurface),
                 ),
               ),
@@ -356,9 +437,25 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
 
-    if (!mounted || selected == null || selected == _language) return;
-    setState(() => _language = selected);
-    _showSnack('Dil "$selected" olarak guncellendi');
+    if (!mounted || selected == null || selected == _languageCode) return;
+
+    try {
+      await LocalizationService.instance.setLanguage(selected);
+      await _updateProfileFields({UserProfileContract.language: selected});
+      await fcm_notifications.NotificationService.instance
+          .syncNotificationContextForCurrentUser();
+      if (!mounted) return;
+      setState(() => _languageCode = selected);
+      _showSnack(
+        AppTexts.t('profile.language.updated').replaceAll(
+          '{language}',
+          AppLanguage.displayName(selected),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(AppTexts.t('profile.language.save_error'));
+    }
   }
 
   Future<void> _openCosmicPersonalization() async {
@@ -377,18 +474,18 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF26112E),
         title: Text(
-          'Cikis yapilsin mi?',
+          AppTexts.t('profile.logout.confirm_title'),
           style: GoogleFonts.spaceGrotesk(color: _kOnSurface),
         ),
         content: Text(
-          'Mevcut oturum kapatilacak.',
+          AppTexts.t('profile.logout.confirm_body'),
           style: GoogleFonts.manrope(color: _kOnSurface.withValues(alpha: 0.8)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(
-              'Iptal',
+              AppTexts.t('common.cancel'),
               style: GoogleFonts.manrope(color: _kSecondary),
             ),
           ),
@@ -398,7 +495,7 @@ class _ProfilePageState extends State<ProfilePage> {
               backgroundColor: _kPrimary,
               foregroundColor: const Color(0xFF430036),
             ),
-            child: const Text('Cikis Yap'),
+            child: Text(AppTexts.t('profile.logout.confirm_action')),
           ),
         ],
       ),
@@ -409,7 +506,9 @@ class _ProfilePageState extends State<ProfilePage> {
       await widget.authService.signOut();
     } catch (e) {
       if (!mounted) return;
-      _showSnack('Cikis yapilamadi: $e');
+      _showSnack(
+        AppTexts.t('profile.logout.failed').replaceAll('{error}', '$e'),
+      );
     }
   }
 
@@ -419,18 +518,18 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF26112E),
         title: Text(
-          'Hesap silinsin mi?',
+          AppTexts.t('profile.delete.confirm_title'),
           style: GoogleFonts.spaceGrotesk(color: _kOnSurface),
         ),
         content: Text(
-          'Bu islem geri alinamaz.',
+          AppTexts.t('profile.delete.confirm_body'),
           style: GoogleFonts.manrope(color: _kOnSurface.withValues(alpha: 0.8)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(
-              'Vazgec',
+              AppTexts.t('profile.delete.confirm_cancel'),
               style: GoogleFonts.manrope(color: _kSecondary),
             ),
           ),
@@ -440,7 +539,7 @@ class _ProfilePageState extends State<ProfilePage> {
               backgroundColor: _kError,
               foregroundColor: const Color(0xFF490013),
             ),
-            child: const Text('Hesabi Sil'),
+            child: Text(AppTexts.t('profile.delete.confirm_action')),
           ),
         ],
       ),
@@ -458,13 +557,15 @@ class _ProfilePageState extends State<ProfilePage> {
       await widget.authService.markPostDeletionRedirectPending();
       await widget.authService.deleteCurrentUserCompletely();
       if (mounted) {
-        _showSnack('Hesabin silindi.');
+        _showSnack(AppTexts.t('profile.delete.success'));
       }
       await forceSignOut();
     } catch (e) {
       await widget.authService.clearPostDeletionRedirect();
       if (mounted) {
-        _showSnack('Islem tamamlanamadi: $e');
+        _showSnack(
+          AppTexts.t('profile.delete.failed').replaceAll('{error}', '$e'),
+        );
       }
     } finally {
       widget.authService.accountDeletionInProgress.value = false;
@@ -473,6 +574,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: LocalizationService.instance.revision,
+      builder: (context, _, __) => _buildProfile(context),
+    );
+  }
+
+  Widget _buildProfile(BuildContext context) {
     if (_profileLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -490,21 +598,21 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             _buildHero(),
             const SizedBox(height: 28),
-            _buildSectionTitle('KISISEL BILGILER'),
+            _buildSectionTitle(AppTexts.t('profile.section.identity')),
             _buildGlassCard(
               children: [
                 _ProfileInfoRow(
-                  label: 'AD SOYAD',
+                  label: AppTexts.t('profile.field.name'),
                   value: _name,
                   onTap: _editNameBottomSheet,
                 ),
                 _ProfileInfoRow(
-                  label: 'DOGUM TARIHI',
+                  label: AppTexts.t('profile.field.birth_date'),
                   value: _formatBirthDate(_birthDate),
                   onTap: _pickBirthDateSheet,
                 ),
                 _ProfileInfoRow(
-                  label: 'E-POSTA',
+                  label: AppTexts.t('profile.field.email'),
                   value: _email,
                   onTap: _editEmailPage,
                   isLast: true,
@@ -512,18 +620,18 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
             const SizedBox(height: 28),
-            _buildSectionTitle('TERCIHLER'),
+            _buildSectionTitle(AppTexts.t('profile.section.preferences')),
             _buildGlassCard(
               children: [
                 _ActionRow(
                   icon: Icons.language_rounded,
-                  title: 'Dil',
+                  title: AppTexts.t('profile.language.title'),
                   onTap: _pickLanguage,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _language,
+                        AppLanguage.displayName(_languageCode),
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 12,
                           color: _kSecondary,
@@ -560,23 +668,27 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
             const SizedBox(height: 28),
-            _buildSectionTitle('SATIN ALIMLAR'),
+            _buildSectionTitle(AppTexts.t('profile.section.purchases')),
             _buildGlassCard(
               children: [
                 _ActionRow(
                   icon: Icons.history_rounded,
-                  title: 'Satin Alim Gecmisi',
-                  onTap: () => _showSnack('Satin alim gecmisi aciliyor...'),
+                  title: AppTexts.t('profile.purchases.history'),
+                  onTap: () =>
+                      _showSnack(AppTexts.t('profile.purchases.history_opening')),
                 ),
                 _ActionRow(
                   icon: Icons.card_membership_rounded,
-                  title: 'Aboneligi Yonet',
-                  onTap: () => _showSnack('Abonelik yonetimi aciliyor...'),
+                  title: AppTexts.t('profile.purchases.manage_subscription'),
+                  onTap: () => _showSnack(
+                    AppTexts.t('profile.purchases.manage_subscription_opening'),
+                  ),
                 ),
                 _ActionRow(
                   icon: Icons.restore_rounded,
-                  title: 'Satin Alimlari Geri Yukle',
-                  onTap: () => _showSnack('Geri yukleme baslatildi'),
+                  title: AppTexts.t('profile.purchases.restore'),
+                  onTap: () =>
+                      _showSnack(AppTexts.t('profile.purchases.restore_started')),
                   isLast: true,
                 ),
               ],
@@ -593,7 +705,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: Text(
-                'Cikis Yap',
+                AppTexts.t('profile.logout.confirm_action'),
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 14,
                   letterSpacing: 2.0,
@@ -607,7 +719,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: TextButton(
                 onPressed: _confirmDeleteAccount,
                 child: Text(
-                  'Hesabi Sil',
+                  AppTexts.t('profile.delete.confirm_action'),
                   style: GoogleFonts.manrope(
                     fontSize: 12,
                     color: _kError.withValues(alpha: 0.85),
@@ -655,7 +767,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         const SizedBox(height: 14),
         Text(
-          'Hesabini ve uygulama tercihlerini buradan yonetebilirsin',
+          AppTexts.t('profile.hero.subtitle'),
           textAlign: TextAlign.center,
           style: GoogleFonts.manrope(
             fontSize: 14,
@@ -1131,7 +1243,7 @@ class _EmailEditPageState extends State<_EmailEditPage> {
       backgroundColor: _kBg,
       appBar: AppBar(
         title: Text(
-          'E-posta Guncelle',
+          AppTexts.t('profile.email.edit_title'),
           style: GoogleFonts.spaceGrotesk(fontSize: 14, letterSpacing: 1.2),
         ),
       ),
@@ -1141,7 +1253,7 @@ class _EmailEditPageState extends State<_EmailEditPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Yeni e-posta adresini gir.',
+              AppTexts.t('profile.email.edit_hint'),
               style: GoogleFonts.manrope(
                 color: _kOnSurface.withValues(alpha: 0.72),
               ),
@@ -1191,7 +1303,7 @@ class _EmailEditPageState extends State<_EmailEditPage> {
                   ),
                 ),
                 child: Text(
-                  'Kaydet',
+                  AppTexts.t('common.save_profile'),
                   style: GoogleFonts.spaceGrotesk(
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/localization_service.dart';
 import '../../core/app_texts.dart';
 import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
@@ -18,39 +19,42 @@ class CosmicPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        const _CosmicBackground(),
-        SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset + 28),
-            children: [
-              _CosmicHeader(uid: uid),
-              const SizedBox(height: 32),
-              const _CosmicPageTitle(),
-              const SizedBox(height: 28),
-              CosmicFeatureCard(
-                title: AppTexts.t('home.cosmic.palm.title'),
-                description: AppTexts.t('home.cosmic.palm.description'),
-                buttonText: AppTexts.t('home.cosmic.palm.button'),
-                icon: Icons.front_hand_rounded,
-                accentIcon: Icons.pan_tool_alt_rounded,
-                onTap: () => _openPalmScanner(context),
-              ),
-              const SizedBox(height: 24),
-              CosmicFeatureCard(
-                title: AppTexts.t('home.cosmic.coffee.title'),
-                description: AppTexts.t('home.cosmic.coffee.description'),
-                buttonText: AppTexts.t('home.cosmic.coffee.button'),
-                icon: Icons.local_cafe_rounded,
-                accentIcon: Icons.coffee_rounded,
-                onTap: () => _openCoffeeReading(context, uid),
-              ),
-            ],
+    return ValueListenableBuilder<int>(
+      valueListenable: LocalizationService.instance.revision,
+      builder: (context, _, __) => Stack(
+        children: [
+          const _CosmicBackground(),
+          SafeArea(
+            bottom: false,
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset + 28),
+              children: [
+                _CosmicHeader(uid: uid),
+                const SizedBox(height: 32),
+                _CosmicPageTitle(),
+                const SizedBox(height: 28),
+                CosmicFeatureCard(
+                  title: AppTexts.t('home.cosmic.palm.title'),
+                  description: AppTexts.t('home.cosmic.palm.description'),
+                  buttonText: AppTexts.t('home.cosmic.palm.button'),
+                  icon: Icons.front_hand_rounded,
+                  accentIcon: Icons.pan_tool_alt_rounded,
+                  onTap: () => _openPalmScanner(context),
+                ),
+                const SizedBox(height: 24),
+                CosmicFeatureCard(
+                  title: AppTexts.t('home.cosmic.coffee.title'),
+                  description: AppTexts.t('home.cosmic.coffee.description'),
+                  buttonText: AppTexts.t('home.cosmic.coffee.button'),
+                  icon: Icons.local_cafe_rounded,
+                  accentIcon: Icons.coffee_rounded,
+                  onTap: () => _openCoffeeReading(context, uid),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

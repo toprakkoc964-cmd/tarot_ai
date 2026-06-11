@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_language.dart';
 import 'app_locale.dart';
 import 'app_texts.dart';
 import 'localization_service.dart';
@@ -69,20 +70,5 @@ class LanguagePickerButton extends StatelessWidget {
     );
   }
 
-  String _languageName(String code) {
-    switch (code) {
-      case 'tr':
-        return 'Turkce';
-      case 'en':
-        return 'English';
-      case 'de':
-        return 'Deutsch';
-      case 'fr':
-        return 'Francais';
-      case 'es':
-        return 'Espanol';
-      default:
-        return code.toUpperCase();
-    }
-  }
+  String _languageName(String code) => AppLanguage.displayName(code);
 }

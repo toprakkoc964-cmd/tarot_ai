@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../src/core/app_language.dart';
 import '../src/core/notification_service.dart' as app_notifications;
 import '../src/core/notification_router.dart';
 import '../src/core/utils/notification_translator.dart';
@@ -507,10 +508,7 @@ class NotificationService {
   }
 
   String _resolveLanguageCode() {
-    final languageCode = PlatformDispatcher.instance.locale.languageCode.trim();
-    if (languageCode.isEmpty) return 'en';
-    if (languageCode.toLowerCase() == 'tr') return 'tr';
-    return 'en';
+    return AppLanguage.forAi();
   }
 
   int _morningNotificationId(tz.TZDateTime date) {

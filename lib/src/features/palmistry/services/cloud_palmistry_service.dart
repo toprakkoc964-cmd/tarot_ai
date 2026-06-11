@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 
-import '../../../core/app_locale.dart';
+import '../../../core/app_language.dart';
 import '../../../core/tarot_functions_client.dart';
 import '../models/palmistry_result.dart';
 import 'i_palmistry_service.dart';
@@ -48,10 +48,5 @@ class CloudPalmistryService implements IPalmistryService {
     }
   }
 
-  String _activeLanguage() {
-    const supported = {'tr', 'en', 'de', 'es', 'fr', 'it', 'pt'};
-    final appLang = AppLocale.current.trim().toLowerCase();
-    if (supported.contains(appLang)) return appLang;
-    return 'en';
-  }
+  String _activeLanguage() => AppLanguage.forAi();
 }

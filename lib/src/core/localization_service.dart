@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_language.dart';
 import 'app_locale.dart';
 
 class LocalizationService {
@@ -14,6 +16,7 @@ class LocalizationService {
       ValueNotifier<List<String>>(const ['tr', 'en']);
 
   final Map<String, Map<String, String>> _cache = {};
+  static const String _languagePrefKey = 'app_language_code';
 
   static const Map<String, String> _fallbackEn = {
     'error.default': 'Something went wrong.',
@@ -526,6 +529,44 @@ class LocalizationService {
     'common.logout': 'Logout',
     'common.restore': 'Restore',
     'common.select_language': 'Select language',
+    'profile.section.identity': 'PERSONAL INFO',
+    'profile.section.preferences': 'PREFERENCES',
+    'profile.section.purchases': 'PURCHASES',
+    'profile.field.name': 'FULL NAME',
+    'profile.field.birth_date': 'BIRTH DATE',
+    'profile.field.email': 'EMAIL',
+    'profile.language.title': 'Language',
+    'profile.language.updated': 'Language set to {language}.',
+    'profile.language.save_error': 'Could not save language. Please try again.',
+    'profile.hero.subtitle': 'Manage your account and app preferences here.',
+    'profile.name.edit_title': 'Update Name',
+    'profile.name.edit_hint': 'Enter the name that appears on your profile.',
+    'profile.name.placeholder': 'Full Name',
+    'profile.name.updated': 'Full name updated.',
+    'profile.name.save_error': 'Full name could not be saved: {error}',
+    'profile.birth.updated': 'Birth date updated.',
+    'profile.birth.save_error': 'Birth date could not be saved: {error}',
+    'profile.email.updated': 'Email updated.',
+    'profile.email.save_error': 'Email could not be saved: {error}',
+    'profile.email.edit_title': 'Update Email',
+    'profile.email.edit_hint': 'Enter your new email address.',
+    'profile.purchases.history': 'Purchase History',
+    'profile.purchases.history_opening': 'Opening purchase history...',
+    'profile.purchases.manage_subscription': 'Manage Subscription',
+    'profile.purchases.manage_subscription_opening':
+        'Opening subscription management...',
+    'profile.purchases.restore': 'Restore Purchases',
+    'profile.purchases.restore_started': 'Restore started.',
+    'profile.logout.confirm_title': 'Log out?',
+    'profile.logout.confirm_body': 'Your current session will be closed.',
+    'profile.logout.confirm_action': 'Log Out',
+    'profile.logout.failed': 'Could not log out: {error}',
+    'profile.delete.confirm_title': 'Delete account?',
+    'profile.delete.confirm_body': 'This action cannot be undone.',
+    'profile.delete.confirm_cancel': 'Cancel',
+    'profile.delete.confirm_action': 'Delete Account',
+    'profile.delete.success': 'Your account was deleted.',
+    'profile.delete.failed': 'Action could not be completed: {error}',
     'common.back': 'Back',
     'common.next': 'Next',
     'common.save_profile': 'Save Profile',
@@ -1230,6 +1271,45 @@ class LocalizationService {
     'common.logout': 'Cikis',
     'common.restore': 'Restore',
     'common.select_language': 'Dil sec',
+    'profile.section.identity': 'KISISEL BILGILER',
+    'profile.section.preferences': 'TERCIHLER',
+    'profile.section.purchases': 'SATIN ALIMLAR',
+    'profile.field.name': 'AD SOYAD',
+    'profile.field.birth_date': 'DOGUM TARIHI',
+    'profile.field.email': 'E-POSTA',
+    'profile.language.title': 'Dil',
+    'profile.language.updated': 'Dil "{language}" olarak guncellendi.',
+    'profile.language.save_error': 'Dil kaydedilemedi. Lutfen tekrar dene.',
+    'profile.hero.subtitle':
+        'Hesabini ve uygulama tercihlerini buradan yonetebilirsin',
+    'profile.name.edit_title': 'Adini Guncelle',
+    'profile.name.edit_hint': 'Profilde gorunecek adini yaz.',
+    'profile.name.placeholder': 'Ad Soyad',
+    'profile.name.updated': 'Ad soyad guncellendi.',
+    'profile.name.save_error': 'Ad soyad kaydedilemedi: {error}',
+    'profile.birth.updated': 'Dogum tarihi guncellendi.',
+    'profile.birth.save_error': 'Dogum tarihi kaydedilemedi: {error}',
+    'profile.email.updated': 'E-posta guncellendi.',
+    'profile.email.save_error': 'E-posta kaydedilemedi: {error}',
+    'profile.email.edit_title': 'E-posta Guncelle',
+    'profile.email.edit_hint': 'Yeni e-posta adresini gir.',
+    'profile.purchases.history': 'Satin Alim Gecmisi',
+    'profile.purchases.history_opening': 'Satin alim gecmisi aciliyor...',
+    'profile.purchases.manage_subscription': 'Aboneligi Yonet',
+    'profile.purchases.manage_subscription_opening':
+        'Abonelik yonetimi aciliyor...',
+    'profile.purchases.restore': 'Satin Alimlari Geri Yukle',
+    'profile.purchases.restore_started': 'Geri yukleme baslatildi.',
+    'profile.logout.confirm_title': 'Cikis yapilsin mi?',
+    'profile.logout.confirm_body': 'Mevcut oturum kapatilacak.',
+    'profile.logout.confirm_action': 'Cikis Yap',
+    'profile.logout.failed': 'Cikis yapilamadi: {error}',
+    'profile.delete.confirm_title': 'Hesap silinsin mi?',
+    'profile.delete.confirm_body': 'Bu islem geri alinamaz.',
+    'profile.delete.confirm_cancel': 'Vazgec',
+    'profile.delete.confirm_action': 'Hesabi Sil',
+    'profile.delete.success': 'Hesabin silindi.',
+    'profile.delete.failed': 'Islem tamamlanamadi: {error}',
     'common.back': 'Geri',
     'common.next': 'Ileri',
     'common.save_profile': 'Profili Kaydet',
@@ -1433,17 +1513,34 @@ class LocalizationService {
 
   Future<void> initialize() async {
     await _loadSupportedLanguages();
-    await setLanguage(AppLocale.current, notifyLocale: false);
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_languagePrefKey);
+    if (stored != null && AppLanguage.isSupported(stored)) {
+      await setLanguage(stored);
+      return;
+    }
+    await setLanguage(AppLocale.current);
   }
 
   Future<void> setLanguage(String lang, {bool notifyLocale = true}) async {
-    if (notifyLocale) {
-      AppLocale.set(lang);
+    final code = AppLanguage.normalize(lang);
+    if (!AppLanguage.isSupported(code)) return;
+    if (!_cache.containsKey(code)) {
+      await _loadLanguage(code);
     }
-    if (!_cache.containsKey(lang)) {
-      await _loadLanguage(lang);
+    if (notifyLocale && AppLocale.current != code) {
+      AppLocale.set(code);
     }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_languagePrefKey, code);
     revision.value++;
+  }
+
+  Future<void> applyUserLanguage(String? lang) async {
+    final code = AppLanguage.normalize(lang);
+    if (!AppLanguage.isSupported(code)) return;
+    if (code == AppLocale.current) return;
+    await setLanguage(code);
   }
 
   String t(String key) {

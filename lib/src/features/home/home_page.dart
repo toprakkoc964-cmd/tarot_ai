@@ -519,14 +519,8 @@ class _HeroSectionState extends State<_HeroSection>
       .map((card) => card.name)
       .toList(growable: false);
 
-  late final AnimationController _flipController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 950),
-  );
-  late final PageController _pageController = PageController(
-    viewportFraction: 0.68,
-    initialPage: _initialLoopPage,
-  );
+  late final AnimationController _flipController;
+  late final PageController _pageController;
   final _random = math.Random();
   int _currentLoopPage = _initialLoopPage;
   int _deckOffset = 0;
@@ -575,6 +569,14 @@ class _HeroSectionState extends State<_HeroSection>
   @override
   void initState() {
     super.initState();
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    );
+    _pageController = PageController(
+      viewportFraction: 0.68,
+      initialPage: _initialLoopPage,
+    );
     _warmCardImageCache();
   }
 
