@@ -65,6 +65,31 @@ class AuthService {
 
   Stream<User?> authChanges() => _auth.authStateChanges();
 
+  Future<void> signInAnonymously() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      return;
+    }
+    await _auth.signInAnonymously();
+  }
+
+  Future<UserCredential> linkWithCredential(AuthCredential credential) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser != null && currentUser.isAnonymous) {
+      try {
+        return await currentUser.linkWithCredential(credential);
+      } on FirebaseAuthException catch (error) {
+        if (error.code == 'credential-already-in-use' ||
+            error.code == 'email-already-in-use' ||
+            error.code == 'provider-already-linked') {
+          return _auth.signInWithCredential(credential);
+        }
+        rethrow;
+      }
+    }
+    return _auth.signInWithCredential(credential);
+  }
+
   Future<void> signIn({required String email, required String password}) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
@@ -202,6 +227,61 @@ class AuthService {
     }
   }
 
+  Future<void> linkOrSignInWithGoogle() async {
+    socialProfileSyncInProgress.value = true;
+    try {
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw FirebaseAuthException(
+          code: 'social-auth-cancelled',
+          message: 'Google sign in cancelled.',
+        );
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null) {
+        throw FirebaseAuthException(
+          code: 'google-id-token-missing',
+          message:
+              'Google ID token is missing. Add SHA-1 to Firebase, re-download google-services.json, and set GOOGLE_WEB_CLIENT_ID.',
+        );
+      }
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: idToken,
+      );
+      final result = await linkWithCredential(credential);
+      final user = result.user;
+      final normalizedName = UserProfileContract.normalizeName(
+        user?.displayName ?? '',
+      );
+      if (user != null &&
+          normalizedName.isNotEmpty &&
+          normalizedName != (user.displayName ?? '').trim()) {
+        await user.updateDisplayName(normalizedName);
+      }
+      if (user != null) {
+        await upsertSocialUserProfile(
+          user: user,
+          providerId: 'google.com',
+          displayNameSource: normalizedName.isNotEmpty ? 'google' : null,
+          emailSource: (user.email ?? '').trim().isNotEmpty ? 'google' : null,
+          photoUrlSource: (user.photoURL ?? '').trim().isNotEmpty
+              ? 'google'
+              : null,
+        );
+      }
+    } on FirebaseAuthException {
+      rethrow;
+    } on PlatformException catch (e) {
+      throw _mapGooglePlatformException(e);
+    } finally {
+      socialProfileSyncInProgress.value = false;
+    }
+  }
+
   FirebaseAuthException _mapGooglePlatformException(PlatformException error) {
     final code = error.code.toLowerCase();
     final message = (error.message ?? '').toLowerCase();
@@ -267,9 +347,7 @@ class AuthService {
         );
       }
 
-      final oauth = OAuthProvider(
-        'apple.com',
-      ).credential(
+      final oauth = OAuthProvider('apple.com').credential(
         idToken: idToken,
         rawNonce: rawNonce,
         accessToken: appleCredential.authorizationCode,
@@ -327,6 +405,73 @@ class AuthService {
     }
   }
 
+  Future<void> linkOrSignInWithApple() async {
+    socialProfileSyncInProgress.value = true;
+    try {
+      final isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) {
+        throw FirebaseAuthException(
+          code: 'apple-signin-not-supported',
+          message: 'Apple Sign-In is not available on this device.',
+        );
+      }
+
+      final rawNonce = _generateNonce();
+      final hashedNonce = _sha256ofString(rawNonce);
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+      final idToken = appleCredential.identityToken;
+      if (idToken == null) {
+        throw FirebaseAuthException(
+          code: 'apple-id-token-missing',
+          message: 'Apple identity token is missing.',
+        );
+      }
+
+      final oauth = OAuthProvider('apple.com').credential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        accessToken: appleCredential.authorizationCode,
+      );
+      final result = await linkWithCredential(oauth);
+      final user = result.user;
+      if (user != null) {
+        await _registerAppleAuthorization(appleCredential.authorizationCode);
+        final appleName = UserProfileContract.normalizeName(
+          [
+            appleCredential.givenName,
+            appleCredential.familyName,
+          ].whereType<String>().map((part) => part.trim()).join(' '),
+        );
+        if (appleName.isNotEmpty && (user.displayName ?? '').trim().isEmpty) {
+          await user.updateDisplayName(appleName);
+          await user.reload();
+        }
+        await upsertSocialUserProfile(
+          user: _auth.currentUser ?? user,
+          providerId: 'apple.com',
+          fallbackName: appleName,
+          forcePendingOnboarding: false,
+          displayNameSource: appleName.isNotEmpty
+              ? 'apple_first_authorization'
+              : null,
+          emailSource:
+              ((_auth.currentUser ?? user).email ?? '').trim().isNotEmpty
+              ? 'apple'
+              : null,
+          appleFullNameCaptured: appleName.isNotEmpty,
+        );
+      }
+    } finally {
+      socialProfileSyncInProgress.value = false;
+    }
+  }
+
   Future<void> _registerAppleAuthorization(String authorizationCode) async {
     final normalizedCode = authorizationCode.trim();
     if (normalizedCode.isEmpty) return;
@@ -334,9 +479,7 @@ class AuthService {
     try {
       final callable = FirebaseFunctions.instanceFor(
         region: 'us-central1',
-      ).httpsCallable(
-        'registerAppleAuthorization',
-      );
+      ).httpsCallable('registerAppleAuthorization');
       await callable.call(<String, dynamic>{
         'authorizationCode': normalizedCode,
       });
@@ -411,9 +554,7 @@ class AuthService {
   Future<void> deleteCurrentUserCompletely() async {
     final callable = FirebaseFunctions.instanceFor(
       region: 'us-central1',
-    ).httpsCallable(
-      'deleteCurrentUserCompletely',
-    );
+    ).httpsCallable('deleteCurrentUserCompletely');
     final response = await callable.call(<String, dynamic>{'confirm': true});
     if (kDebugMode) {
       debugPrint('Account deletion completed: ${response.data}');

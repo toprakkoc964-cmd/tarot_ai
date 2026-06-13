@@ -11,29 +11,34 @@ import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
 import '../../core/localization_service.dart';
 import 'auth_service.dart';
-import 'onboarding_payload.dart';
-import 'onboarding_step_three_section.dart';
-import 'personalization_question_config.dart';
 import 'user_profile_contract.dart';
 import 'widgets/mystic_toast.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({
+class OnboardingNameBirthPage extends StatefulWidget {
+  const OnboardingNameBirthPage({
     super.key,
     required this.authService,
     required this.uid,
+    required this.onContinue,
+    this.onBack,
   });
+
   final AuthService authService;
   final String uid;
+  final void Function({
+    required String name,
+    required String birthDate,
+    String? birthTime,
+  })
+  onContinue;
+  final VoidCallback? onBack;
 
   @override
-  State<OnboardingPage> createState() => _OnboardingPageState();
+  State<OnboardingNameBirthPage> createState() =>
+      _OnboardingNameBirthPageState();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-class _OnboardingPageState extends State<OnboardingPage> {
-  // ── Palette ──────────────────────────────────────────────────────────────
+class _OnboardingNameBirthPageState extends State<OnboardingNameBirthPage> {
   static const _bg = Color(0xFF17081C);
   static const _surfaceHigh = Color(0xFF361A41);
   static const _primary = Color(0xFFFF5ED6);
@@ -41,9 +46,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   static const _secondary = Color(0xFFCDBDFF);
   static const _onSurface = Color(0xFFFADCFF);
   static const _gold = Color(0xFFFFE792);
-  static const _outlineVariant = Color(0xFF5B3C66);
 
-  // ── Turkish month names ─────────────────────────────────────────────────
   static const _trMonths = [
     '',
     'Ocak',
@@ -59,6 +62,36 @@ class _OnboardingPageState extends State<OnboardingPage> {
     'Kasım',
     'Aralık',
   ];
+
+  final _nameController = TextEditingController();
+  final _birthDateController = TextEditingController();
+
+  bool _isNameLocked = false;
+  bool _appleNamePromptShown = false;
+
+  DateTime _selectedDate = DateTime(2004, 3, 3, 12, 0);
+  bool _timeSelected = false;
+  bool _yearMode = false;
+
+  double _dialAngle = 0.0;
+  double _dialStartAngle = 0.0;
+  double _dialAccum = 0.0;
+
+  double get _degsPerUnit => _yearMode ? 10.0 : 5.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _birthDateController.text = _storeDate(_selectedDate);
+    _hydrateNameFromProfile();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _birthDateController.dispose();
+    super.dispose();
+  }
 
   String _displayDate(DateTime dt) {
     final lang = AppLocale.current;
@@ -86,51 +119,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   String _storeTime(DateTime dt) =>
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-
-  // ── Services & controllers ───────────────────────────────────────────────
-  final _nameController = TextEditingController();
-  final _birthDateController = TextEditingController();
-  bool _isNameLocked = false;
-  bool _appleNamePromptShown = false;
-
-  // ── Flow state ───────────────────────────────────────────────────────────
-  String _lang = 'tr';
-  final String _selectedPersonaId = 'emilia';
-  int _currentStep = 0;
-  bool _loading = false;
-
-  // ── Step 2 state ─────────────────────────────────────────────────────────
-  String? _relationshipStatus;
-  String? _lifeSpace;
-  String? _interpretationTone;
-  final Set<String> _focusAreas = {};
-
-  // ── Dial state ───────────────────────────────────────────────────────────
-  DateTime _selectedDate = DateTime(2004, 3, 3, 12, 0);
-  bool _timeSelected = false;
-  bool _yearMode = false;
-
-  double _dialAngle = 0.0;
-  double _dialStartAngle = 0.0;
-  double _dialAccum = 0.0;
-
-  double get _degsPerUnit => _yearMode ? 10.0 : 5.0;
-
-  // ── Lifecycle ────────────────────────────────────────────────────────────
-  @override
-  void initState() {
-    super.initState();
-    _lang = AppLocale.current;
-    _birthDateController.text = _storeDate(_selectedDate);
-    _hydrateNameFromProfile();
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _birthDateController.dispose();
-    super.dispose();
-  }
 
   Future<void> _hydrateNameFromProfile() async {
     try {
@@ -317,8 +305,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
         },
       );
     } finally {
-      // The dialog route may still rebuild TextField during its pop animation.
-      // Disposing immediately can trip "controller used after disposed".
       await Future<void>.delayed(const Duration(milliseconds: 350));
       controller.dispose();
     }
@@ -330,164 +316,43 @@ class _OnboardingPageState extends State<OnboardingPage> {
       _nameController.text = normalized;
       _isNameLocked = false;
     });
-
-    try {
-      await FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(widget.uid)
-          .set({
-            UserProfileContract.displayName: normalized,
-            UserProfileContract.name: normalized,
-            UserProfileContract.profileSource: <String, dynamic>{
-              UserProfileContract.displayName: 'apple_manual_capture',
-            },
-            UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-      await FirebaseAuth.instance.currentUser?.updateDisplayName(normalized);
-    } catch (_) {
-      // Onboarding submit will persist the typed name if this best-effort save fails.
-    }
   }
 
-  // ── Validation ───────────────────────────────────────────────────────────
-  bool _validateStep(int step) {
-    if (step == 0) {
-      if (_nameController.text.trim().isEmpty) {
-        _showError(AppTexts.t('error.profile_required'));
-        return false;
-      }
-      if (_birthDateController.text.trim().isEmpty) {
-        _showError('Dogum tarihi zorunlu.');
-        return false;
-      }
-    }
+  void _showError(String message) {
+    if (!mounted) return;
+    MysticToast.showError(context, message);
+  }
 
-    if (step == 1) {
-      if (_relationshipStatus == null) {
-        _showError('Lutfen iliski durumunu sec.');
-        return false;
-      }
-      if (_lifeSpace == null) {
-        _showError('Lutfen yasam alanini sec.');
-        return false;
-      }
-      if (_interpretationTone == null) {
-        _showError('Lutfen yorum tonunu sec.');
-        return false;
-      }
-    }
-
-    if (step == 2 && _focusAreas.isEmpty) {
-      _showError('En az bir yorum konusu secmelisin.');
+  bool _validate() {
+    if (_nameController.text.trim().isEmpty ||
+        _birthDateController.text.trim().isEmpty) {
+      _showError(AppTexts.t('error.profile_required'));
       return false;
     }
     return true;
   }
 
-  void _nextStep() {
-    if (!_validateStep(_currentStep)) return;
-    if (_currentStep < 2) setState(() => _currentStep++);
+  void _continue() {
+    if (!_validate()) return;
+    widget.onContinue(
+      name: _nameController.text.trim(),
+      birthDate: _birthDateController.text.trim(),
+      birthTime: _timeSelected ? _storeTime(_selectedDate) : null,
+    );
   }
 
-  void _previousStep() {
-    if (_currentStep > 0) setState(() => _currentStep--);
-  }
-
-  Future<void> _submit() async {
-    if (!_validateStep(0) || !_validateStep(1) || !_validateStep(2)) return;
-    setState(() => _loading = true);
-    try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        throw FirebaseAuthException(
-          code: 'missing-user',
-          message: 'Oturum bulunamadi. Lutfen tekrar giris yap.',
-        );
-      }
-
-      final userDocRef = FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(widget.uid);
-      final existingDoc = await userDocRef.get();
-      final existingData = existingDoc.data() ?? const <String, dynamic>{};
-
-      final existingDisplayName = UserProfileContract.normalizeName(
-        (existingData[UserProfileContract.displayName] as String?) ?? '',
-      );
-      final existingName = UserProfileContract.normalizeName(
-        (existingData[UserProfileContract.name] as String?) ?? '',
-      );
-      final existingResolvedName = existingDisplayName.isNotEmpty
-          ? existingDisplayName
-          : existingName;
-      final existingEmail =
-          (existingData[UserProfileContract.email] as String?)?.trim() ?? '';
-
-      final resolvedName = UserProfileContract.normalizeName(
-        _nameController.text.trim().isNotEmpty
-            ? _nameController.text.trim()
-            : (existingResolvedName.isNotEmpty
-                  ? existingResolvedName
-                  : (currentUser.displayName?.trim() ?? '')),
-      );
-      final resolvedEmail = (currentUser.email?.trim().isNotEmpty ?? false)
-          ? currentUser.email!.trim()
-          : existingEmail;
-
-      if (resolvedName.isEmpty) {
-        _showError('Ad soyad bilgisi zorunlu.');
-        return;
-      }
-
-      final payload = OnboardingPayload(
-        name: resolvedName,
-        birthDate: _birthDateController.text.trim(),
-        privacyAccepted: true,
-        termsAccepted: true,
-        aiProcessingAccepted: true,
-        lang: _lang,
-        selectedPersonaId: _selectedPersonaId,
-        birthTime: _timeSelected ? _storeTime(_selectedDate) : null,
-        relationshipStatus: _relationshipStatus,
-        lifeSpace: _lifeSpace,
-        interpretationTone: _interpretationTone,
-        focusAreas: _focusAreas.toList(growable: false),
-      );
-
-      await userDocRef.set(
-        payload.toUserDocumentMap(
-          uid: widget.uid,
-          email: resolvedEmail,
-          isProfileComplete: true,
-          includeCreatedAt: !existingDoc.exists,
-        ),
-        SetOptions(merge: true),
-      );
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  void _showError(String msg) {
-    if (!mounted) return;
-    MysticToast.showError(context, msg);
-  }
-
-  // ── Dial pan ─────────────────────────────────────────────────────────────
-  void _onPanStart(DragStartDetails d, double half) {
+  void _onPanStart(DragStartDetails details, double half) {
     _dialStartAngle = math.atan2(
-      d.localPosition.dy - half,
-      d.localPosition.dx - half,
+      details.localPosition.dy - half,
+      details.localPosition.dx - half,
     );
     _dialAccum = 0;
   }
 
-  void _onPanUpdate(DragUpdateDetails d, double half) {
+  void _onPanUpdate(DragUpdateDetails details, double half) {
     final cur = math.atan2(
-      d.localPosition.dy - half,
-      d.localPosition.dx - half,
+      details.localPosition.dy - half,
+      details.localPosition.dx - half,
     );
     var delta = cur - _dialStartAngle;
     if (delta > math.pi) delta -= 2 * math.pi;
@@ -524,7 +389,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     });
   }
 
-  // ── Drum picker ──────────────────────────────────────────────────────────
   Future<void> _openDrumPicker() async {
     final result = await showModalBottomSheet<_PickerResult>(
       context: context,
@@ -544,7 +408,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     }
   }
 
-  // ── Input style ──────────────────────────────────────────────────────────
   InputDecoration _inputStyle({
     required String label,
     String? hint,
@@ -581,67 +444,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     ),
   );
 
-  // ── Top shell ────────────────────────────────────────────────────────────
-  Widget _buildTopShell() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      color: _bg.withValues(alpha: 0.85),
-      child: Row(
-        children: [
-          Image.asset(
-            'images/chatgpt_logo.png',
-            height: 34,
-            fit: BoxFit.contain,
-          ),
-          const Spacer(),
-          Text(
-            '${AppTexts.t('onboarding.step').toUpperCase()} '
-            '${(_currentStep + 1).toString().padLeft(2, '0')} / 03',
-            style: GoogleFonts.spaceGrotesk(
-              color: _secondary.withValues(alpha: 0.6),
-              fontSize: 10,
-              letterSpacing: 3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Progress bar ─────────────────────────────────────────────────────────
-  Widget _buildProgressBar() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(3, (i) {
-        final active = i == _currentStep;
-        final done = i < _currentStep;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 260),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          height: 4,
-          width: active ? 48 : 32,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(99),
-            color: active
-                ? _primary
-                : done
-                ? _primary.withValues(alpha: 0.2)
-                : _surfaceHigh,
-            boxShadow: active
-                ? [
-                    BoxShadow(
-                      color: _primary.withValues(alpha: 0.3),
-                      blurRadius: 15,
-                    ),
-                  ]
-                : null,
-          ),
-        );
-      }),
-    );
-  }
-
-  // ── Ghost ring helper ────────────────────────────────────────────────────
   Widget _ghostRing(double size, double opacity) => Container(
     width: size,
     height: size,
@@ -651,7 +453,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
     ),
   );
 
-  // ── Celestial dial ───────────────────────────────────────────────────────
   Widget _buildDial() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -870,415 +671,146 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  // ── Pill chip helper (Step 2 selectors) ──────────────────────────────────
-  Widget _pillChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          color: selected
-              ? _primary.withValues(alpha: 0.10)
-              : const Color(0xFF1E0C25),
-          border: Border.all(
-            color: selected
-                ? _primary.withValues(alpha: 0.4)
-                : _outlineVariant.withValues(alpha: 0.3),
-            width: 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: _primary.withValues(alpha: 0.3),
-                    blurRadius: 15,
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.manrope(
-            color: selected ? _primary : _onSurface.withValues(alpha: 0.8),
-            fontSize: 15,
-            fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Tone card helper (Step 2: icon cards) ────────────────────────────────
-  Widget _toneCard({
-    required IconData icon,
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          height: 140,
-          padding: const EdgeInsets.symmetric(vertical: 22),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: selected
-                ? _primary.withValues(alpha: 0.10)
-                : const Color(0xFF1E0C25),
-            border: Border.all(
-              color: selected
-                  ? _primary.withValues(alpha: 0.4)
-                  : _outlineVariant.withValues(alpha: 0.3),
-              width: 1,
-            ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: _primary.withValues(alpha: 0.3),
-                      blurRadius: 15,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: selected ? _primary : _secondary.withValues(alpha: 0.7),
-                size: 28,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                style: GoogleFonts.manrope(
-                  color: selected
-                      ? _primary
-                      : _onSurface.withValues(alpha: 0.8),
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Section label helper ─────────────────────────────────────────────────
-  Widget _sectionLabel(String text) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 2, bottom: 12),
-        child: Text(
-          text,
-          style: GoogleFonts.spaceGrotesk(
-            color: _gold,
-            fontSize: 11,
-            letterSpacing: 4,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Step content ─────────────────────────────────────────────────────────
-  Widget _buildStepContent() {
-    // ── Step 0: Name + Dial ──────────────────────────────────────────────
-    if (_currentStep == 0) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 10),
-          TextField(
-            controller: _nameController,
-            maxLength: UserProfileContract.maxNameLength,
-            readOnly: _isNameLocked,
-            canRequestFocus: !_isNameLocked,
-            showCursor: !_isNameLocked,
-            enableInteractiveSelection: !_isNameLocked,
-            style: GoogleFonts.manrope(color: _onSurface, fontSize: 16),
-            decoration: _inputStyle(
-              label: AppTexts.t('onboarding.name_label_upper'),
-              hint: AppTexts.t('onboarding.name_hint'),
-              suffixIcon: Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Icon(
-                  _isNameLocked ? Icons.lock_rounded : Icons.star_rate_rounded,
-                  color: _gold.withValues(alpha: 0.65),
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          _buildDial(),
-          const SizedBox(height: 10),
-        ],
-      );
-    }
-
-    // ── Step 1: Relationship + Life Space + Tone ────────────────────────
-    if (_currentStep == 1) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Subtitle
-          Padding(
-            padding: const EdgeInsets.only(bottom: 28),
-            child: Text(
-              AppTexts.t('onboarding.step2.subtitle_new'),
-              textAlign: TextAlign.center,
-              style: GoogleFonts.manrope(
-                color: _secondary.withValues(alpha: 0.8),
-                fontSize: 16,
-                height: 1.5,
-              ),
-            ),
-          ),
-
-          // Relationship status
-          _sectionLabel(AppTexts.t('onboarding.step2.relationship')),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final option
-                  in PersonalizationQuestions.relationshipStatus.options)
-                _pillChip(
-                  label: AppTexts.t(option.labelKey),
-                  selected: _relationshipStatus == option.value,
-                  onTap: () =>
-                      setState(() => _relationshipStatus = option.value),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 28),
-
-          // Life space
-          _sectionLabel(AppTexts.t('onboarding.step2.life_space')),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final option in PersonalizationQuestions.lifeSpace.options)
-                _pillChip(
-                  label: AppTexts.t(option.labelKey),
-                  selected: _lifeSpace == option.value,
-                  onTap: () => setState(() => _lifeSpace = option.value),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 28),
-
-          // Interpretation tone
-          _sectionLabel(AppTexts.t('onboarding.step2.tone')),
-          Row(
-            children: [
-              for (final option
-                  in PersonalizationQuestions.interpretationTone.options) ...[
-                _toneCard(
-                  icon: option.icon,
-                  label: AppTexts.t(option.labelKey),
-                  selected: _interpretationTone == option.value,
-                  onTap: () =>
-                      setState(() => _interpretationTone = option.value),
-                ),
-                if (option !=
-                    PersonalizationQuestions.interpretationTone.options.last)
-                  const SizedBox(width: 10),
-              ],
-            ],
-          ),
-        ],
-      );
-    }
-
-    // ── Step 2: Consent ─────────────────────────────────────────────────
-    return OnboardingStepThreeSection(
-      selectedFocusAreas: _focusAreas,
-      onToggleArea: (id) {
-        setState(() {
-          if (_focusAreas.contains(id)) {
-            _focusAreas.remove(id);
-          } else {
-            _focusAreas.add(id);
-          }
-        });
-      },
-      onSubmit: _submit,
-      loading: _loading,
-    );
-  }
-
-  // ── Bottom actions ────────────────────────────────────────────────────────
-  Widget _buildActions() {
-    if (_currentStep == 2) return const SizedBox.shrink();
-    final isLast = _currentStep == 2;
+  Widget _buildActionButton() {
+    final hasBack = widget.onBack != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              if (_currentStep > 0)
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _loading ? null : _previousStep,
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: _secondary.withValues(alpha: 0.45),
-                      ),
-                      foregroundColor: _secondary,
-                      minimumSize: const Size.fromHeight(76),
-                      shape: const StadiumBorder(),
+          if (hasBack)
+            Expanded(
+              child: OutlinedButton(
+                onPressed: widget.onBack,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: _secondary.withValues(alpha: 0.45)),
+                  foregroundColor: _secondary,
+                  minimumSize: const Size.fromHeight(76),
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  AppTexts.t('common.back'),
+                  style: GoogleFonts.spaceGrotesk(
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          if (hasBack) const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: _continue,
+              child: Container(
+                height: 76,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_primary, _primaryDeep],
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _primary.withValues(alpha: 0.45),
+                      blurRadius: 26,
+                      spreadRadius: 2,
                     ),
-                    child: Text(
-                      AppTexts.t('common.back'),
-                      style: GoogleFonts.spaceGrotesk(
-                        letterSpacing: 2,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  AppTexts.t('onboarding.cta_continue'),
+                  style: GoogleFonts.spaceGrotesk(
+                    color: const Color(0xFF430036),
+                    letterSpacing: 4,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          22,
+          widget.onBack == null ? 26 : 12,
+          22,
+          MediaQuery.of(context).padding.bottom + 10,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.onBack != null) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
+                  label: Text(AppTexts.t('common.back')),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _secondary.withValues(alpha: 0.82),
+                    textStyle: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
                     ),
                   ),
                 ),
-              if (_currentStep > 0) const SizedBox(width: 10),
-              Expanded(
-                child: _loading
-                    ? const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : GestureDetector(
-                        onTap: isLast ? _submit : _nextStep,
-                        child: Container(
-                          height: 76,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [_primary, _primaryDeep],
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _primary.withValues(alpha: 0.45),
-                                blurRadius: 26,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            isLast
-                                ? AppTexts.t('common.save_profile')
-                                : AppTexts.t('onboarding.cta_continue'),
-                            style: GoogleFonts.spaceGrotesk(
-                              color: const Color(0xFF430036),
-                              letterSpacing: 4,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _nameController,
+                      maxLength: UserProfileContract.maxNameLength,
+                      readOnly: _isNameLocked,
+                      canRequestFocus: !_isNameLocked,
+                      showCursor: !_isNameLocked,
+                      enableInteractiveSelection: !_isNameLocked,
+                      style: GoogleFonts.manrope(
+                        color: _onSurface,
+                        fontSize: 16,
+                      ),
+                      decoration: _inputStyle(
+                        label: AppTexts.t('onboarding.name_label_upper'),
+                        hint: AppTexts.t('onboarding.name_hint'),
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Icon(
+                            _isNameLocked
+                                ? Icons.lock_rounded
+                                : Icons.star_rate_rounded,
+                            color: _gold.withValues(alpha: 0.65),
+                            size: 20,
                           ),
                         ),
                       ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStandardFlow() {
-    return SafeArea(
-      child: Column(
-        children: [
-          _buildTopShell(),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 16, 22, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildProgressBar(),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      child: _buildStepContent(),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  _buildActions(),
-                  const SizedBox(height: 2),
-                  Text(
-                    AppTexts.t('onboarding.footer'),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.manrope(
-                      color: _secondary.withValues(alpha: 0.3),
-                      fontSize: 11,
-                      fontStyle: FontStyle.italic,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                  SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                ],
+                    const SizedBox(height: 24),
+                    _buildDial(),
+                    const SizedBox(height: 10),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            _buildActionButton(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildStepThreeFixedFlow() {
-    return SafeArea(
-      child: Column(
-        children: [
-          _buildTopShell(),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                22,
-                16,
-                22,
-                MediaQuery.of(context).padding.bottom + 10,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildProgressBar(),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      child: _buildStepContent(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
@@ -1288,7 +820,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
         resizeToAvoidBottomInset: true,
         body: Stack(
           children: [
-            // Cosmic background
             Container(
               decoration: const BoxDecoration(
                 gradient: RadialGradient(
@@ -1303,10 +834,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 ),
               ),
             ),
-            // Content
-            _currentStep == 2
-                ? _buildStepThreeFixedFlow()
-                : _buildStandardFlow(),
+            _buildContent(),
           ],
         ),
       ),
@@ -1314,15 +842,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Mode chip (dial)
-// ─────────────────────────────────────────────────────────────────────────────
 class _ModeChip extends StatelessWidget {
   const _ModeChip({
     required this.label,
     required this.active,
     required this.onTap,
   });
+
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -1367,14 +893,11 @@ class _ModeChip extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Dial CustomPainter
-// ─────────────────────────────────────────────────────────────────────────────
 class _DialPainter extends CustomPainter {
+  const _DialPainter({required this.goldColor, required this.yearMode});
+
   final Color goldColor;
   final bool yearMode;
-
-  const _DialPainter({required this.goldColor, required this.yearMode});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1424,20 +947,16 @@ class _DialPainter extends CustomPainter {
       old.goldColor != goldColor || old.yearMode != yearMode;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Picker result
-// ─────────────────────────────────────────────────────────────────────────────
 class _PickerResult {
+  const _PickerResult({required this.date, required this.timeSelected});
+
   final DateTime date;
   final bool timeSelected;
-  const _PickerResult({required this.date, required this.timeSelected});
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Cosmic Drum Picker (bottom sheet)
-// ─────────────────────────────────────────────────────────────────────────────
 class _CosmicDrumPicker extends StatefulWidget {
   const _CosmicDrumPicker({required this.initial, required this.timeSelected});
+
   final DateTime initial;
   final bool timeSelected;
 
@@ -1523,6 +1042,22 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
     'décembre',
   ];
 
+  late int _day;
+  late int _month;
+  late int _year;
+  late int _hour;
+  late int _minute;
+  late bool _showTime;
+
+  late FixedExtentScrollController _dayCtrl;
+  late FixedExtentScrollController _monthCtrl;
+  late FixedExtentScrollController _yearCtrl;
+  late FixedExtentScrollController _hourCtrl;
+  late FixedExtentScrollController _minCtrl;
+
+  static const _itemH = 46.0;
+  static const _loopCenter = 60000;
+
   List<String> get _months {
     switch (AppLocale.current) {
       case 'tr':
@@ -1538,19 +1073,7 @@ class _CosmicDrumPickerState extends State<_CosmicDrumPicker> {
     }
   }
 
-  late int _day, _month, _year, _hour, _minute;
-  late bool _showTime;
-
-  late FixedExtentScrollController _dayCtrl,
-      _monthCtrl,
-      _yearCtrl,
-      _hourCtrl,
-      _minCtrl;
-
-  static const _itemH = 46.0;
-  static const _loopCenter = 60000;
-
-  int _daysInMonth(int m, int y) => DateTime(y, m + 1, 0).day;
+  int _daysInMonth(int month, int year) => DateTime(year, month + 1, 0).day;
 
   int _loopingInitialItem({
     required int itemCount,

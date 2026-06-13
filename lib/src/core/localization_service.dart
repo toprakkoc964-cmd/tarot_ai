@@ -228,6 +228,156 @@ class LocalizationService {
     'legal.last_updated': 'Last updated: March 10, 2026',
     'legal.view_terms': 'View Terms of Service',
     'legal.view_privacy': 'View Privacy Policy',
+    'onboarding.welcome.title': 'Three ways to discover yourself',
+    'onboarding.welcome.subtitle': 'Cards, cup, and palm — Aris is with you.',
+    'onboarding.welcome.persona_bilge_role': 'Tarot',
+    'onboarding.welcome.persona_madam_role': 'Coffee & Palm',
+    'onboarding.welcome.cta_start': 'Begin the journey',
+    'onboarding.card_pick.title': 'Choose a card',
+    'onboarding.card_pick.subtitle':
+        'Three hidden cards, three paths — Tarot, Coffee Reading, or Palm Reading. Choose one and let fate pick your first reading.',
+    'onboarding.card_pick.hint': 'Tap to choose',
+    'onboarding.card_pick.tarot_title': 'Tarot',
+    'onboarding.card_pick.tarot_desc': 'Draw one card',
+    'onboarding.card_pick.tarot_persona': 'Bilge Aris',
+    'onboarding.card_pick.coffee_title': 'Coffee Reading',
+    'onboarding.card_pick.coffee_desc': 'Turn the cup',
+    'onboarding.card_pick.coffee_persona': 'Madam Aris',
+    'onboarding.card_pick.palm_title': 'Palm Reading',
+    'onboarding.card_pick.palm_desc': 'Scan your palm',
+    'onboarding.card_pick.palm_persona': 'Madam Aris',
+    'onboarding.tarot_draw.title': 'Choose your card',
+    'onboarding.tarot_draw.subtitle':
+        'As the cards flow, touch the one that calls you. Bilge Aris will keep it safe for you.',
+    'onboarding.tarot_draw.hint': 'Touch and choose',
+    'onboarding.tarot_draw.confirmation':
+        'You chose your card, {name}. Let it stay closed for now… I will ask a few more questions, then Aris will open it for you. 🔮',
+    'onboarding.tarot_draw.confirmation_no_name':
+        'You chose your card. Let it stay closed for now… I will ask a few more questions, then Aris will open it for you. 🔮',
+    'onboarding.tarot_draw.cta': 'CONTINUE',
+    'onboarding.cards.the_star': 'The Star',
+    'onboarding.cards.the_sun': 'The Sun',
+    'onboarding.cards.the_world': 'The World',
+    'onboarding.cards.wheel_of_fortune': 'Wheel of Fortune',
+    'onboarding.cards.ace_of_wands': 'Ace of Wands',
+    'onboarding.cards.ace_of_cups': 'Ace of Cups',
+    'onboarding.cards.the_lovers': 'The Lovers',
+    'onboarding.cards.the_magician': 'The Magician',
+    'onboarding.palm.title': 'Let us read your palm',
+    'onboarding.palm.subtitle':
+        'Madam Aris needs a brief palm view to glimpse the first signs.',
+    'onboarding.palm.why_camera': 'The camera is used only to frame your palm.',
+    'onboarding.palm.why_privacy':
+        'The photo is processed and not stored during onboarding.',
+    'onboarding.palm.why_fallback':
+        'If you are not ready, another reading door opens for you.',
+    'onboarding.palm.permission_cta': 'ALLOW CAMERA',
+    'onboarding.palm.permission_loading': 'PREPARING...',
+    'onboarding.palm.permission_denied_title': 'Camera permission is off',
+    'onboarding.palm.permission_denied_body':
+        'For palm reading, I need to frame your palm with the camera. You can enable permission or continue this step with cards.',
+    'onboarding.palm.permission_retry': 'TRY AGAIN',
+    'onboarding.palm.permission_settings': 'OPEN SETTINGS',
+    'onboarding.palm.permission_fallback': 'Continue with cards',
+    'onboarding.palm.camera_title': 'Show your palm',
+    'onboarding.palm.camera_hint':
+        'Place your palm inside the frame and keep your fingers open.',
+    'onboarding.palm.frame_hint': 'Place your palm in the frame, fingers open',
+    'onboarding.palm.scanning': 'Scanning your lines...',
+    'onboarding.palm.confirm_title': 'I read your palm',
+    'onboarding.palm.confirm_body':
+        'I saw your lines, {name}... but I will keep them to myself for now. I will ask a few more questions, then Madam Aris will interpret them for you. 🤚',
+    'onboarding.palm.confirm_body_no_name':
+        'I saw your lines... but I will keep them to myself for now. I will ask a few more questions, then Madam Aris will interpret them for you. 🤚',
+    'onboarding.palm.cta': 'CONTINUE',
+    'onboarding.palm.fallback_title': 'No problem',
+    'onboarding.palm.fallback_subtitle':
+        'Let us not read your palm right now. I open two doors for you — choose the card that calls you and let fate decide.',
+    'onboarding.palm.fallback_result': 'Fate chose {modality} for you.',
+    'onboarding.coffee.title_intro': 'Hold your intention',
+    'onboarding.coffee.subtitle_intro':
+        'Think of the question in your heart and drink your coffee...',
+    'onboarding.coffee.title_drank': 'Your coffee is finished',
+    'onboarding.coffee.subtitle_drank':
+        'Now close the cup onto the saucer and seal your intention.',
+    'onboarding.coffee.title_settle': 'The grounds are cooling',
+    'onboarding.coffee.subtitle_settle': 'The shapes are slowly forming...',
+    'onboarding.coffee.title_sealed': 'Your cup is ready',
+    'onboarding.coffee.subtitle_sealed':
+        'Madam Aris keeps your cup closed for now.',
+    'onboarding.coffee.cta_drink': 'INTEND & DRINK',
+    'onboarding.coffee.cta_flip': 'CLOSE THE CUP',
+    'onboarding.coffee.cta_wait': 'SHAPES ARE FORMING...',
+    'onboarding.coffee.cta_continue': 'CONTINUE',
+    'onboarding.coffee.confirm':
+        'Your cup is closed, {name}... the shapes have formed. Let it stay sealed for now; after a few questions, Madam Aris will open and read it. ☕',
+    'onboarding.coffee.confirm_no_name':
+        'Your cup is closed... the shapes have formed. Let it stay sealed for now; after a few questions, Madam Aris will open and read it. ☕',
+    'onboarding.reveal.friend': 'traveler',
+    'onboarding.reveal.persona_bilge': 'Bilge Aris',
+    'onboarding.reveal.persona_madam': 'Madam Aris',
+    'onboarding.reveal.status_tarot': 'reading your cards…',
+    'onboarding.reveal.status_coffee': 'reading your cup…',
+    'onboarding.reveal.status_palm': 'reading your palm…',
+    'onboarding.reveal.status_ready': 'your reading is ready',
+    'onboarding.reveal.greeting':
+        'Welcome, {name}. 🌙 I am {persona}… I am opening the first signs of your path.',
+    'onboarding.reveal.interpretation_tarot':
+        'Your {zodiac} energy meets the light of {artifact}. In {focus}, a calm intuitive doorway begins to open.',
+    'onboarding.reveal.interpretation_coffee':
+        'Your {zodiac} rhythm makes the symbol of {artifact} clearer in the cup. In {focus}, there is a small but meaningful sign.',
+    'onboarding.reveal.interpretation_palm':
+        'Your {zodiac} frequency becomes visible through {artifact}. In {focus}, your inner voice begins to sound clearer.',
+    'onboarding.reveal.interpretation_bridge':
+        'The answer you seek in {focus} is not hidden in one moment, but in a few small signs coming together. With {zodiac} patience and intuition, the path softens.',
+    'onboarding.reveal.closing_soft':
+        '{name}, move gently. Let your heart speak without force; in {focus}, the kindest answer rises from within first.',
+    'onboarding.reveal.closing_direct':
+        '{name}, the sign is clear: gather scattered energy into one intention. In {focus}, the path appears as you decide.',
+    'onboarding.reveal.closing_spiritual':
+        '{name}, the language of the stars shows you a subtle threshold today. Your {zodiac} light carries an intuitive key into {focus}.',
+    'onboarding.reveal.hook':
+        'This is only the beginning… Your deeper reading is waiting in the app. 🔮',
+    'onboarding.reveal.ask_label': 'ASK ARIS',
+    'onboarding.reveal.gating':
+        'Let us deepen this together, {name}… but first, complete your journey. 🔮',
+    'onboarding.reveal.cta': 'CONTINUE',
+    'onboarding.reveal.cta_after_chip': 'CONTINUE MY JOURNEY',
+    'onboarding.reveal.chip.love_1': 'Who is this person?',
+    'onboarding.reveal.chip.love_2': 'When will it happen?',
+    'onboarding.reveal.chip.love_3': 'What about my career?',
+    'onboarding.reveal.chip.career_1': 'Will I rise?',
+    'onboarding.reveal.chip.career_2': 'When?',
+    'onboarding.reveal.chip.career_3': 'What about love?',
+    'onboarding.reveal.chip.default_1': 'What about my career?',
+    'onboarding.reveal.chip.default_2': 'Who is this person?',
+    'onboarding.reveal.chip.default_3': 'When will it happen?',
+    'onboarding.reveal.zodiac_unknown': 'cosmic',
+    'onboarding.paywall.title': 'Charge Your Cosmic Energy',
+    'onboarding.paywall.subtitle':
+        'Choose a credit pack for your first deep reading. No premium, no subscription; only one-time credits.',
+    'onboarding.paywall.badge_popular': 'MOST POPULAR',
+    'onboarding.paywall.badge_best': 'BEST VALUE',
+    'onboarding.paywall.pack_title': '{amount} Credits',
+    'onboarding.paywall.pack_subtitle': 'One-time reading credits',
+    'onboarding.paywall.cta': 'GET {amount} CREDITS · {price}',
+    'onboarding.paywall.apple_notice':
+        'Purchases are charged to your Apple ID. Credit packs are one-time purchases and do not start a subscription.',
+    'onboarding.paywall.retry': 'Try again',
+    'onboarding.paywall.load_error':
+        'Credit packs could not be loaded. Please try again.',
+    'onboarding.paywall.link_error':
+        'The link could not be opened. Please try again later.',
+    'onboarding.account.title': 'Your journey is ready',
+    'onboarding.account.subtitle':
+        'Create your account so your readings, credits, and cosmic profile stay safe.',
+    'onboarding.account.consent':
+        'By continuing, you accept the Terms of Use, Privacy Policy, and AI data processing.',
+    'onboarding.account.apple': 'Continue with Apple',
+    'onboarding.account.google': 'Continue with Google',
+    'onboarding.account.guest': 'Continue as guest',
+    'onboarding.account.email_register': 'Sign up with email',
+    'onboarding.account.login': 'Already have an account? Log in',
     'onboarding.hero_title': 'COSMIC\nPROFILE',
     'onboarding.hero_subtitle':
         'These details are collected once so the cards can know you better.',
@@ -971,6 +1121,157 @@ class LocalizationService {
     'legal.last_updated': 'Son guncelleme: 10 Mart 2026',
     'legal.view_terms': 'Kullanim Kosullarini Gor',
     'legal.view_privacy': 'Gizlilik Politikasini Gor',
+    'onboarding.welcome.title': 'Kendini keşfetmenin üç yolu',
+    'onboarding.welcome.subtitle': 'Kartlar, fincan ve avucun — Aris seninle.',
+    'onboarding.welcome.persona_bilge_role': 'Tarot',
+    'onboarding.welcome.persona_madam_role': 'Kahve & El Falı',
+    'onboarding.welcome.cta_start': 'Yolculuğa başla',
+    'onboarding.card_pick.title': 'Bir kart seç',
+    'onboarding.card_pick.subtitle':
+        'Üç kapalı kart, üç yol — Tarot, Kahve Falı ya da El Falı. Birini seç, ilk falını kader belirlesin.',
+    'onboarding.card_pick.hint': 'Dokun ve seç',
+    'onboarding.card_pick.tarot_title': 'Tarot',
+    'onboarding.card_pick.tarot_desc': 'Tek kart çek',
+    'onboarding.card_pick.tarot_persona': 'Bilge Aris',
+    'onboarding.card_pick.coffee_title': 'Kahve Falı',
+    'onboarding.card_pick.coffee_desc': 'Fincanı çevir',
+    'onboarding.card_pick.coffee_persona': 'Madam Aris',
+    'onboarding.card_pick.palm_title': 'El Falı',
+    'onboarding.card_pick.palm_desc': 'Avucunu tara',
+    'onboarding.card_pick.palm_persona': 'Madam Aris',
+    'onboarding.tarot_draw.title': 'Kartını seç',
+    'onboarding.tarot_draw.subtitle':
+        'Kartlar akarken, içine doğana dokun. Bilge Aris onu senin için saklayacak.',
+    'onboarding.tarot_draw.hint': 'Dokun ve seç',
+    'onboarding.tarot_draw.confirmation':
+        'Kartını seçtin, {name}. Şimdilik kapalı kalsın… birkaç soru daha soracağım, sonra Aris onu senin için açacak. 🔮',
+    'onboarding.tarot_draw.confirmation_no_name':
+        'Kartını seçtin. Şimdilik kapalı kalsın… birkaç soru daha soracağım, sonra Aris onu senin için açacak. 🔮',
+    'onboarding.tarot_draw.cta': 'DEVAM ET',
+    'onboarding.cards.the_star': 'Yıldız',
+    'onboarding.cards.the_sun': 'Güneş',
+    'onboarding.cards.the_world': 'Dünya',
+    'onboarding.cards.wheel_of_fortune': 'Kader Çarkı',
+    'onboarding.cards.ace_of_wands': 'Asa Ası',
+    'onboarding.cards.ace_of_cups': 'Kupa Ası',
+    'onboarding.cards.the_lovers': 'Aşıklar',
+    'onboarding.cards.the_magician': 'Büyücü',
+    'onboarding.palm.title': 'Avucunu okuyalım',
+    'onboarding.palm.subtitle':
+        'Madam Aris ilk işaretleri görebilmek için avucunun kısa bir görüntüsüne ihtiyaç duyar.',
+    'onboarding.palm.why_camera':
+        'Kamera yalnızca avucunu çerçevelemek için kullanılır.',
+    'onboarding.palm.why_privacy':
+        'Fotoğraf işlenir ve onboarding sırasında saklanmaz.',
+    'onboarding.palm.why_fallback':
+        'Hazır değilsen sana başka bir fal kapısı açılır.',
+    'onboarding.palm.permission_cta': 'KAMERAYA İZİN VER',
+    'onboarding.palm.permission_loading': 'HAZIRLANIYOR...',
+    'onboarding.palm.permission_denied_title': 'Kamera izni kapalı',
+    'onboarding.palm.permission_denied_body':
+        'El falı için avucunu kamerayla çerçevelemem gerekiyor. İzni açabilir ya da bu adımı kartlarla sürdürebilirsin.',
+    'onboarding.palm.permission_retry': 'TEKRAR DENE',
+    'onboarding.palm.permission_settings': 'AYARLARI AÇ',
+    'onboarding.palm.permission_fallback': 'Kartlarla devam et',
+    'onboarding.palm.camera_title': 'Avucunu göster',
+    'onboarding.palm.camera_hint':
+        'Avucunu çerçeveye yerleştir, parmaklarını açık tut.',
+    'onboarding.palm.frame_hint': 'Avucunu çerçeveye yerleştir, parmaklar açık',
+    'onboarding.palm.scanning': 'Çizgilerin taranıyor...',
+    'onboarding.palm.confirm_title': 'Avucunu okudum',
+    'onboarding.palm.confirm_body':
+        'Çizgilerini gördüm, {name}... ama şimdilik kendime saklayayım. Birkaç soru daha soracağım, sonra Madam Aris senin için yorumlayacak. 🤚',
+    'onboarding.palm.confirm_body_no_name':
+        'Çizgilerini gördüm... ama şimdilik kendime saklayayım. Birkaç soru daha soracağım, sonra Madam Aris senin için yorumlayacak. 🤚',
+    'onboarding.palm.cta': 'DEVAM ET',
+    'onboarding.palm.fallback_title': 'Sorun değil',
+    'onboarding.palm.fallback_subtitle':
+        'Avucunu şimdi okumayalım. Sana iki kapı açıyorum — içine doğan kartı seç, ne çıkacağını kader söylesin.',
+    'onboarding.palm.fallback_result': 'Kader senin için {modality} dedi.',
+    'onboarding.coffee.title_intro': 'Niyetini tut',
+    'onboarding.coffee.subtitle_intro':
+        'Aklından geçen soruyu düşün ve kahveni iç...',
+    'onboarding.coffee.title_drank': 'Kahven bitti',
+    'onboarding.coffee.subtitle_drank':
+        'Şimdi fincanı tabağa kapat ve niyetini mühürle.',
+    'onboarding.coffee.title_settle': 'Telve soğuyor',
+    'onboarding.coffee.subtitle_settle': 'Şekiller yavaşça oluşuyor...',
+    'onboarding.coffee.title_sealed': 'Fincanın hazır',
+    'onboarding.coffee.subtitle_sealed':
+        'Madam Aris fincanını şimdilik kapalı tutuyor.',
+    'onboarding.coffee.cta_drink': 'NİYET TUT & İÇ',
+    'onboarding.coffee.cta_flip': 'FİNCANI KAPAT',
+    'onboarding.coffee.cta_wait': 'ŞEKİLLER OLUŞUYOR...',
+    'onboarding.coffee.cta_continue': 'DEVAM ET',
+    'onboarding.coffee.confirm':
+        'Fincanın kapandı, {name}... şekiller oluştu. Şimdilik kapalı kalsın; birkaç soru sonra Madam Aris açıp okuyacak. ☕',
+    'onboarding.coffee.confirm_no_name':
+        'Fincanın kapandı... şekiller oluştu. Şimdilik kapalı kalsın; birkaç soru sonra Madam Aris açıp okuyacak. ☕',
+    'onboarding.reveal.friend': 'yolcu',
+    'onboarding.reveal.persona_bilge': 'Bilge Aris',
+    'onboarding.reveal.persona_madam': 'Madam Aris',
+    'onboarding.reveal.status_tarot': 'kartlarını okuyor…',
+    'onboarding.reveal.status_coffee': 'fincanını okuyor…',
+    'onboarding.reveal.status_palm': 'avucunu okuyor…',
+    'onboarding.reveal.status_ready': 'okuman hazır',
+    'onboarding.reveal.greeting':
+        'Hoşgeldin {name}. 🌙 Ben {persona}… Yolunun ilk işaretlerini birlikte açıyorum.',
+    'onboarding.reveal.interpretation_tarot':
+        '{zodiac} enerjin {artifact} kartının ışığıyla birleşiyor. {focus} alanında sezgisel ama sakin bir kapı aralanıyor.',
+    'onboarding.reveal.interpretation_coffee':
+        '{zodiac} ritmin fincandaki {artifact} sembolünü daha görünür kılıyor. {focus} konusunda küçük ama anlamlı bir haber izi var.',
+    'onboarding.reveal.interpretation_palm':
+        '{zodiac} frekansın {artifact} üzerinde belirginleşiyor. {focus} alanında iç sesini daha net duyacağın bir dönem başlıyor.',
+    'onboarding.reveal.interpretation_bridge':
+        '{focus} için aradığın cevap tek bir anda değil, birkaç küçük işaretin birleşiminde saklı. {zodiac} doğan sabrı ve sezgiyi aynı anda kullanınca yol yumuşar.',
+    'onboarding.reveal.closing_soft':
+        '{name}, acele etmeden ilerle. Kalbinin bildiği şeyi zorlamadan duy; {focus} alanında en şefkatli cevap önce içeriden gelir.',
+    'onboarding.reveal.closing_direct':
+        '{name}, işaret net: dağınık enerjiyi tek niyete indir. {focus} alanında karar verdikçe yol da belirginleşir.',
+    'onboarding.reveal.closing_spiritual':
+        '{name}, yıldızların dili bugün sana ince bir eşik gösteriyor. {zodiac} ışığın {focus} kapısında sezgisel bir anahtar taşıyor.',
+    'onboarding.reveal.hook':
+        'Bu yalnızca bir başlangıç… Derin okuman uygulamada seni bekliyor. 🔮',
+    'onboarding.reveal.ask_label': 'ARİS\'E SOR',
+    'onboarding.reveal.gating':
+        'Bunu birlikte derinleştirelim, {name}… ama önce yolculuğunu tamamlayalım. 🔮',
+    'onboarding.reveal.cta': 'DEVAM ET',
+    'onboarding.reveal.cta_after_chip': 'YOLCULUĞUMA DEVAM ET',
+    'onboarding.reveal.chip.love_1': 'Bu kişi kim?',
+    'onboarding.reveal.chip.love_2': 'Ne zaman olacak?',
+    'onboarding.reveal.chip.love_3': 'Peki ya kariyerim?',
+    'onboarding.reveal.chip.career_1': 'Yükselir miyim?',
+    'onboarding.reveal.chip.career_2': 'Ne zaman?',
+    'onboarding.reveal.chip.career_3': 'Peki ya aşk?',
+    'onboarding.reveal.chip.default_1': 'Peki ya kariyerim?',
+    'onboarding.reveal.chip.default_2': 'Bu kişi kim?',
+    'onboarding.reveal.chip.default_3': 'Ne zaman olacak?',
+    'onboarding.reveal.zodiac_unknown': 'kozmik',
+    'onboarding.paywall.title': 'Kozmik Enerjini Yükle',
+    'onboarding.paywall.subtitle':
+        'İlk derin okuman için kredi paketini seç. Premium yok, abonelik yok; yalnızca tek seferlik kredi.',
+    'onboarding.paywall.badge_popular': 'EN POPÜLER',
+    'onboarding.paywall.badge_best': 'EN AVANTAJLI',
+    'onboarding.paywall.pack_title': '{amount} Kredi',
+    'onboarding.paywall.pack_subtitle': 'Tek seferlik okuma kredisi',
+    'onboarding.paywall.cta': '{amount} KREDİ AL · {price}',
+    'onboarding.paywall.apple_notice':
+        'Satın alma Apple Kimliğine geçilir. Kredi paketleri tek seferliktir ve abonelik başlatmaz.',
+    'onboarding.paywall.retry': 'Tekrar dene',
+    'onboarding.paywall.load_error':
+        'Kredi paketleri yüklenemedi. Lütfen tekrar dene.',
+    'onboarding.paywall.link_error':
+        'Bağlantı açılamadı. Lütfen daha sonra tekrar dene.',
+    'onboarding.account.title': 'Yolculuğun hazır',
+    'onboarding.account.subtitle':
+        'Hesabını oluştur; falların, kredilerin ve kozmik profilin kaybolmasın.',
+    'onboarding.account.consent':
+        'Devam ederek Kullanım Koşulları, Gizlilik Politikası ve yapay zekâ ile veri işlemeyi kabul etmiş olursun.',
+    'onboarding.account.apple': 'Apple ile devam et',
+    'onboarding.account.google': 'Google ile devam et',
+    'onboarding.account.guest': 'Misafir olarak devam et',
+    'onboarding.account.email_register': 'E-posta ile kayıt ol',
+    'onboarding.account.login': 'Zaten hesabın var mı? Giriş yap',
     'onboarding.hero_title': 'KOZMIK\nPROFIL',
     'onboarding.hero_subtitle':
         'Bu bilgiler yalnizca bir kez alinir. Kartlar seni daha iyi tanisin.',

@@ -40,7 +40,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>We use the camera to guide palm reading scans and let you capture cup photos for coffee readings.</string>
+	<string>Avucunun çizgilerini okuyabilmemiz ve kahve falı fotoğraflarını çekebilmen için kameranı kullanırız. Onboarding fotoğrafın saklanmaz.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We let you choose cup photos from your library for the coffee reading experience.</string>
 	<key>UIApplicationSceneManifest</key>

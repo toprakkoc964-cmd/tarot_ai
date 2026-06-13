@@ -61,62 +61,65 @@ class OnboardingStepThreeSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: GestureDetector(
-              onTap: loading ? null : onSubmit,
-              child: Container(
-                height: 72,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_primary, _primaryDeep],
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _primaryDeep.withValues(alpha: 0.30),
-                      blurRadius: 16,
-                      spreadRadius: 0.0,
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 18),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: GestureDetector(
+                onTap: loading ? null : onSubmit,
+                child: Container(
+                  height: 72,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_primary, _primaryDeep],
                     ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: loading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFF430036),
-                        ),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            AppTexts.t('onboarding.step3.complete_profile'),
-                            style: GoogleFonts.spaceGrotesk(
-                              color: const Color(0xFF430036),
-                              letterSpacing: 2.4,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Icon(
-                            Icons.auto_awesome,
-                            color: Color(0xFF430036),
-                            size: 20,
-                          ),
-                        ],
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _primaryDeep.withValues(alpha: 0.30),
+                        blurRadius: 16,
+                        spreadRadius: 0.0,
                       ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: loading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF430036),
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              AppTexts.t('onboarding.step3.complete_profile'),
+                              style: GoogleFonts.spaceGrotesk(
+                                color: const Color(0xFF430036),
+                                letterSpacing: 2.4,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Icon(
+                              Icons.auto_awesome,
+                              color: Color(0xFF430036),
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 4),
       ],
     );
   }

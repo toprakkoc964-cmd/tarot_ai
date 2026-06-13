@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -13,9 +14,25 @@ import 'src/core/app_texts.dart';
 import 'src/core/di/service_locator.dart';
 import 'src/core/localization_service.dart';
 import 'src/core/notification_service.dart' as fcm_notifications;
+import 'src/features/auth/auth_service.dart';
 import 'src/features/auth/auth_gate_page.dart';
+import 'src/features/auth/onboarding_account_page.dart';
+import 'src/features/auth/onboarding_card_pick_page.dart';
+import 'src/features/auth/onboarding_coffee_ritual_page.dart';
+import 'src/features/auth/onboarding_focus_areas_page.dart';
+import 'src/features/auth/onboarding_name_birth_page.dart';
+import 'src/features/auth/onboarding_paywall_page.dart';
+import 'src/features/auth/onboarding_palm_scan_page.dart';
+import 'src/features/auth/onboarding_personalization_page.dart';
+import 'src/features/auth/onboarding_reveal_page.dart';
+import 'src/features/auth/onboarding_tarot_draw_page.dart' as tarot_draw;
+import 'src/features/auth/onboarding_welcome_page.dart';
 import 'src/features/readings/tarot_service.dart';
 import 'src/features/shop/services/purchase_service.dart';
+
+const bool _showOnboardingWelcomePreview = bool.fromEnvironment(
+  'SHOW_ONBOARDING_WELCOME_PREVIEW',
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -209,8 +226,460 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
           return FirebaseSetupRequiredPage(error: bootstrapError);
         }
 
+        if (_showOnboardingWelcomePreview) {
+          return OnboardingWelcomePage(
+            onStart: () {
+              unawaited(
+                AuthService().signInAnonymously().catchError((Object error) {
+                  debugPrint('Anonymous preview sign-in skipped: $error');
+                }),
+              );
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OnboardingCardPickPage(
+                    onModalityChosen: (modality) {
+                      if (modality == OnboardingModality.tarot) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => tarot_draw.OnboardingTarotDrawPage(
+                              name: '',
+                              onBack: () => Navigator.of(context).pop(),
+                              onCardDrawn: (card) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        _OnboardingNameBirthPreviewPage(
+                                          modality: modality,
+                                          drawnTarotCard: card,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      if (modality == OnboardingModality.palm) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => OnboardingPalmScanPage(
+                              name: '',
+                              onBack: () => Navigator.of(context).pop(),
+                              onPalmCaptured: (palmTeaserKey) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        _OnboardingNameBirthPreviewPage(
+                                          modality: modality,
+                                          palmTeaserKey: palmTeaserKey,
+                                        ),
+                                  ),
+                                );
+                              },
+                              onModalitySwitch: (newModality) {
+                                if (newModality == OnboardingModality.tarot) {
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          tarot_draw.OnboardingTarotDrawPage(
+                                            name: '',
+                                            onBack: () =>
+                                                Navigator.of(context).pop(),
+                                            onCardDrawn: (card) {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      _OnboardingNameBirthPreviewPage(
+                                                        modality: newModality,
+                                                        drawnTarotCard: card,
+                                                      ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => OnboardingCoffeeRitualPage(
+                                      name: '',
+                                      onBack: () => Navigator.of(context).pop(),
+                                      onCoffeeSealed: (coffeeTeaserKey) {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                _OnboardingNameBirthPreviewPage(
+                                                  modality: newModality,
+                                                  coffeeTeaserKey:
+                                                      coffeeTeaserKey,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      if (modality == OnboardingModality.coffee) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => OnboardingCoffeeRitualPage(
+                              name: '',
+                              onBack: () => Navigator.of(context).pop(),
+                              onCoffeeSealed: (coffeeTeaserKey) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        _OnboardingNameBirthPreviewPage(
+                                          modality: modality,
+                                          coffeeTeaserKey: coffeeTeaserKey,
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _OnboardingModalityPlaceholderPage(
+                            modality: modality,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          );
+        }
+
         return const AuthGatePage();
       },
+    );
+  }
+}
+
+class _OnboardingModalityPlaceholderPage extends StatelessWidget {
+  const _OnboardingModalityPlaceholderPage({required this.modality});
+
+  final OnboardingModality modality;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (modality) {
+      OnboardingModality.tarot => AppTexts.t(
+        'onboarding.card_pick.tarot_title',
+      ),
+      OnboardingModality.coffee => AppTexts.t(
+        'onboarding.card_pick.coffee_title',
+      ),
+      OnboardingModality.palm => AppTexts.t('onboarding.card_pick.palm_title'),
+    };
+    return Scaffold(
+      backgroundColor: const Color(0xFF17081C),
+      appBar: AppBar(backgroundColor: Colors.transparent),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFFADCFF),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          _OnboardingNameBirthPreviewPage(modality: modality),
+                    ),
+                  );
+                },
+                child: Text(AppTexts.t('onboarding.cta_continue')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnboardingNameBirthPreviewPage extends StatelessWidget {
+  const _OnboardingNameBirthPreviewPage({
+    required this.modality,
+    this.drawnTarotCard,
+    this.palmTeaserKey,
+    this.coffeeTeaserKey,
+  });
+
+  final OnboardingModality modality;
+  final tarot_draw.DrawnTarotCard? drawnTarotCard;
+  final String? palmTeaserKey;
+  final String? coffeeTeaserKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'preview';
+    return OnboardingNameBirthPage(
+      authService: AuthService(),
+      uid: uid,
+      onBack: () => Navigator.of(context).pop(),
+      onContinue: ({required name, required birthDate, birthTime}) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _OnboardingPersonalizationPreviewPage(
+              modality: modality,
+              name: name,
+              birthDate: birthDate,
+              birthTime: birthTime,
+              drawnTarotCard: drawnTarotCard,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OnboardingPersonalizationPreviewPage extends StatefulWidget {
+  const _OnboardingPersonalizationPreviewPage({
+    required this.modality,
+    required this.name,
+    required this.birthDate,
+    required this.birthTime,
+    required this.drawnTarotCard,
+  });
+
+  final OnboardingModality modality;
+  final String name;
+  final String birthDate;
+  final String? birthTime;
+  final tarot_draw.DrawnTarotCard? drawnTarotCard;
+
+  @override
+  State<_OnboardingPersonalizationPreviewPage> createState() =>
+      _OnboardingPersonalizationPreviewPageState();
+}
+
+class _OnboardingPersonalizationPreviewPageState
+    extends State<_OnboardingPersonalizationPreviewPage> {
+  String? _relationshipStatus;
+  String? _lifeSpace;
+  String? _interpretationTone;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingPersonalizationPage(
+      initialRelationshipStatus: _relationshipStatus,
+      initialLifeSpace: _lifeSpace,
+      initialInterpretationTone: _interpretationTone,
+      onBack: () => Navigator.of(context).pop(),
+      onContinue:
+          ({
+            required relationshipStatus,
+            required lifeSpace,
+            required interpretationTone,
+          }) {
+            setState(() {
+              _relationshipStatus = relationshipStatus;
+              _lifeSpace = lifeSpace;
+              _interpretationTone = interpretationTone;
+            });
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => _OnboardingFocusAreasPreviewPage(
+                  modality: widget.modality,
+                  name: widget.name,
+                  birthDate: widget.birthDate,
+                  birthTime: widget.birthTime,
+                  drawnTarotCard: widget.drawnTarotCard,
+                  relationshipStatus: relationshipStatus,
+                  lifeSpace: lifeSpace,
+                  interpretationTone: interpretationTone,
+                ),
+              ),
+            );
+          },
+    );
+  }
+}
+
+class _OnboardingFocusAreasPreviewPage extends StatefulWidget {
+  const _OnboardingFocusAreasPreviewPage({
+    required this.modality,
+    required this.name,
+    required this.birthDate,
+    required this.birthTime,
+    required this.drawnTarotCard,
+    required this.relationshipStatus,
+    required this.lifeSpace,
+    required this.interpretationTone,
+  });
+
+  final OnboardingModality modality;
+  final String name;
+  final String birthDate;
+  final String? birthTime;
+  final tarot_draw.DrawnTarotCard? drawnTarotCard;
+  final String relationshipStatus;
+  final String lifeSpace;
+  final String interpretationTone;
+
+  @override
+  State<_OnboardingFocusAreasPreviewPage> createState() =>
+      _OnboardingFocusAreasPreviewPageState();
+}
+
+class _OnboardingFocusAreasPreviewPageState
+    extends State<_OnboardingFocusAreasPreviewPage> {
+  List<String> _focusAreas = const [];
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingFocusAreasPage(
+      initialFocusAreas: _focusAreas,
+      onBack: () => Navigator.of(context).pop(),
+      onContinue: ({required focusAreas}) {
+        setState(() => _focusAreas = focusAreas);
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => OnboardingRevealPage(
+              modality: widget.modality,
+              name: widget.name,
+              birthDate: widget.birthDate,
+              focusAreas: focusAreas.toSet(),
+              interpretationTone: widget.interpretationTone,
+              onBack: () => Navigator.of(context).pop(),
+              onContinue: () async {
+                try {
+                  await AuthService().signInAnonymously();
+                } catch (error) {
+                  debugPrint('Anonymous paywall sign-in skipped: $error');
+                }
+                if (!context.mounted) return;
+                final uid = FirebaseAuth.instance.currentUser?.uid ?? 'preview';
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => OnboardingPaywallPage(
+                      uid: uid,
+                      onClose: () => _openAccountPage(context, focusAreas),
+                      onContinue: () => _openAccountPage(context, focusAreas),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openAccountPage(BuildContext context, List<String> focusAreas) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'preview';
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => OnboardingAccountPage(
+          authService: AuthService(),
+          uid: uid,
+          name: widget.name,
+          birthDate: widget.birthDate,
+          birthTime: widget.birthTime,
+          relationshipStatus: widget.relationshipStatus,
+          lifeSpace: widget.lifeSpace,
+          interpretationTone: widget.interpretationTone,
+          focusAreas: focusAreas,
+          onBack: () => Navigator.of(context).pop(),
+          onComplete: () => _openCollectedPreview(context, focusAreas),
+        ),
+      ),
+    );
+  }
+
+  void _openCollectedPreview(BuildContext context, List<String> focusAreas) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _OnboardingCollectedPreviewPage(
+          name: widget.name,
+          birthDate: widget.birthDate,
+          birthTime: widget.birthTime,
+          relationshipStatus: widget.relationshipStatus,
+          lifeSpace: widget.lifeSpace,
+          interpretationTone: widget.interpretationTone,
+          focusAreas: focusAreas,
+        ),
+      ),
+    );
+  }
+}
+
+class _OnboardingCollectedPreviewPage extends StatelessWidget {
+  const _OnboardingCollectedPreviewPage({
+    required this.name,
+    required this.birthDate,
+    required this.birthTime,
+    required this.relationshipStatus,
+    required this.lifeSpace,
+    required this.interpretationTone,
+    required this.focusAreas,
+  });
+
+  final String name;
+  final String birthDate;
+  final String? birthTime;
+  final String relationshipStatus;
+  final String lifeSpace;
+  final String interpretationTone;
+  final List<String> focusAreas;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF17081C),
+      appBar: AppBar(backgroundColor: Colors.transparent),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            [
+              name,
+              birthDate,
+              if (birthTime != null) birthTime,
+              relationshipStatus,
+              lifeSpace,
+              interpretationTone,
+              focusAreas.join(', '),
+            ].join('\n'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFFADCFF),
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
