@@ -696,6 +696,7 @@ class AuthService {
         UserProfileContract.photoUrl: incomingPhotoUrl,
       UserProfileContract.provider: providerId,
       UserProfileContract.providers: providerIds.toList(growable: false),
+      UserProfileContract.isGuest: false,
       UserProfileContract.emailVerified: true,
       UserProfileContract.providerVerified: true,
       UserProfileContract.cleanupEligible: false,

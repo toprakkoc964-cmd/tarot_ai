@@ -72,6 +72,17 @@ service cloud.firestore {
       }
     }
 
+    match /guests/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && !request.resource.data.keys().hasAny([
+          'wallet',
+          'entitlements',
+          'credits'
+        ]);
+      allow delete: if isOwner(uid);
+    }
+
     match /apple_auth/{document=**} {
       allow read, write: if false;
     }

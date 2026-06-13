@@ -89,7 +89,8 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     setState(() => _activeAction = _AccountAction.guest);
     try {
       await widget.authService.signInAnonymously();
-      await _finalizeOnboarding();
+      final guestUid = FirebaseAuth.instance.currentUser?.uid;
+      await _finalizeOnboarding(sourceGuestUid: guestUid);
     } catch (error) {
       _showError(mapAuthError(error));
     } finally {
@@ -102,8 +103,12 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     setState(() => _activeAction = _AccountAction.google);
     try {
       await widget.authService.signInAnonymously();
+      final guestUid = FirebaseAuth.instance.currentUser?.uid;
       await widget.authService.linkOrSignInWithGoogle();
-      await _finalizeOnboarding();
+      await _finalizeOnboarding(
+        sourceGuestUid: guestUid,
+        linkedProvider: 'google.com',
+      );
     } catch (error) {
       _showError(mapAuthError(error));
     } finally {
@@ -116,8 +121,12 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     setState(() => _activeAction = _AccountAction.apple);
     try {
       await widget.authService.signInAnonymously();
+      final guestUid = FirebaseAuth.instance.currentUser?.uid;
       await widget.authService.linkOrSignInWithApple();
-      await _finalizeOnboarding();
+      await _finalizeOnboarding(
+        sourceGuestUid: guestUid,
+        linkedProvider: 'apple.com',
+      );
     } catch (error) {
       _showError(mapAuthError(error));
     } finally {
@@ -125,18 +134,26 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     }
   }
 
-  Future<void> _finalizeOnboarding() async {
+  Future<void> _finalizeOnboarding({
+    String? sourceGuestUid,
+    String? linkedProvider,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw FirebaseAuthException(code: 'missing-user');
     }
+    final normalizedSourceGuestUid = sourceGuestUid?.trim();
+    final guestUidChanged =
+        normalizedSourceGuestUid != null &&
+        normalizedSourceGuestUid.isNotEmpty &&
+        normalizedSourceGuestUid != user.uid;
     final userDocRef = FirebaseFirestore.instance
         .collection(UserProfileContract.usersCollection)
         .doc(user.uid);
     final existingDoc = await userDocRef.get();
+    final existingData = existingDoc.data() ?? const <String, dynamic>{};
     final existingEmail =
-        (existingDoc.data()?[UserProfileContract.email] as String?)?.trim() ??
-        '';
+        (existingData[UserProfileContract.email] as String?)?.trim() ?? '';
     final email = (user.email ?? '').trim().isNotEmpty
         ? user.email!.trim()
         : existingEmail;
@@ -154,22 +171,199 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
       interpretationTone: widget.interpretationTone,
       focusAreas: widget.focusAreas,
     );
-    final map = payload.toUserDocumentMap(
-      uid: user.uid,
-      email: email,
-      isProfileComplete: true,
-      includeCreatedAt: !existingDoc.exists,
-    );
+    final onboardingSnapshot = _buildOnboardingSnapshot(payload);
+    final effectiveProvider = user.isAnonymous
+        ? 'anonymous'
+        : linkedProvider ?? _resolvePrimaryProvider(user);
+    final providers = user.isAnonymous
+        ? const ['anonymous']
+        : _resolveProviders(user, fallbackProvider: effectiveProvider);
+    final providerVerified = !user.isAnonymous;
+    final shouldFillEmptyOnly = existingDoc.exists && guestUidChanged;
+
+    final map = shouldFillEmptyOnly
+        ? _buildFillEmptyOnboardingMap(
+            existingData: existingData,
+            incoming: {
+              ...await _loadGuestOnboardingSnapshot(normalizedSourceGuestUid),
+              ...onboardingSnapshot,
+            },
+            uid: user.uid,
+            email: email,
+          )
+        : payload.toUserDocumentMap(
+            uid: user.uid,
+            email: email,
+            isProfileComplete: true,
+            includeCreatedAt: !existingDoc.exists,
+          );
+
     map[UserProfileContract.legalConsent] = const UserLegalConsent().toMap();
-    if (user.isAnonymous) {
-      map[UserProfileContract.provider] = 'anonymous';
-      map[UserProfileContract.providers] = const ['anonymous'];
-      map[UserProfileContract.providerVerified] = false;
-      map[UserProfileContract.emailVerified] = false;
-    }
+    map['aiProcessingAccepted'] = true;
+    map[UserProfileContract.isProfileComplete] = true;
+    map[UserProfileContract.onboardingCompleted] = true;
+    map[UserProfileContract.accountStatus] = UserProfileContract.statusActive;
+    map[UserProfileContract.provider] = effectiveProvider;
+    map[UserProfileContract.providers] = providers;
+    map[UserProfileContract.providerVerified] = providerVerified;
+    map[UserProfileContract.emailVerified] =
+        providerVerified || user.emailVerified;
+    map[UserProfileContract.cleanupEligible] = false;
+    map[UserProfileContract.isGuest] = user.isAnonymous;
+    map[UserProfileContract.updatedAt] = FieldValue.serverTimestamp();
+
     await userDocRef.set(map, SetOptions(merge: true));
+    await _syncGuestRegistry(
+      currentUid: user.uid,
+      sourceGuestUid: normalizedSourceGuestUid,
+      isAnonymous: user.isAnonymous,
+      linkedProvider: linkedProvider,
+      onboardingSnapshot: onboardingSnapshot,
+    );
     if (!mounted) return;
     widget.onComplete();
+  }
+
+  Map<String, dynamic> _buildOnboardingSnapshot(OnboardingPayload payload) {
+    return <String, dynamic>{
+      UserProfileContract.name: UserProfileContract.normalizeName(payload.name),
+      UserProfileContract.birthDate: payload.birthDate,
+      if ((payload.birthTime ?? '').trim().isNotEmpty)
+        UserProfileContract.birthTime: payload.birthTime,
+      if ((payload.relationshipStatus ?? '').trim().isNotEmpty)
+        UserProfileContract.relationshipStatus: payload.relationshipStatus,
+      if ((payload.lifeSpace ?? '').trim().isNotEmpty)
+        UserProfileContract.lifeSpace: payload.lifeSpace,
+      if ((payload.interpretationTone ?? '').trim().isNotEmpty)
+        UserProfileContract.interpretationTone: payload.interpretationTone,
+      if ((payload.focusAreas ?? const <String>[]).isNotEmpty)
+        UserProfileContract.focusAreas: payload.focusAreas,
+    };
+  }
+
+  Future<Map<String, dynamic>> _loadGuestOnboardingSnapshot(String? uid) async {
+    if (uid == null || uid.isEmpty) return const <String, dynamic>{};
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(UserProfileContract.guestsCollection)
+          .doc(uid)
+          .get();
+      final snapshot = snap
+          .data()?[UserProfileContract.guestOnboardingSnapshot];
+      if (snapshot is Map) {
+        return Map<String, dynamic>.from(snapshot);
+      }
+    } catch (_) {
+      // Best-effort merge source only; never block onboarding.
+    }
+    return const <String, dynamic>{};
+  }
+
+  Map<String, dynamic> _buildFillEmptyOnboardingMap({
+    required Map<String, dynamic> existingData,
+    required Map<String, dynamic> incoming,
+    required String uid,
+    required String email,
+  }) {
+    final map = <String, dynamic>{
+      UserProfileContract.uid: uid,
+      if (email.trim().isNotEmpty &&
+          _isEmptyValue(existingData[UserProfileContract.email]))
+        UserProfileContract.email: email.trim(),
+    };
+    for (final key in const [
+      UserProfileContract.name,
+      UserProfileContract.birthDate,
+      UserProfileContract.birthTime,
+      UserProfileContract.relationshipStatus,
+      UserProfileContract.lifeSpace,
+      UserProfileContract.interpretationTone,
+      UserProfileContract.focusAreas,
+    ]) {
+      final value = incoming[key];
+      if (!_isEmptyValue(value) && _isEmptyValue(existingData[key])) {
+        map[key] = value;
+      }
+    }
+    return map;
+  }
+
+  bool _isEmptyValue(Object? value) {
+    if (value == null) return true;
+    if (value is String) return value.trim().isEmpty;
+    if (value is Iterable) return value.isEmpty;
+    return false;
+  }
+
+  String _resolvePrimaryProvider(User user) {
+    for (final provider in user.providerData) {
+      final id = provider.providerId.trim();
+      if (id == 'google.com' || id == 'apple.com' || id == 'password') {
+        return id;
+      }
+    }
+    return 'password';
+  }
+
+  List<String> _resolveProviders(
+    User user, {
+    required String fallbackProvider,
+  }) {
+    final ids =
+        user.providerData
+            .map((provider) => provider.providerId.trim())
+            .where((id) => id.isNotEmpty)
+            .toSet()
+          ..add(fallbackProvider);
+    return ids.toList(growable: false);
+  }
+
+  Future<void> _syncGuestRegistry({
+    required String currentUid,
+    required String? sourceGuestUid,
+    required bool isAnonymous,
+    required String? linkedProvider,
+    required Map<String, dynamic> onboardingSnapshot,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final now = FieldValue.serverTimestamp();
+    try {
+      if (isAnonymous) {
+        await db
+            .collection(UserProfileContract.guestsCollection)
+            .doc(currentUid)
+            .set({
+              UserProfileContract.uid: currentUid,
+              UserProfileContract.guestStatus: 'active',
+              UserProfileContract.isGuest: true,
+              UserProfileContract.lastSeenAt: now,
+              UserProfileContract.guestLinkedProvider: null,
+              UserProfileContract.guestLinkedAt: null,
+              UserProfileContract.guestOnboardingSnapshot: onboardingSnapshot,
+            }, SetOptions(merge: true));
+        return;
+      }
+
+      final guestUid = (sourceGuestUid ?? '').trim();
+      if (guestUid.isEmpty) return;
+      await db
+          .collection(UserProfileContract.guestsCollection)
+          .doc(guestUid)
+          .set({
+            UserProfileContract.uid: guestUid,
+            UserProfileContract.guestStatus: 'linked',
+            UserProfileContract.isGuest: true,
+            UserProfileContract.guestLinkedProvider:
+                linkedProvider ??
+                _resolvePrimaryProvider(FirebaseAuth.instance.currentUser!),
+            UserProfileContract.guestLinkedAt: now,
+            UserProfileContract.lastSeenAt: now,
+            if (onboardingSnapshot.isNotEmpty)
+              UserProfileContract.guestOnboardingSnapshot: onboardingSnapshot,
+          }, SetOptions(merge: true));
+    } catch (_) {
+      // Guest registry is lifecycle metadata. It must not block onboarding.
+    }
   }
 
   void _showError(String message) {

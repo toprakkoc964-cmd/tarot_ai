@@ -28,7 +28,7 @@ import { buildShareDeepLink } from './lib/deep-link';
 import { validateAppleReceipt } from './lib/purchase';
 import { requireIdempotencyKey } from './lib/idempotency';
 import { checkAndBumpThrottle } from './lib/rate-limit';
-import { AIPersonaDoc, UserDoc } from './lib/types';
+import { AIPersonaDoc, UserDoc, UserProfile } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
 import { sendAudioReadyNotification, sendNotificationToUser } from './lib/fcm';
@@ -73,6 +73,7 @@ const dailyNudgeBatchLimit = 400;
 const followupStartHour = 10;
 const followupEndHour = 21;
 const unverifiedAccountTtlHours = Number(process.env.UNVERIFIED_ACCOUNT_TTL_HOURS ?? '24');
+const guestAbandonTtlHours = Number(process.env.GUEST_ABANDON_TTL_HOURS ?? '72');
 const appleAuthSecretNames = [
   'APPLE_TEAM_ID',
   'APPLE_KEY_ID',
@@ -177,6 +178,30 @@ function resolveUserDisplayName(user: UserDoc & Record<string, unknown>): string
     ? user.profile.name.trim()
     : '';
   return profileName || 'Seeker';
+}
+
+function resolveUserProfile(user: UserDoc & Record<string, unknown>): UserProfile | null {
+  const name = resolveUserDisplayName(user).trim();
+  const birthDate = resolveUserBirthDate(user);
+  if (!name || !birthDate) return null;
+
+  const profile = user.profile;
+  const occupation = typeof profile?.occupation === 'string' && profile.occupation.trim()
+    ? profile.occupation.trim()
+    : typeof user.lifeSpace === 'string' && user.lifeSpace.trim()
+      ? user.lifeSpace.trim()
+      : 'unspecified';
+
+  return {
+    name,
+    birthDate,
+    ...(typeof user.birthTime === 'string' && user.birthTime.trim()
+      ? { birthTime: user.birthTime.trim() }
+      : typeof profile?.birthTime === 'string' && profile.birthTime.trim()
+        ? { birthTime: profile.birthTime.trim() }
+        : {}),
+    occupation,
+  };
 }
 
 function timestampToMillis(value: unknown): number | null {
@@ -610,6 +635,7 @@ async function deleteUserArtifacts(uid: string): Promise<{
 
   await Promise.allSettled([
     db.recursiveDelete(userRef),
+    db.recursiveDelete(db.collection('guests').doc(uid)),
     db.recursiveDelete(db.collection('apple_auth').doc(uid)),
     db.recursiveDelete(db.collection('notificationPreferences').doc(uid)),
     db.recursiveDelete(db.collection('userNotificationPreferences').doc(uid)),
@@ -1064,13 +1090,21 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
   if (!user?.uid) return;
 
   const userRef = db.collection('users').doc(user.uid);
+  const guestRef = db.collection('guests').doc(user.uid);
   const providers = (user.providerData ?? [])
     .map((provider) => provider.providerId)
     .filter(Boolean);
+  const isAnonymous = providers.length === 0;
   const hasSocialProvider = providers.some((providerId) => providerId === 'google.com' || providerId === 'apple.com');
-  const hasPasswordProvider = providers.includes('password') || providers.length === 0;
+  const hasPasswordProvider = providers.includes('password');
   const emailVerified = Boolean(user.emailVerified || hasSocialProvider);
-  const accountStatus = emailVerified ? 'pending_onboarding' : 'pending_email_verification';
+  const accountStatus = isAnonymous || emailVerified ? 'pending_onboarding' : 'pending_email_verification';
+  const primaryProvider = isAnonymous
+    ? 'anonymous'
+    : hasSocialProvider
+      ? providers.find((providerId) => providerId === 'google.com' || providerId === 'apple.com')
+      : 'password';
+  const providerList = isAnonymous ? ['anonymous'] : providers.length ? providers : ['password'];
   const snap = await userRef.get();
   if (snap.exists) {
     const existing = snap.data() as Partial<UserDoc>;
@@ -1087,11 +1121,12 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
     await userRef.set({
       ...(user.email ? { email: user.email } : {}),
       ...(user.displayName ? { name: user.displayName, displayName: user.displayName } : {}),
-      provider: hasSocialProvider ? providers.find((providerId) => providerId === 'google.com' || providerId === 'apple.com') : 'password',
-      providers: providers.length ? providers : ['password'],
+      provider: primaryProvider,
+      providers: providerList,
+      isGuest: isAnonymous,
       emailVerified,
       providerVerified: hasSocialProvider,
-      cleanupEligible: !emailVerified && hasPasswordProvider,
+      cleanupEligible: !isAnonymous && !emailVerified && hasPasswordProvider,
       accountStatus: existingProfileComplete ? 'active' : accountStatus,
       onboardingCompleted: existingProfileComplete,
       isProfileComplete: existingProfileComplete,
@@ -1103,6 +1138,17 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
       } : {}),
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
+    if (isAnonymous) {
+      await guestRef.set({
+        uid: user.uid,
+        status: 'active',
+        isGuest: true,
+        createdAt: FieldValue.serverTimestamp(),
+        lastSeenAt: FieldValue.serverTimestamp(),
+        linkedProvider: null,
+        linkedAt: null,
+      }, { merge: true });
+    }
     return;
   }
 
@@ -1113,9 +1159,10 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
     accountStatus,
     emailVerified,
     providerVerified: hasSocialProvider,
-    provider: hasSocialProvider ? providers.find((providerId) => providerId === 'google.com' || providerId === 'apple.com') : 'password',
-    providers: providers.length ? providers : ['password'],
-    cleanupEligible: !emailVerified && hasPasswordProvider,
+    provider: primaryProvider,
+    providers: providerList,
+    isGuest: isAnonymous,
+    cleanupEligible: !isAnonymous && !emailVerified && hasPasswordProvider,
     ...(user.email ? { email: user.email } : {}),
     ...(user.displayName ? { name: user.displayName, displayName: user.displayName } : {}),
     wallet: {
@@ -1132,14 +1179,29 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
   };
 
   await userRef.set(payload, { merge: true });
+  if (isAnonymous) {
+    await guestRef.set({
+      uid: user.uid,
+      status: 'active',
+      isGuest: true,
+      createdAt: FieldValue.serverTimestamp(),
+      lastSeenAt: FieldValue.serverTimestamp(),
+      linkedProvider: null,
+      linkedAt: null,
+    }, { merge: true });
+  }
 });
 
 export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   if (!user?.uid) return;
 
   const userRef = db.collection('users').doc(user.uid);
+  const guestRef = db.collection('guests').doc(user.uid);
   try {
-    await db.recursiveDelete(userRef);
+    await Promise.all([
+      db.recursiveDelete(userRef),
+      db.recursiveDelete(guestRef),
+    ]);
   } catch (error) {
     functionsV1.logger.error('Failed to cleanup user document on auth delete', {
       uid: user.uid,
@@ -1391,8 +1453,8 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
           dayCount?: number;
         };
       };
-      const profile = user.profile;
-      if (!user.isProfileComplete || !profile?.name || !profile.birthDate) {
+      const profile = resolveUserProfile(user);
+      if (!user.isProfileComplete || !profile) {
         throw new Error('PROFILE_INCOMPLETE');
       }
 
@@ -1442,7 +1504,10 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
     try {
       const profileSnap = await userRef.get();
       const user = profileSnap.data() as UserDoc;
-      const profile = user.profile!;
+      const profile = resolveUserProfile(user);
+      if (!profile) {
+        throw new Error('PROFILE_INCOMPLETE');
+      }
       const lang = resolveLanguage(user.settings?.lang);
       const persona = await getPersonaOrDefault(user.settings?.selectedPersonaId ?? defaultPersonaId);
       const systemPrompt = buildSystemPrompt(profile, intent, lang, persona);
@@ -3300,6 +3365,60 @@ export const cleanupUnverifiedAccounts = onSchedule(
     }
 
     logger.info('cleanupUnverifiedAccounts completed', {
+      deleted,
+      skipped,
+      failed,
+    });
+  }
+);
+
+export const cleanupAbandonedGuests = onSchedule(
+  {
+    schedule: 'every 24 hours',
+    timeZone: process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul',
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const nowMs = Date.now();
+    const ttlMs = Math.max(1, guestAbandonTtlHours) * 60 * 60 * 1000;
+    let deleted = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    const guestSnap = await db
+      .collection('users')
+      .where('provider', '==', 'anonymous')
+      .where('isProfileComplete', '==', false)
+      .limit(250)
+      .get();
+
+    for (const userSnap of guestSnap.docs) {
+      const data = userSnap.data() as UserDoc & Record<string, unknown>;
+      const uid = String(data.uid || userSnap.id);
+      const createdAtMs = timestampToMillis(data.createdAt);
+
+      if (data.isProfileComplete === true || createdAtMs === null || createdAtMs + ttlMs > nowMs) {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        await userSnap.ref.set({
+          accountStatus: 'deleted',
+          deletedReason: 'abandoned_guest_timeout',
+          deletedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        await deleteAuthUserIfExists(uid);
+        await deleteUserArtifacts(uid);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn('cleanupAbandonedGuests failed for user', { uid, error });
+      }
+    }
+
+    logger.info('cleanupAbandonedGuests completed', {
       deleted,
       skipped,
       failed,

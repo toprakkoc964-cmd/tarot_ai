@@ -30,6 +30,7 @@ export type UserDoc = {
   photoUrl?: string;
   provider?: string;
   providers?: string[];
+  isGuest?: boolean;
   emailVerified?: boolean;
   providerVerified?: boolean;
   cleanupEligible?: boolean;

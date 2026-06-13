@@ -4,6 +4,7 @@ class UserProfileContract {
   const UserProfileContract._();
 
   static const String usersCollection = 'users';
+  static const String guestsCollection = 'guests';
 
   static const String statusPendingEmailVerification =
       'pending_email_verification';
@@ -23,6 +24,7 @@ class UserProfileContract {
   static const String providerVerified = 'providerVerified';
   static const String emailVerified = 'emailVerified';
   static const String emailVerifiedAt = 'emailVerifiedAt';
+  static const String isGuest = 'isGuest';
 
   static const String birthDate = 'birthDate';
   static const String birthTime = 'birthTime';
@@ -55,6 +57,12 @@ class UserProfileContract {
   static const String language = 'language';
   static const String notificationPrefs = 'notificationPrefs';
   static const String legalConsent = 'legalConsent';
+  static const String lastSeenAt = 'lastSeenAt';
+
+  static const String guestLinkedProvider = 'linkedProvider';
+  static const String guestStatus = 'status';
+  static const String guestOnboardingSnapshot = 'onboardingSnapshot';
+  static const String guestLinkedAt = 'linkedAt';
 
   static const int maxNameLength = 25;
 
@@ -86,6 +94,7 @@ class UserProfileWrite {
     this.provider,
     this.providers,
     this.providerVerified,
+    this.isGuest,
     this.photoUrl,
     this.cleanupEligible,
     this.verificationEmailSentAt,
@@ -114,6 +123,7 @@ class UserProfileWrite {
   final String? provider;
   final List<String>? providers;
   final bool? providerVerified;
+  final bool? isGuest;
   final String? photoUrl;
   final bool? cleanupEligible;
   final Object? verificationEmailSentAt;
@@ -151,6 +161,7 @@ class UserProfileWrite {
       if (providers != null) UserProfileContract.providers: providers,
       if (providerVerified != null)
         UserProfileContract.providerVerified: providerVerified,
+      if (isGuest != null) UserProfileContract.isGuest: isGuest,
       if (photoUrl != null) UserProfileContract.photoUrl: photoUrl,
       if (cleanupEligible != null)
         UserProfileContract.cleanupEligible: cleanupEligible,
