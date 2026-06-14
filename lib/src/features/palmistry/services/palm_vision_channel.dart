@@ -48,7 +48,7 @@ class PalmVisionChannel {
       if (response == null) return const PalmDetectionResult.noHand();
 
       final result = PalmDetectionResult.fromVisionMap(response);
-      if (debugMode || kDebugMode) {
+      if (debugMode || !kReleaseMode) {
         dev.log(
           '[palmvision] state=${result.state.name} '
           'scan=${result.effectiveScanState.name} '
@@ -64,7 +64,7 @@ class PalmVisionChannel {
       }
       return result;
     } on PlatformException catch (error) {
-      if (debugMode || kDebugMode) {
+      if (debugMode || !kReleaseMode) {
         dev.log(
           '[palmvision] platformError code=${error.code} '
           'message=${error.message}',
@@ -82,7 +82,7 @@ class PalmVisionChannel {
         },
       );
     } catch (error) {
-      if (debugMode || kDebugMode) {
+      if (debugMode || !kReleaseMode) {
         dev.log('[palmvision] error=$error', name: 'palmvision');
       }
       return const PalmDetectionResult.noHand();

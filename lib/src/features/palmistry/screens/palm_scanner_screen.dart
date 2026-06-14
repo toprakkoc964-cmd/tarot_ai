@@ -38,7 +38,7 @@ class PalmScannerScreen extends StatefulWidget {
 
 class _PalmScannerScreenState extends State<PalmScannerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  static const bool _debugLiveness = kDebugMode;
+  static const bool _debugLiveness = !kReleaseMode;
 
   late final AnimationController _scanAnimation;
 
@@ -161,6 +161,16 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         return;
       }
 
+      if (!kReleaseMode) {
+        dev.log(
+          '[palmvision] camera initialized '
+          'lens=${camera.lensDirection.name} '
+          'sensor=${camera.sensorOrientation} '
+          'preview=${controller.value.previewSize}',
+          name: 'palmvision',
+        );
+      }
+
       setState(() {
         _controller = controller;
         _isInitializing = false;
@@ -184,7 +194,15 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
               );
       });
       if (Platform.isIOS) {
-        unawaited(_beginPalmDetection());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 500), () async {
+              if (!mounted) return;
+              await _beginPalmDetection();
+            }),
+          );
+        });
       }
     } on CameraException catch (e) {
       if (!mounted) return;
@@ -327,7 +345,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     try {
       await controller.startImageStream(_handleCameraImage);
       _isImageStreamActive = true;
-    } catch (_) {
+    } catch (error) {
+      if (!kReleaseMode) {
+        dev.log(
+          '[palmvision] startImageStream failed: $error',
+          name: 'palmvision',
+        );
+      }
       _isImageStreamActive = false;
     }
   }
@@ -462,7 +486,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
             sensorOrientation: controller.description.sensorOrientation,
             previewSize: previewSize,
             guideRect: guideRect,
-            debugMode: kDebugMode,
+            debugMode: !kReleaseMode,
           )
           .then(_handleDetectionResult)
           .catchError((_) {
@@ -552,7 +576,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   }
 
   void _logPalmVisionResult(PalmDetectionResult result) {
-    if (!kDebugMode || !Platform.isIOS) return;
+    if (kReleaseMode || !Platform.isIOS) return;
     dev.log(
       '[palmvision] screen state=${result.state.name} '
       'scan=${result.effectiveScanState.name} '
@@ -638,7 +662,10 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
             'pts=${result.reliablePointCount} '
             'open=${result.openPalmScore.toStringAsFixed(2)} '
             'ext=${result.extendedFingerCount} '
-            'rot=$rotation',
+            'rot=$rotation '
+            'preview=${_controller?.value.previewSize?.width.toStringAsFixed(0)}x'
+            '${_controller?.value.previewSize?.height.toStringAsFixed(0)} '
+            'stream=$_isImageStreamActive',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -740,94 +767,91 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
               _lastGuideRect = PalmOverlayPainter.guideRectForSize(surfaceSize);
               final challengeText = _challengeOverlayText();
 
-              return Hero(
-                tag: PalmScannerScreen.heroTag,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(34),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _CameraSurface(
-                        controller: controller,
-                        frozenImage: _frozenImage,
-                      ),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: AppColors.glassBorder,
-                            width: 1.2,
-                          ),
-                          borderRadius: BorderRadius.circular(34),
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(34),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _CameraSurface(
+                      controller: controller,
+                      frozenImage: _frozenImage,
+                    ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.glassBorder,
+                          width: 1.2,
                         ),
+                        borderRadius: BorderRadius.circular(34),
                       ),
-                      CustomPaint(
-                        painter: PalmOverlayPainter(
-                          detectionState: overlayState,
-                          readinessProgress: _isScanning
-                              ? 1
-                              : _detectionResult.confidence
-                                    .clamp(0.0, 1.0)
-                                    .toDouble(),
-                          pulseValue:
-                              _detectionResult.state ==
-                                  PalmDetectionState.possibleHand
-                              ? 0.6
-                              : 0,
-                        ),
+                    ),
+                    CustomPaint(
+                      painter: PalmOverlayPainter(
+                        detectionState: overlayState,
+                        readinessProgress: _isScanning
+                            ? 1
+                            : _detectionResult.confidence
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                        pulseValue:
+                            _detectionResult.state ==
+                                PalmDetectionState.possibleHand
+                            ? 0.6
+                            : 0,
                       ),
-                      if (_isScanning)
-                        AnimatedBuilder(
-                          animation: _scanAnimation,
-                          builder: (context, _) {
-                            return CustomPaint(
-                              painter: ScannerLaserPainter(
-                                progress: _scanAnimation.value,
-                              ),
-                            );
-                          },
-                        ),
-                      if (challengeText != null)
-                        Center(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFB00020,
-                              ).withValues(alpha: 0.88),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.28),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFFB00020,
-                                  ).withValues(alpha: 0.42),
-                                  blurRadius: 24,
-                                  spreadRadius: 2,
-                                ),
-                              ],
+                    ),
+                    if (_isScanning)
+                      AnimatedBuilder(
+                        animation: _scanAnimation,
+                        builder: (context, _) {
+                          return CustomPaint(
+                            painter: ScannerLaserPainter(
+                              progress: _scanAnimation.value,
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 16,
+                          );
+                        },
+                      ),
+                    if (challengeText != null)
+                      Center(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFFB00020,
+                            ).withValues(alpha: 0.88),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.28),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFFB00020,
+                                ).withValues(alpha: 0.42),
+                                blurRadius: 24,
+                                spreadRadius: 2,
                               ),
-                              child: Text(
-                                challengeText,
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
-                                ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            child: Text(
+                              challengeText,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.spaceGrotesk(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
                               ),
                             ),
                           ),
                         ),
-                      _buildLivenessDebugOverlay(),
-                    ],
-                  ),
+                      ),
+                    _buildLivenessDebugOverlay(),
+                  ],
                 ),
               );
             },
@@ -922,13 +946,36 @@ class _CameraSurface extends StatelessWidget {
       return Image.file(image, fit: BoxFit.cover);
     }
 
-    return FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: controller.value.previewSize?.height ?? 1,
-        height: controller.value.previewSize?.width ?? 1,
-        child: CameraPreview(controller),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previewSize = controller.value.previewSize;
+        if (previewSize == null) {
+          return const ColoredBox(color: Colors.black);
+        }
+
+        final surface = constraints.biggest;
+        final previewAspectRatio = previewSize.height / previewSize.width;
+        final surfaceAspectRatio = surface.width / surface.height;
+        final double previewWidth;
+        final double previewHeight;
+        if (surfaceAspectRatio > previewAspectRatio) {
+          previewWidth = surface.width;
+          previewHeight = previewWidth / previewAspectRatio;
+        } else {
+          previewHeight = surface.height;
+          previewWidth = previewHeight * previewAspectRatio;
+        }
+
+        return ClipRect(
+          child: Center(
+            child: SizedBox(
+              width: previewWidth,
+              height: previewHeight,
+              child: CameraPreview(controller),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -75,7 +75,7 @@ class PalmVisionDetector {
         debug: result.debug,
       );
     } on PlatformException catch (error) {
-      if (debugMode || kDebugMode) {
+      if (debugMode || !kReleaseMode) {
         dev.log(
           '[palmvision] platformError code=${error.code} '
           'message=${error.message}',
@@ -93,7 +93,7 @@ class PalmVisionDetector {
         },
       );
     } catch (error) {
-      if (debugMode || kDebugMode) {
+      if (debugMode || !kReleaseMode) {
         dev.log('[palmvision] error=$error', name: 'palmvision');
       }
       return const PalmDetectionResult(
@@ -106,7 +106,7 @@ class PalmVisionDetector {
   }
 
   void _logResult(PalmDetectionResult result, {required bool debugMode}) {
-    if (!debugMode && !kDebugMode) return;
+    if (!debugMode && kReleaseMode) return;
     dev.log(
       '[palmvision] state=${result.state.name} '
       'scan=${result.effectiveScanState.name} '
