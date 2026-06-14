@@ -29,8 +29,8 @@ function getClient(): GoogleGenerativeAI {
 }
 
 function normalizeLanguageCode(lang?: string): string {
-  const normalized = (lang ?? 'tr').trim().toLowerCase().split(/[-_]/)[0];
-  return languageNames[normalized] ? normalized : 'tr';
+  const normalized = (lang ?? 'en').trim().toLowerCase().split(/[-_]/)[0];
+  return languageNames[normalized] ? normalized : 'en';
 }
 
 export function geminiLanguageName(lang?: string): string {

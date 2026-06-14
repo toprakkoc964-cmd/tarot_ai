@@ -126,9 +126,9 @@ function normalizeFcmToken(value: unknown): string {
 }
 
 function resolveLanguage(lang: unknown): string {
-  if (typeof lang !== 'string') return 'tr';
+  if (typeof lang !== 'string') return 'en';
   const normalized = lang.trim().toLowerCase();
-  return supportedLanguages.has(normalized) ? normalized : 'tr';
+  return supportedLanguages.has(normalized) ? normalized : 'en';
 }
 
 function resolveOptionalLanguage(lang: unknown): string | null {
