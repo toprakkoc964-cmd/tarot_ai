@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class AppLocale {
-  static final ValueNotifier<String> notifier = ValueNotifier<String>('tr');
+  static final ValueNotifier<String> notifier = ValueNotifier<String>('en');
 
   static String get current => notifier.value;
 

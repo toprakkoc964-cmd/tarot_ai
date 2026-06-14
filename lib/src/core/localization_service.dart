@@ -1877,7 +1877,7 @@ class LocalizationService {
       await setLanguage(stored);
       return;
     }
-    await setLanguage(AppLocale.current);
+    await setLanguage(AppLanguage.deviceDefault());
   }
 
   Future<void> setLanguage(String lang, {bool notifyLocale = true}) async {

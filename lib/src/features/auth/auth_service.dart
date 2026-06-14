@@ -11,6 +11,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../../core/app_language.dart';
 import '../../core/google_auth_config.dart';
 import '../../core/notification_service.dart' as fcm_notifications;
 import 'user_profile_contract.dart';
@@ -79,7 +80,8 @@ class AuthService {
       await clearAuthRedirectIntent();
       await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
     }
-    await _auth.signInAnonymously();
+    final credential = await _auth.signInAnonymously();
+    await ensureInitialDeviceLanguage(user: credential.user);
   }
 
   Future<UserCredential> linkWithCredential(AuthCredential credential) async {
@@ -121,6 +123,7 @@ class AuthService {
       password: password,
     );
     await clearAuthRedirectIntent();
+    await ensureInitialDeviceLanguage(user: credential.user);
     await credential.user?.sendEmailVerification();
     return credential;
   }
@@ -280,6 +283,9 @@ class AuthService {
               ? 'google'
               : null,
         );
+        if (result.additionalUserInfo?.isNewUser == true) {
+          await ensureInitialDeviceLanguage(user: user);
+        }
       }
     } on FirebaseAuthException {
       rethrow;
@@ -336,6 +342,9 @@ class AuthService {
               ? 'google'
               : null,
         );
+        if (result.additionalUserInfo?.isNewUser == true) {
+          await ensureInitialDeviceLanguage(user: user);
+        }
       }
     } on FirebaseAuthException {
       rethrow;
@@ -464,6 +473,9 @@ class AuthService {
               : null,
           appleFullNameCaptured: appleName.isNotEmpty,
         );
+        if (result.additionalUserInfo?.isNewUser == true) {
+          await ensureInitialDeviceLanguage(user: _auth.currentUser ?? user);
+        }
       }
     } finally {
       socialProfileSyncInProgress.value = false;
@@ -548,6 +560,9 @@ class AuthService {
               : null,
           appleFullNameCaptured: appleName.isNotEmpty,
         );
+        if (result.additionalUserInfo?.isNewUser == true) {
+          await ensureInitialDeviceLanguage(user: _auth.currentUser ?? user);
+        }
       }
     } finally {
       socialProfileSyncInProgress.value = false;
@@ -793,6 +808,44 @@ class AuthService {
         UserProfileContract.createdAt: FieldValue.serverTimestamp(),
       UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> ensureInitialDeviceLanguage({User? user}) async {
+    final currentUser = user ?? _auth.currentUser;
+    if (currentUser == null) return;
+
+    final deviceLang = AppLanguage.deviceDefault();
+    final userDocRef = FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(currentUser.uid);
+
+    try {
+      final snapshot = await userDocRef.get();
+      final data = snapshot.data() ?? const <String, dynamic>{};
+      final profileComplete =
+          data[UserProfileContract.isProfileComplete] == true ||
+          data[UserProfileContract.onboardingCompleted] == true;
+      if (profileComplete) return;
+
+      final settings = data['settings'];
+      final currentLang = settings is Map
+          ? (settings['lang'] as String?)?.trim()
+          : null;
+      if (currentLang != null &&
+          currentLang.isNotEmpty &&
+          currentLang != 'en') {
+        return;
+      }
+      if (currentLang == deviceLang) return;
+
+      await userDocRef.set({
+        'settings': {'lang': deviceLang},
+      }, SetOptions(merge: true));
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Initial device language sync skipped: $error');
+      }
+    }
   }
 
   DateTime? _timestampToDate(Object? value) {

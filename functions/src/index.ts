@@ -1192,7 +1192,7 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
       isFirstFreeUsed: false
     },
     settings: {
-      lang: 'tr',
+      lang: 'en',
       selectedPersonaId: 'emilia'
     },
     createdAt: FieldValue.serverTimestamp(),

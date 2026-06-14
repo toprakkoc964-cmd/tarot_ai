@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../core/app_locale.dart';
+import '../../core/app_language.dart';
 import '../../core/app_texts.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
@@ -268,7 +268,7 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
       privacyAccepted: true,
       termsAccepted: true,
       aiProcessingAccepted: true,
-      lang: AppLocale.current,
+      lang: AppLanguage.deviceDefault(),
       selectedPersonaId: 'aris',
       birthTime: widget.birthTime,
       relationshipStatus: widget.relationshipStatus,

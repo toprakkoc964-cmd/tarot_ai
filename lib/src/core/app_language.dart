@@ -1,8 +1,12 @@
+import 'package:flutter/widgets.dart';
+
 import 'app_locale.dart';
 import 'localization_service.dart';
 
 class AppLanguage {
   AppLanguage._();
+
+  static const Set<String> uiSupportedFallback = {'tr', 'en', 'de', 'fr', 'es'};
 
   static const Set<String> aiSupported = {
     'tr',
@@ -16,6 +20,14 @@ class AppLanguage {
 
   static List<String> get supported =>
       LocalizationService.instance.supportedLanguages.value;
+
+  static Set<String> get supportedUiLanguages {
+    final loaded = supported
+        .map(normalize)
+        .where((code) => code.trim().isNotEmpty)
+        .toSet();
+    return {...uiSupportedFallback, ...loaded};
+  }
 
   static bool isSupported(String? code) {
     final normalized = normalize(code);
@@ -34,6 +46,21 @@ class AppLanguage {
   static String forAi() {
     final appLang = normalize(AppLocale.current);
     if (aiSupported.contains(appLang)) return appLang;
+    return 'en';
+  }
+
+  static String deviceDefault() {
+    final supportedCodes = supportedUiLanguages;
+    final locales = WidgetsBinding.instance.platformDispatcher.locales;
+    for (final locale in locales) {
+      final code = normalize(locale.languageCode);
+      if (supportedCodes.contains(code)) return code;
+    }
+
+    final fallbackCode = normalize(
+      WidgetsBinding.instance.platformDispatcher.locale.languageCode,
+    );
+    if (supportedCodes.contains(fallbackCode)) return fallbackCode;
     return 'en';
   }
 
