@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:developer' as dev;
+import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/diagnostics/camera_diagnostics.dart';
 import '../../../core/utils/palm_detection_result.dart';
 
 class PalmVisionDetector {
@@ -25,6 +25,11 @@ class PalmVisionDetector {
     final plane = image.planes.first;
     final formatGroup = image.format.group.name;
     if (formatGroup != 'bgra8888') {
+      CameraDiagnostics.logSync(
+        'palmvision_unexpected_format',
+        flow: 'palm_vision',
+        data: {'formatGroup': formatGroup},
+      );
       return PalmDetectionResult(
         state: PalmDetectionState.noHand,
         confidence: 0,
@@ -75,11 +80,18 @@ class PalmVisionDetector {
         debug: result.debug,
       );
     } on PlatformException catch (error) {
-      if (debugMode || !kReleaseMode) {
+      final diagnosticsEnabled = debugMode || CameraDiagnostics.isEnabledSync;
+      if (diagnosticsEnabled) {
         dev.log(
           '[palmvision] platformError code=${error.code} '
           'message=${error.message}',
           name: 'palmvision',
+        );
+        CameraDiagnostics.logSync(
+          'palmvision_platform_error',
+          flow: 'palm_vision',
+          data: {'code': error.code, 'message': error.message},
+          error: error,
         );
       }
       return PalmDetectionResult(
@@ -93,8 +105,14 @@ class PalmVisionDetector {
         },
       );
     } catch (error) {
-      if (debugMode || !kReleaseMode) {
+      final diagnosticsEnabled = debugMode || CameraDiagnostics.isEnabledSync;
+      if (diagnosticsEnabled) {
         dev.log('[palmvision] error=$error', name: 'palmvision');
+        CameraDiagnostics.logSync(
+          'palmvision_unknown_error',
+          flow: 'palm_vision',
+          error: error,
+        );
       }
       return const PalmDetectionResult(
         state: PalmDetectionState.noHand,
@@ -106,7 +124,7 @@ class PalmVisionDetector {
   }
 
   void _logResult(PalmDetectionResult result, {required bool debugMode}) {
-    if (!debugMode && kReleaseMode) return;
+    if (!debugMode && !CameraDiagnostics.isEnabledSync) return;
     dev.log(
       '[palmvision] state=${result.state.name} '
       'scan=${result.effectiveScanState.name} '
@@ -119,5 +137,18 @@ class PalmVisionDetector {
     if (debug != null) {
       dev.log('[palmvision] debug=$debug', name: 'palmvision');
     }
+    CameraDiagnostics.logSync(
+      'palmvision_result',
+      flow: 'palm_vision',
+      data: {
+        'state': result.state.name,
+        'scanState': result.effectiveScanState.name,
+        'confidence': result.confidence,
+        'validPalm': result.validPalm,
+        'source': result.source,
+        'labels': result.labels,
+        if (debug != null) 'debug': debug,
+      },
+    );
   }
 }

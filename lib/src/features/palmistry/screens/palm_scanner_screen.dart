@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/app_texts.dart';
+import '../../../core/diagnostics/camera_diagnostics.dart';
 import '../../../core/di/service_locator.dart';
 import '../../../core/function_error_codes.dart';
 import '../../../core/theme/app_colors.dart';
@@ -106,6 +107,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
   Future<void> _initializeCamera() async {
     if (!mounted) return;
+    unawaited(
+      CameraDiagnostics.log(
+        'initialize_screen_start',
+        flow: 'palm_scanner',
+        data: {'platform': Platform.operatingSystem},
+      ),
+    );
     setState(() {
       _isInitializing = true;
       _isPermissionDenied = false;
@@ -116,11 +124,29 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
     try {
       var permission = await Permission.camera.status;
+      await CameraDiagnostics.log(
+        'permission_status',
+        flow: 'palm_scanner',
+        data: {'status': permission.name},
+      );
       if (permission.isDenied) {
         permission = await Permission.camera.request();
+        await CameraDiagnostics.log(
+          'permission_request_done',
+          flow: 'palm_scanner',
+          data: {'status': permission.name},
+        );
       }
 
       if (!permission.isGranted) {
+        await CameraDiagnostics.log(
+          'permission_not_granted',
+          flow: 'palm_scanner',
+          data: {
+            'status': permission.name,
+            'isPermanentlyDenied': permission.isPermanentlyDenied,
+          },
+        );
         if (!mounted) return;
         setState(() {
           _isPermissionDenied = true;
@@ -130,7 +156,16 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         return;
       }
 
+      await CameraDiagnostics.log(
+        'available_cameras_start',
+        flow: 'palm_scanner',
+      );
       final cameras = await availableCameras();
+      await CameraDiagnostics.log(
+        'available_cameras_done',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeCameras(cameras),
+      );
       if (cameras.isEmpty) {
         throw CameraException('no_camera', 'No camera is available.');
       }
@@ -138,6 +173,11 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       final camera = cameras.firstWhere(
         (item) => item.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
+      );
+      await CameraDiagnostics.log(
+        'camera_selected',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeCamera(camera),
       );
       final controller = CameraController(
         camera,
@@ -148,6 +188,11 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
             : ImageFormatGroup.bgra8888,
       );
 
+      await CameraDiagnostics.log(
+        'initialize_start',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+      );
       await controller.initialize();
       await controller.setFlashMode(FlashMode.off);
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
@@ -155,6 +200,11 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         await controller.setFocusMode(FocusMode.auto);
         await controller.setExposureMode(ExposureMode.auto);
       } catch (_) {}
+      await CameraDiagnostics.log(
+        'initialize_done',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+      );
 
       if (!mounted) {
         await controller.dispose();
@@ -204,7 +254,14 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
           );
         });
       }
-    } on CameraException catch (e) {
+    } on CameraException catch (e, stackTrace) {
+      await CameraDiagnostics.log(
+        'initialize_camera_exception',
+        flow: 'palm_scanner',
+        error: e,
+        stackTrace: stackTrace,
+        data: {'code': e.code, 'description': e.description},
+      );
       if (!mounted) return;
       final code = e.code.toLowerCase();
       final isPermissionError = code.contains('accessdenied');
@@ -224,7 +281,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
             ? AppTexts.t('cameraUnavailableDescription')
             : AppTexts.t('palmScanErrorDescription');
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'initialize_unknown_error',
+        flow: 'palm_scanner',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() {
         _isInitializing = false;
@@ -280,9 +343,25 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     });
 
     try {
+      await CameraDiagnostics.log(
+        'take_picture_start',
+        flow: 'palm_scanner',
+        data: {
+          'bypassLiveness': bypassLiveness,
+          ...CameraDiagnostics.describeController(controller),
+        },
+      );
       await _stopImageStreamIfNeeded();
       await controller.setFlashMode(FlashMode.off);
       final picture = await controller.takePicture();
+      await CameraDiagnostics.log(
+        'take_picture_done',
+        flow: 'palm_scanner',
+        data: {
+          'path': picture.path,
+          ...CameraDiagnostics.describeController(controller),
+        },
+      );
       final imageFile = File(picture.path);
 
       if (!mounted) return;
@@ -311,7 +390,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
           },
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'scan_error',
+        flow: 'palm_scanner',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _scanAnimation.stop();
       if (!mounted) return;
       setState(() {
@@ -343,9 +428,27 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     }
     if (!controller.value.isInitialized) return;
     try {
+      await CameraDiagnostics.log(
+        'image_stream_start',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+      );
       await controller.startImageStream(_handleCameraImage);
       _isImageStreamActive = true;
+      await CameraDiagnostics.log(
+        'image_stream_started',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+      );
     } catch (error) {
+      unawaited(
+        CameraDiagnostics.log(
+          'image_stream_start_error',
+          flow: 'palm_scanner',
+          data: CameraDiagnostics.describeController(controller),
+          error: error,
+        ),
+      );
       if (!kReleaseMode) {
         dev.log(
           '[palmvision] startImageStream failed: $error',
@@ -361,9 +464,26 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     if (!_isImageStreamActive || controller == null) return;
     try {
       if (controller.value.isStreamingImages) {
+        await CameraDiagnostics.log(
+          'image_stream_stop',
+          flow: 'palm_scanner',
+          data: CameraDiagnostics.describeController(controller),
+        );
         await controller.stopImageStream();
+        await CameraDiagnostics.log(
+          'image_stream_stopped',
+          flow: 'palm_scanner',
+          data: CameraDiagnostics.describeController(controller),
+        );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'image_stream_stop_error',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       _isImageStreamActive = false;
       _isProcessingFrame = false;
@@ -486,11 +606,15 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
             sensorOrientation: controller.description.sensorOrientation,
             previewSize: previewSize,
             guideRect: guideRect,
-            debugMode: !kReleaseMode,
+            debugMode: CameraDiagnostics.isEnabledSync,
           )
           .then(_handleDetectionResult)
           .catchError((_) {
             if (!mounted) return;
+            CameraDiagnostics.logSync(
+              'vision_analyze_error',
+              flow: 'palm_scanner',
+            );
             _handleDetectionResult(const PalmDetectionResult.noHand());
           })
           .whenComplete(() {
@@ -576,7 +700,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
   }
 
   void _logPalmVisionResult(PalmDetectionResult result) {
-    if (kReleaseMode || !Platform.isIOS) return;
+    if (!CameraDiagnostics.isEnabledSync || !Platform.isIOS) return;
     dev.log(
       '[palmvision] screen state=${result.state.name} '
       'scan=${result.effectiveScanState.name} '
@@ -595,6 +719,28 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     if (debug != null) {
       dev.log('[palmvision] screen debug=$debug', name: 'palmvision');
     }
+    CameraDiagnostics.logSync(
+      'vision_screen_result',
+      flow: 'palm_scanner',
+      data: {
+        'state': result.state.name,
+        'scanState': result.effectiveScanState.name,
+        'confidence': result.confidence,
+        'validPalm': result.validPalm,
+        'labels': result.labels,
+        'source': result.source,
+        'phase': _livenessPhase.name,
+        'handDetected': result.handDetected,
+        'reliablePointCount': result.reliablePointCount,
+        'stableFrameCount': _stableValidFrameCount,
+        'openFrames': _verifiedOpenFrameCount,
+        'openPalmScore': result.openPalmScore,
+        'extendedFingerCount': result.extendedFingerCount,
+        'fingerSpreadRatio': result.fingerSpreadRatio,
+        'rotationAngle': result.rotationAngle,
+        if (debug != null) 'debug': debug,
+      },
+    );
   }
 
   Future<void> _disposeCamera() async {
@@ -604,8 +750,20 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       await _stopImageStreamIfNeeded();
       _challengeTimer?.cancel();
       _fallbackTimer?.cancel();
+      await CameraDiagnostics.log(
+        'dispose_start',
+        flow: 'palm_scanner',
+        data: CameraDiagnostics.describeController(controller),
+      );
       await controller.dispose();
-    } catch (_) {
+      await CameraDiagnostics.log('dispose_done', flow: 'palm_scanner');
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'dispose_error',
+        flow: 'palm_scanner',
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       _controller = null;
     }
@@ -946,37 +1104,7 @@ class _CameraSurface extends StatelessWidget {
       return Image.file(image, fit: BoxFit.cover);
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final previewSize = controller.value.previewSize;
-        if (previewSize == null) {
-          return const ColoredBox(color: Colors.black);
-        }
-
-        final surface = constraints.biggest;
-        final previewAspectRatio = previewSize.height / previewSize.width;
-        final surfaceAspectRatio = surface.width / surface.height;
-        final double previewWidth;
-        final double previewHeight;
-        if (surfaceAspectRatio > previewAspectRatio) {
-          previewWidth = surface.width;
-          previewHeight = previewWidth / previewAspectRatio;
-        } else {
-          previewHeight = surface.height;
-          previewWidth = previewHeight * previewAspectRatio;
-        }
-
-        return ClipRect(
-          child: Center(
-            child: SizedBox(
-              width: previewWidth,
-              height: previewHeight,
-              child: CameraPreview(controller),
-            ),
-          ),
-        );
-      },
-    );
+    return ColoredBox(color: Colors.black, child: CameraPreview(controller));
   }
 }
 

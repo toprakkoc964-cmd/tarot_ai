@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/app_texts.dart';
+import '../../core/diagnostics/camera_diagnostics.dart';
 import 'onboarding_card_pick_page.dart';
 
 class OnboardingPalmScanPage extends StatefulWidget {
@@ -103,19 +104,47 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
   Future<void> _requestPermission() async {
     if (_busy) return;
     setState(() => _busy = true);
+    unawaited(
+      CameraDiagnostics.log(
+        'permission_request_start',
+        flow: 'onboarding_palm',
+        data: {'platform': Platform.operatingSystem},
+      ),
+    );
     try {
       if (!Platform.isIOS) {
+        unawaited(
+          CameraDiagnostics.log(
+            'permission_skipped_non_ios',
+            flow: 'onboarding_palm',
+          ),
+        );
         _showFallback();
         return;
       }
       final status = await Permission.camera.request();
+      unawaited(
+        CameraDiagnostics.log(
+          'permission_request_done',
+          flow: 'onboarding_palm',
+          data: {'status': status.name},
+        ),
+      );
       if (!mounted) return;
       if (status.isGranted || status.isLimited) {
         await _startCamera();
       } else {
         _showPermissionDenied();
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      unawaited(
+        CameraDiagnostics.log(
+          'permission_request_error',
+          flow: 'onboarding_palm',
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
       if (mounted) _showPermissionDenied();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -133,8 +162,21 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
 
   Future<void> _startCamera() async {
     try {
+      await CameraDiagnostics.log(
+        'available_cameras_start',
+        flow: 'onboarding_palm',
+      );
       final cameras = await availableCameras();
+      await CameraDiagnostics.log(
+        'available_cameras_done',
+        flow: 'onboarding_palm',
+        data: CameraDiagnostics.describeCameras(cameras),
+      );
       if (cameras.isEmpty) {
+        await CameraDiagnostics.log(
+          'available_cameras_empty',
+          flow: 'onboarding_palm',
+        );
         _showFallback();
         return;
       }
@@ -142,17 +184,50 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
         (candidate) => candidate.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
+      await CameraDiagnostics.log(
+        'camera_selected',
+        flow: 'onboarding_palm',
+        data: CameraDiagnostics.describeCamera(camera),
+      );
       final controller = CameraController(
         camera,
         ResolutionPreset.medium,
         enableAudio: false,
       );
       _cameraController = controller;
-      _cameraInitFuture = controller.initialize().then((_) async {
-        await controller.setFlashMode(FlashMode.off);
-      });
+      await CameraDiagnostics.log(
+        'initialize_future_created',
+        flow: 'onboarding_palm',
+        data: CameraDiagnostics.describeController(controller),
+      );
+      _cameraInitFuture = controller
+          .initialize()
+          .then((_) async {
+            await controller.setFlashMode(FlashMode.off);
+            await CameraDiagnostics.log(
+              'initialize_done',
+              flow: 'onboarding_palm',
+              data: CameraDiagnostics.describeController(controller),
+            );
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            CameraDiagnostics.logSync(
+              'initialize_error',
+              flow: 'onboarding_palm',
+              data: CameraDiagnostics.describeController(controller),
+              error: error,
+              stackTrace: stackTrace,
+            );
+            Error.throwWithStackTrace(error, stackTrace);
+          });
       setState(() => _phase = _PalmOnboardingPhase.camera);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'start_camera_error',
+        flow: 'onboarding_palm',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _showFallback();
     }
   }
@@ -169,15 +244,42 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
       _phase = _PalmOnboardingPhase.scanning;
     });
     try {
+      await CameraDiagnostics.log(
+        'take_picture_prepare',
+        flow: 'onboarding_palm',
+        data: CameraDiagnostics.describeController(controller),
+      );
       await _cameraInitFuture;
+      await CameraDiagnostics.log(
+        'take_picture_start',
+        flow: 'onboarding_palm',
+        data: CameraDiagnostics.describeController(controller),
+      );
       final photo = await controller.takePicture();
+      await CameraDiagnostics.log(
+        'take_picture_done',
+        flow: 'onboarding_palm',
+        data: {
+          'path': photo.path,
+          ...CameraDiagnostics.describeController(controller),
+        },
+      );
       unawaited(_deleteTempPhoto(photo.path));
       _palmTeaserKey = _teaserKeys[_random.nextInt(_teaserKeys.length)];
       await _disposeCamera();
       await _scanController.forward(from: 0);
       if (!mounted) return;
       setState(() => _phase = _PalmOnboardingPhase.confirm);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      unawaited(
+        CameraDiagnostics.log(
+          'take_picture_error',
+          flow: 'onboarding_palm',
+          data: CameraDiagnostics.describeController(controller),
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
       if (mounted) _showFallback();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -199,7 +301,23 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
     final controller = _cameraController;
     _cameraController = null;
     _cameraInitFuture = null;
-    await controller?.dispose();
+    if (controller == null) return;
+    await CameraDiagnostics.log(
+      'dispose_start',
+      flow: 'onboarding_palm',
+      data: CameraDiagnostics.describeController(controller),
+    );
+    try {
+      await controller.dispose();
+      await CameraDiagnostics.log('dispose_done', flow: 'onboarding_palm');
+    } catch (error, stackTrace) {
+      await CameraDiagnostics.log(
+        'dispose_error',
+        flow: 'onboarding_palm',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _showFallback() {
@@ -346,6 +464,20 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
                           return const Center(
                             child: CircularProgressIndicator(color: _primary),
                           );
+                        }
+                        if (snapshot.hasError) {
+                          unawaited(
+                            CameraDiagnostics.log(
+                              'preview_future_error_visible',
+                              flow: 'onboarding_palm',
+                              data: CameraDiagnostics.describeController(
+                                controller,
+                              ),
+                              error: snapshot.error,
+                              stackTrace: snapshot.stackTrace,
+                            ),
+                          );
+                          return _CameraErrorCard(onFallback: _showFallback);
                         }
                         return CameraPreview(controller);
                       },
@@ -563,6 +695,69 @@ class _OnboardingPalmScanPageState extends State<OnboardingPalmScanPage>
         ? 'onboarding.palm.confirm_body_no_name'
         : 'onboarding.palm.confirm_body';
     return AppTexts.t(key).replaceAll('{name}', name);
+  }
+}
+
+class _CameraErrorCard extends StatelessWidget {
+  const _CameraErrorCard({required this.onFallback});
+
+  final VoidCallback onFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: _OnboardingPalmPalette.surface.withValues(alpha: 0.84),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: _OnboardingPalmPalette.primary.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.videocam_off_rounded,
+                color: _OnboardingPalmPalette.gold,
+                size: 34,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                AppTexts.t('cameraUnavailableTitle'),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.newsreader(
+                  color: _OnboardingPalmPalette.onSurface,
+                  fontSize: 25,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                AppTexts.t('cameraUnavailableDescription'),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.manrope(
+                  color: _OnboardingPalmPalette.secondary.withValues(
+                    alpha: 0.88,
+                  ),
+                  fontSize: 13.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _SecondaryButton(
+                label: AppTexts.t('onboarding.palm.permission_fallback'),
+                onTap: onFallback,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

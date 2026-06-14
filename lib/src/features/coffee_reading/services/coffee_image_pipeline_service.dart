@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/app_texts.dart';
+import '../../../core/diagnostics/camera_diagnostics.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/coffee_image_pipeline_result.dart';
 import '../models/coffee_image_source.dart';
@@ -44,12 +45,11 @@ class CoffeeImagePipelineService {
     CoffeeImageSimilarityService? similarityService,
     ImagePicker? picker,
     ImageCropper? cropper,
-  })  : _validationService = validationService,
-        _tempFileCleaner = tempFileCleaner,
-        _similarityService =
-            similarityService ?? CoffeeImageSimilarityService(),
-        _picker = picker ?? ImagePicker(),
-        _cropper = cropper ?? ImageCropper();
+  }) : _validationService = validationService,
+       _tempFileCleaner = tempFileCleaner,
+       _similarityService = similarityService ?? CoffeeImageSimilarityService(),
+       _picker = picker ?? ImagePicker(),
+       _cropper = cropper ?? ImageCropper();
 
   final CoffeeValidationService _validationService;
   final CoffeeTempFileCleaner _tempFileCleaner;
@@ -65,6 +65,11 @@ class CoffeeImagePipelineService {
     final ownedTempFiles = <File>[];
 
     try {
+      await CameraDiagnostics.log(
+        'image_picker_start',
+        flow: 'coffee_image_picker',
+        data: {'source': source.name, 'step': step.name},
+      );
       final picked = await _picker.pickImage(
         source: source,
         maxWidth: 1600,
@@ -73,9 +78,19 @@ class CoffeeImagePipelineService {
         requestFullMetadata: source == ImageSource.camera,
       );
       if (picked == null) {
+        await CameraDiagnostics.log(
+          'image_picker_cancelled',
+          flow: 'coffee_image_picker',
+          data: {'source': source.name, 'step': step.name},
+        );
         await _tempFileCleaner.cleanup(ownedTempFiles);
         return null;
       }
+      await CameraDiagnostics.log(
+        'image_picker_done',
+        flow: 'coffee_image_picker',
+        data: {'source': source.name, 'step': step.name, 'path': picked.path},
+      );
 
       final pickedFile = File(picked.path);
       final sourceEvidence = await _extractSourceEvidence(
@@ -130,6 +145,13 @@ class CoffeeImagePipelineService {
       );
     } on PlatformException catch (e, st) {
       await _tempFileCleaner.cleanup(ownedTempFiles);
+      await CameraDiagnostics.log(
+        'image_picker_platform_error',
+        flow: 'coffee_image_picker',
+        data: {'code': e.code, 'message': e.message, 'source': source.name},
+        error: e,
+        stackTrace: st,
+      );
       if (kDebugMode) {
         debugPrint('Coffee picker/cropper platform error: ${e.code}');
         debugPrintStack(stackTrace: st);
@@ -142,6 +164,13 @@ class CoffeeImagePipelineService {
       rethrow;
     } catch (e, st) {
       await _tempFileCleaner.cleanup(ownedTempFiles);
+      await CameraDiagnostics.log(
+        'image_picker_unknown_error',
+        flow: 'coffee_image_picker',
+        data: {'source': source.name, 'step': step.name},
+        error: e,
+        stackTrace: st,
+      );
       if (kDebugMode) {
         debugPrint('Coffee image pipeline failed: $e');
         debugPrintStack(stackTrace: st);
@@ -168,8 +197,9 @@ class CoffeeImagePipelineService {
       return CoffeeImageSourceEvidence(
         originalWidth: decoded.width,
         originalHeight: decoded.height,
-        originalAspectRatio:
-            decoded.height == 0 ? 0 : decoded.width / decoded.height,
+        originalAspectRatio: decoded.height == 0
+            ? 0
+            : decoded.width / decoded.height,
         hasExifMetadata: decoded.hasExif,
         fromGallery: fromGallery,
       );
@@ -232,14 +262,14 @@ class CoffeeImagePipelineService {
       );
       final compressed =
           await image_compress.FlutterImageCompress.compressAndGetFile(
-        file.path,
-        outputPath,
-        minWidth: 1024,
-        minHeight: 1024,
-        quality: 80,
-        format: image_compress.CompressFormat.jpeg,
-        keepExif: false,
-      );
+            file.path,
+            outputPath,
+            minWidth: 1024,
+            minHeight: 1024,
+            quality: 80,
+            format: image_compress.CompressFormat.jpeg,
+            keepExif: false,
+          );
       if (compressed == null) return null;
       return File(compressed.path);
     } catch (e, st) {
