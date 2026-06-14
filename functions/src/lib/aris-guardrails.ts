@@ -12,7 +12,7 @@ export function arisSpreadSystemRules(lang: string): string {
     'Do not mention that you are an AI.',
     'No markdown, emojis, or bullet lists.',
     'No medical, legal, or financial directives; no deterministic predictions or exact dates.',
-    strictLanguageInstruction(lang, { oneParagraph: true, short: true })
+    strictLanguageInstruction(lang)
   ].join(' ');
 }
 

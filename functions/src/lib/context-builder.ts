@@ -15,7 +15,7 @@ export function buildSystemPrompt(
     `Persona: ${persona.name}, tone=${persona.tone ?? 'balanced'}, version=${persona.version}.`,
     `User context: zodiac=${zodiac}, occupation=${profile.occupation}, name=${profile.name}.`,
     `Reading intent: ${intent}.`,
-    strictLanguageInstruction(lang, { oneParagraph: true, short: true }),
+    strictLanguageInstruction(lang),
     'Use compassionate tone and concrete advice tailored to profession and intent.',
     'Keep output concise, empowering, and avoid deterministic future claims.'
   ].join(' ');

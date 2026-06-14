@@ -58,6 +58,7 @@ export async function createReadingText(input: {
   maxOutputTokens?: number;
   modelName?: string;
   lang?: string;
+  languageLock?: { oneParagraph?: boolean; short?: boolean };
 }): Promise<string> {
   try {
     const modelName =
@@ -69,7 +70,7 @@ export async function createReadingText(input: {
     const systemInstruction = input.lang
       ? [
         input.systemPrompt,
-        strictLanguageInstruction(input.lang, { oneParagraph: true, short: true })
+        strictLanguageInstruction(input.lang, input.languageLock ?? {})
       ].join('\n\n')
       : input.systemPrompt;
     const model = getClient().getGenerativeModel({

@@ -1572,7 +1572,11 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
 
       const aiResponse = await createReadingText({
         systemPrompt,
-        userPrompt: `Chosen cards: ${cards.join(', ')}. Provide a tarot reading in ${lang}.`,
+        userPrompt: [
+          `Chosen cards: ${cards.join(', ')}.`,
+          `Provide a tarot reading in ${lang}.`,
+          'Write between 180 and 260 words for a multi-card spread, or 100 and 140 words for a single card.'
+        ].join(' '),
         maxOutputTokens: 500,
         lang
       });
@@ -2195,7 +2199,8 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
       systemPrompt,
       userPrompt,
       maxOutputTokens: 120,
-      lang
+      lang,
+      languageLock: { oneParagraph: true, short: true }
     })).trim();
     if (!isUsableBirthFrequencyComment(comment, lang)) {
       logger.warn('generateBirthFrequencyComment using fallback', {
