@@ -2,6 +2,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { zodiacFromBirthDate } from "./zodiac";
 import { NotifLang, NotifVars, normalizeLang } from "../notif-templates";
 
+const SUPPORTED_NOTIF_LANGS = new Set(["tr", "en", "de", "es", "fr"]);
+
 const ZODIAC_NAMES: Record<string, Partial<Record<NotifLang, string>>> = {
   Aries: {
     tr: "Koç",
@@ -97,7 +99,14 @@ export function firstName(name?: string): string {
 export function resolveUserLang(
   userData: FirebaseFirestore.DocumentData | undefined,
 ): NotifLang {
-  return normalizeLang(userData?.language);
+  const settingsLang = userData?.settings?.lang;
+  const legacyLang = userData?.language;
+  const candidates = [settingsLang, legacyLang]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => SUPPORTED_NOTIF_LANGS.has(value));
+  const candidate = candidates[0] || "tr";
+  return normalizeLang(candidate);
 }
 
 export function buildNotifVars(
