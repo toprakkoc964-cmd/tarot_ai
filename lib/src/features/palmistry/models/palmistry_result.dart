@@ -2,10 +2,14 @@ class PalmistryResult {
   const PalmistryResult({
     required this.isValid,
     required this.reading,
+    this.sessionId,
+    this.openingMessage,
   });
 
   final bool isValid;
   final PalmReading reading;
+  final String? sessionId;
+  final String? openingMessage;
 
   factory PalmistryResult.fromMap(Map<String, dynamic> map) {
     return PalmistryResult(
@@ -13,6 +17,8 @@ class PalmistryResult {
       reading: PalmReading.fromMap(
         Map<String, dynamic>.from(map['reading'] as Map? ?? const {}),
       ),
+      sessionId: (map['sessionId'] as String?)?.trim(),
+      openingMessage: (map['openingMessage'] as String?)?.trim(),
     );
   }
 
@@ -20,6 +26,10 @@ class PalmistryResult {
     return {
       'isValid': isValid,
       'reading': reading.toMap(),
+      if (sessionId != null && sessionId!.trim().isNotEmpty)
+        'sessionId': sessionId,
+      if (openingMessage != null && openingMessage!.trim().isNotEmpty)
+        'openingMessage': openingMessage,
     };
   }
 }

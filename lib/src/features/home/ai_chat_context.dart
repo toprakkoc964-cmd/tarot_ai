@@ -5,17 +5,9 @@ import '../coffee_reading/models/coffee_image_pipeline_result.dart';
 import '../coffee_reading/models/coffee_photo_step.dart';
 import '../coffee_reading/models/coffee_validation_result.dart';
 
-enum AiPersona {
-  bilgeAris,
-  madamAris,
-}
+enum AiPersona { bilgeAris, madamAris }
 
-enum AiChatMode {
-  general,
-  tarotReading,
-  palmReading,
-  coffeeReading,
-}
+enum AiChatMode { general, tarotReading, palmReading, coffeeReading }
 
 class AiChatContext {
   const AiChatContext({
@@ -41,6 +33,7 @@ class AiChatContext {
   final bool ownsImageFile;
 
   bool get isCoffeeReading => mode == AiChatMode.coffeeReading;
+  bool get isPalmReading => mode == AiChatMode.palmReading;
 
   List<File> get contextImageFiles {
     final files = imageFiles;
@@ -111,6 +104,20 @@ Yorumu şu başlıklarla yapılandır:
 7. Yakın Dönem Mesajı
 8. Madam Aris’in Tavsiyesi
 ''',
+    );
+  }
+
+  factory AiChatContext.palmReadingMadamAris({String? sessionId}) {
+    return AiChatContext(
+      persona: AiPersona.madamAris,
+      mode: AiChatMode.palmReading,
+      title: AppTexts.t('palmMadamArisTitle'),
+      metadata: {
+        'source': 'palm_reading',
+        if (sessionId != null && sessionId.trim().isNotEmpty)
+          'sessionId': sessionId.trim(),
+        'createdAt': DateTime.now().toIso8601String(),
+      },
     );
   }
 }

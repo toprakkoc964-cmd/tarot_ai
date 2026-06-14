@@ -45,7 +45,7 @@ import {
   isOffTopicArisMessage,
   offTopicArisReply
 } from './lib/aris-guardrails';
-import { analyzePalmWithGemini } from './lib/palm-reading';
+import { analyzePalmWithGemini, PalmReadingPayload } from './lib/palm-reading';
 
 initializeApp();
 
@@ -707,6 +707,12 @@ function newArisSessionId(): string {
   return `aris_${stamp}_${rand}`.slice(0, 48);
 }
 
+function newPalmArisSessionId(day: string): string {
+  const safeDay = day.replace(/[^0-9a-z_-]/gi, '');
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `palm_${safeDay}_${Date.now().toString(36)}_${rand}`.slice(0, 48);
+}
+
 function shouldUseSoftPersonalization(message?: string): boolean {
   if (!message) return true;
   const normalized = message.trim().toLowerCase();
@@ -1084,6 +1090,116 @@ function buildCoffeeArisConversationPrompt(input: {
       input.lang === 'tr'
         ? 'Fincan yorumundaki sembolik dili koruyarak Madam Aris olarak cevap ver.'
         : 'Answer as Madam Aris while preserving the symbolic language of the coffee reading.'
+    ].filter(Boolean).join('\n')
+  };
+}
+
+function buildPalmArisOpeningPrompt(input: {
+  user: UserDoc & Record<string, unknown>;
+  reading: PalmReadingPayload;
+  lang: string;
+}): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = input.lang === 'tr'
+    ? [
+      'Sen Madam Aris adli zarif, mistik ve bilge bir el fali rehberisin.',
+      'Kullanicinin avucundaki akil cizgisi, kalp cizgisi ve yasam enerjisi yorumuna dayanarak acilis mesaji yazarsin.',
+      'AI, yapay zeka, model veya sistem oldugunu soyleme; Madam Aris olarak kendi agzindan konus.',
+      'Tarot kartlarina veya kahve fincani sembollerine atif yapma.',
+      'Tibbi, finansal, hukuki tavsiye verme ve kesin gelecek iddiasi kurma.',
+      'Sicak, premium, sezgisel ve soru sormaya davet eden bir ton kullan.',
+      '100-150 kelime arasinda yaz.'
+    ].join(' ')
+    : [
+      'You are Madam Aris, an elegant, mystical, and wise palm-reading guide.',
+      'Write an opening message grounded in the user\'s mind line, heart line, and life energy reading.',
+      'Do not say you are AI, a model, or a system; speak in-character as Madam Aris.',
+      'Do not refer to tarot cards or coffee-cup symbols.',
+      'Do not give medical, financial, legal advice, or certain future predictions.',
+      'Use a warm, premium, intuitive tone and invite the user to ask a follow-up.',
+      'Write between 100 and 150 words.'
+    ].join(' ');
+
+  return {
+    systemPrompt,
+    userPrompt: [
+      ...buildArisProfileContext(input.user),
+      `Mind line: ${input.reading.mindLine}`,
+      `Heart line: ${input.reading.heartLine}`,
+      `Life energy: ${input.reading.lifeEnergy}`,
+      input.lang === 'tr'
+        ? 'Bu uc izi birlestirerek Madam Aris olarak kisa bir sohbet acilisi yap.'
+        : 'Blend these three traces into a concise Madam Aris chat opening.'
+    ].join('\n')
+  };
+}
+
+function buildPalmArisFallbackOpening(input: {
+  user: UserDoc & Record<string, unknown>;
+  reading: PalmReadingPayload;
+  lang: string;
+}): string {
+  const name = resolveUserDisplayName(input.user);
+  const address = name && name !== 'Seeker' ? `${name}, ` : '';
+  if (input.lang === 'tr') {
+    return [
+      `${address}avucundaki akil cizgisi, kalp cizgisi ve yasam enerjisi birlikte sakin ama dikkatli bir hikaye anlatiyor.`,
+      'Madam Aris olarak bu izlerde hem ic sesini hem de kalbinin ritmini duyuyorum.',
+      'Istersen buradan bir soru sor; avucunun gosterdigi temalari birlikte daha derin okuyalim.'
+    ].join(' ');
+  }
+  return [
+    `${address}your mind line, heart line, and life energy form a quiet but meaningful story together.`,
+    'As Madam Aris, I sense both your inner voice and the rhythm of your heart in these traces.',
+    'Ask me anything from here, and we can explore what your palm is inviting you to notice.'
+  ].join(' ');
+}
+
+function buildPalmArisConversationPrompt(input: {
+  user: UserDoc & Record<string, unknown>;
+  palmReading: PalmReadingPayload;
+  openingMessage: string;
+  recentMessages: Array<{ role: 'user' | 'assistant'; text: string }>;
+  userMessage: string;
+  lang: string;
+}): { systemPrompt: string; userPrompt: string } {
+  const transcript = input.recentMessages
+    .slice(-8)
+    .map((message) => `${message.role === 'user' ? 'User' : 'Madam Aris'}: ${message.text}`)
+    .join('\n');
+
+  const systemPrompt = input.lang === 'tr'
+    ? [
+      'Sen Madam Aris adli zarif, mistik ve bilge bir el fali rehberisin.',
+      'Sohbeti sadece kullanicinin akil cizgisi, kalp cizgisi ve yasam enerjisi yorumuna dayandirirsin.',
+      'Tarot kartlarina, kahve fincanina veya telve sembollerine atif yapma.',
+      'AI, yapay zeka, model veya sistem oldugunu soyleme; Madam Aris olarak konus.',
+      'Tibbi, finansal, hukuki tavsiye verme ve kesin gelecek iddiasi kurma.',
+      '85-140 kelime arasinda yanit ver; kullanici sadece tesekkur ederse kisa ve yumusak cevap ver.'
+    ].join(' ')
+    : [
+      'You are Madam Aris, an elegant, mystical, and wise palm-reading guide.',
+      'Continue only from the user\'s mind line, heart line, and life energy reading.',
+      'Do not refer to tarot cards, coffee cups, or coffee-ground symbols.',
+      'Do not say you are AI, a model, or a system; speak as Madam Aris.',
+      'Do not give medical, financial, legal advice, or certain future predictions.',
+      'Answer in 85-140 words unless the user only thanks you.'
+    ].join(' ');
+
+  return {
+    systemPrompt,
+    userPrompt: [
+      ...buildArisProfileContext(input.user, {
+        includeSoftPersonalization: shouldUseSoftPersonalization(input.userMessage)
+      }),
+      `Mind line: ${input.palmReading.mindLine}`,
+      `Heart line: ${input.palmReading.heartLine}`,
+      `Life energy: ${input.palmReading.lifeEnergy}`,
+      `Opening palm reading: ${input.openingMessage}`,
+      transcript ? `Recent palm conversation:\n${transcript}` : '',
+      `User: ${input.userMessage}`,
+      input.lang === 'tr'
+        ? 'El cizgilerindeki temalari koruyarak Madam Aris olarak cevap ver.'
+        : 'Answer as Madam Aris while preserving the themes of the palm lines.'
     ].filter(Boolean).join('\n')
   };
 }
@@ -2437,6 +2553,13 @@ export const listArisSessions = onCall({ enforceAppCheck: false }, async (reques
           openingMessage: typeof data.openingMessage === 'string' ? data.openingMessage : '',
           recentMessages: Array.isArray(data.recentMessages) ? data.recentMessages : [],
           day: typeof data.day === 'string' ? data.day : '',
+          mode: typeof data.mode === 'string' ? data.mode : '',
+          persona: typeof data.persona === 'string' ? data.persona : '',
+          category: typeof data.category === 'string' ? data.category : '',
+          coffeeReadingId: typeof data.coffeeReadingId === 'string' ? data.coffeeReadingId : '',
+          palmReading: data.palmReading && typeof data.palmReading === 'object'
+            ? data.palmReading
+            : null,
           updatedAtMs: timestamp?.toMillis?.() ?? 0
         };
       })
@@ -2493,9 +2616,13 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       lang?: string;
       mode?: string;
       persona?: string;
+      category?: string;
+      palmReading?: PalmReadingPayload;
       recentMessages?: Array<{ role?: string; text?: string }>;
     };
-    const isCoffeeSession = session.mode === 'coffeeReading' || session.persona === 'madamAris';
+    const isPalmSession = session.mode === 'palmReading' || session.category === 'palm';
+    const isCoffeeSession = session.mode === 'coffeeReading';
+    const isMadamArisSession = isCoffeeSession || isPalmSession || session.persona === 'madamAris';
     const cardName = session.cardName?.trim();
     const cardNames = Array.isArray(session.cardNames)
       ? session.cardNames.map((item) => sanitizeShortText(item, 80)).filter(Boolean)
@@ -2524,7 +2651,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
     });
     const currentCredits = Number((user as UserDoc).wallet.credits ?? 0);
     const restrictedReply = restrictedArisReply({ message, lang });
-    const offTopicReply = !restrictedReply && !isCoffeeSession && isOffTopicArisMessage(message)
+    const offTopicReply = !restrictedReply && !isMadamArisSession && isOffTopicArisMessage(message)
       ? offTopicArisReply(lang)
       : null;
     if (restrictedReply || offTopicReply) {
@@ -2553,7 +2680,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       ]);
       return result;
     }
-    const quickReply = isCoffeeSession ? null : quickArisReply({ message, lang, user });
+    const quickReply = isMadamArisSession ? null : quickArisReply({ message, lang, user });
     if (quickReply) {
       const updatedMessages = [
         ...recentMessages,
@@ -2610,7 +2737,16 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       const profileReply = birthMonthReply({ user, message, lang });
       const prompts = profileReply
         ? null
-        : isCoffeeSession
+        : isPalmSession && session.palmReading
+          ? buildPalmArisConversationPrompt({
+            user,
+            palmReading: session.palmReading,
+            openingMessage,
+            recentMessages,
+            userMessage: message,
+            lang
+          })
+          : isCoffeeSession
           ? buildCoffeeArisConversationPrompt({
             user,
             openingMessage,
@@ -3679,6 +3815,42 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       );
     }
 
+    const day = new Date().toISOString().slice(0, 10);
+    const sessionId = newPalmArisSessionId(day);
+    const sessionRef = userRef.collection('aris_sessions').doc(sessionId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'USER_NOT_FOUND');
+    }
+    const user = userSnap.data() as UserDoc & Record<string, unknown>;
+    let openingMessage = '';
+    try {
+      openingMessage = (await createReadingText({
+        ...buildPalmArisOpeningPrompt({
+          user,
+          reading: analysis.reading,
+          lang,
+        }),
+        maxOutputTokens: 360,
+        modelName: arisModel,
+        lang,
+      })).trim();
+    } catch (error) {
+      logger.warn('analyzePalmReading opening fallback', {
+        uid,
+        sessionId,
+        errorMessage: error instanceof Error ? error.message.slice(0, 180) : String(error).slice(0, 180),
+      });
+    }
+    if (!openingMessage) {
+      openingMessage = buildPalmArisFallbackOpening({
+        user,
+        reading: analysis.reading,
+        lang,
+      });
+    }
+    openingMessage = cleanArisPersonaText(openingMessage);
+
     await userRef.set(
       {
         lastPalmReadingAt: FieldValue.serverTimestamp(),
@@ -3686,10 +3858,28 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       },
       { merge: true }
     );
+    await sessionRef.set({
+      uid,
+      day,
+      lang,
+      mode: 'palmReading',
+      persona: 'madamAris',
+      category: 'palm',
+      cardName: 'palm',
+      cardNames: [],
+      openingMessage,
+      palmReading: analysis.reading,
+      recentMessages: [],
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now(),
+    });
 
     return {
       isValid: true,
-      reading: analysis.reading
+      reading: analysis.reading,
+      sessionId,
+      openingMessage
     };
   } catch (err) {
     throw mapError(err);

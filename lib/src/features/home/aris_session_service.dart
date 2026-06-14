@@ -32,6 +32,7 @@ class ArisSessionRecord {
     this.mode,
     this.persona,
     this.coffeeReadingId,
+    this.categoryName,
   });
 
   final String sessionId;
@@ -44,6 +45,7 @@ class ArisSessionRecord {
   final String? mode;
   final String? persona;
   final String? coffeeReadingId;
+  final String? categoryName;
 
   bool get isSpread => cardNames.length > 1;
 
@@ -51,8 +53,15 @@ class ArisSessionRecord {
     final normalizedMode = (mode ?? '').trim();
     final normalizedPersona = (persona ?? '').trim();
     final normalizedCoffeeReadingId = (coffeeReadingId ?? '').trim();
+    final normalizedCategory = (categoryName ?? '').trim();
     final normalizedCardName = cardName.trim().toLowerCase();
+    if (normalizedMode == 'palmReading' ||
+        normalizedCategory == 'palm' ||
+        normalizedCardName == 'palm') {
+      return ArisSessionCategory.palm;
+    }
     if (normalizedMode == 'coffeeReading' ||
+        normalizedCategory == 'coffee' ||
         normalizedPersona == 'madamAris' ||
         normalizedCoffeeReadingId.isNotEmpty ||
         normalizedCardName.contains('kahve') ||
@@ -156,6 +165,7 @@ class ArisSessionRecord {
       mode: (data['mode'] as String?)?.trim(),
       persona: (data['persona'] as String?)?.trim(),
       coffeeReadingId: (data['coffeeReadingId'] as String?)?.trim(),
+      categoryName: (data['category'] as String?)?.trim(),
     );
   }
 
@@ -172,6 +182,7 @@ class ArisSessionRecord {
     'mode': mode,
     'persona': persona,
     'coffeeReadingId': coffeeReadingId,
+    'category': categoryName,
   };
 
   ArisSessionRecord withFallbackMetadata(ArisSessionRecord fallback) {
@@ -186,6 +197,7 @@ class ArisSessionRecord {
       mode: mode ?? fallback.mode,
       persona: persona ?? fallback.persona,
       coffeeReadingId: coffeeReadingId ?? fallback.coffeeReadingId,
+      categoryName: categoryName ?? fallback.categoryName,
     );
   }
 

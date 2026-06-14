@@ -78,6 +78,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   bool _coffeeAwaitingMood = false;
   bool _coffeeReadingGenerated = false;
   bool _coffeeReadingFailed = false;
+  ArisSessionCategory? _resumedSessionCategory;
   String? _openingError;
 
   @override
@@ -107,7 +108,15 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     super.dispose();
   }
 
-  bool get _isCoffeeChat => widget.chatContext?.isCoffeeReading ?? false;
+  bool get _isCoffeeChat =>
+      widget.chatContext?.isCoffeeReading == true ||
+      _resumedSessionCategory == ArisSessionCategory.coffee;
+
+  bool get _isPalmChat =>
+      widget.chatContext?.isPalmReading == true ||
+      _resumedSessionCategory == ArisSessionCategory.palm;
+
+  bool get _isMadamArisChat => _isCoffeeChat || _isPalmChat;
 
   bool get _isSpreadChat => widget.spreadCards.isNotEmpty;
 
@@ -116,23 +125,32 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       .where((name) => name.isNotEmpty)
       .toList(growable: false);
 
-  String get _chatTitle =>
-      widget.chatContext?.title ??
-      (_isSpreadChat
-          ? AppTexts.t('tarot.spread.chat_title')
-          : AppTexts.t('arisTarotTitle'));
+  String get _chatTitle {
+    final contextTitle = widget.chatContext?.title;
+    if (contextTitle != null && contextTitle.trim().isNotEmpty) {
+      return contextTitle;
+    }
+    if (_isPalmChat) return AppTexts.t('palmMadamArisTitle');
+    if (_isCoffeeChat) return AppTexts.t('coffeeMadamArisTitle');
+    if (_isSpreadChat) return AppTexts.t('tarot.spread.chat_title');
+    return AppTexts.t('arisTarotTitle');
+  }
 
-  String get _assistantName => _isCoffeeChat
+  String get _assistantName => _isMadamArisChat
       ? AppTexts.t('coffeeMadamArisName')
       : AppTexts.t('arisAssistantName');
 
-  String get _loadingSubtitle => _isCoffeeChat
-      ? AppTexts.t(
-          _isGeneratingCoffeeReading
-              ? 'coffeeArisLookingAtCup'
-              : 'coffeeLoadingChatSubtitle',
-        )
-      : AppTexts.t('arisLoadingSubtitle');
+  String get _loadingSubtitle {
+    if (_isPalmChat) return AppTexts.t('palmMadamArisSubtitle');
+    if (_isCoffeeChat) {
+      return AppTexts.t(
+        _isGeneratingCoffeeReading
+            ? 'coffeeArisLookingAtCup'
+            : 'coffeeLoadingChatSubtitle',
+      );
+    }
+    return AppTexts.t('arisLoadingSubtitle');
+  }
 
   Future<void> _deleteOwnedContextImages(List<File> imageFiles) async {
     final seenPaths = <String>{};
@@ -239,6 +257,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       }
       setState(() {
         _sessionId = record.sessionId;
+        _resumedSessionCategory = record.category;
         _messages.clear();
         if (record.openingMessage.isNotEmpty) {
           _messages.add(_ArisChatMessage.assistant(record.openingMessage));
@@ -760,6 +779,11 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                       imageFiles: _coffeeImageFiles,
                       subtitle: _coffeeHeaderSubtitle,
                     )
+                  else if (_isPalmChat)
+                    _MadamArisHero(
+                      imageFiles: const [],
+                      subtitle: AppTexts.t('palmMadamArisSubtitle'),
+                    )
                   else if (_isSpreadChat)
                     _TarotSpreadHero(cards: widget.spreadCards)
                   else
@@ -820,9 +844,13 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                 isSending: _isSending,
                 costLabel: _isCoffeeChat
                     ? AppTexts.t('coffeeMessageNote')
+                    : _isPalmChat
+                    ? AppTexts.t('palmMessageNote')
                     : AppTexts.t('arisMessageCost'),
                 hintText: _isCoffeeChat
                     ? AppTexts.t('coffeeQuestionHint')
+                    : _isPalmChat
+                    ? AppTexts.t('palmQuestionHint')
                     : AppTexts.t('arisQuestionHint'),
                 onSend: () => _sendMessage(credits),
               ),

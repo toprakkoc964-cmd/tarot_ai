@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_texts.dart';
+import 'ai_chat_context.dart';
 import 'aris_session_service.dart';
 import 'chat_page.dart';
 import 'home_palette.dart';
@@ -218,15 +219,21 @@ class _MessagesPageState extends State<MessagesPage> {
   }
 
   void _openSession(ArisSessionRecord session) {
+    final isTarot = session.category == ArisSessionCategory.tarot;
     Navigator.of(context)
         .push(
           MaterialPageRoute<String>(
             builder: (_) => KozmikBilgePage(
               uid: widget.uid,
               resumeSessionId: session.sessionId,
-              spreadCards: session.toDrawnCards(),
-              spreadSessionId: session.sessionId,
-              cardTitle: session.isSpread ? '' : session.cardName,
+              spreadCards: isTarot ? session.toDrawnCards() : const [],
+              spreadSessionId: isTarot ? session.sessionId : null,
+              cardTitle: isTarot && !session.isSpread ? session.cardName : '',
+              chatContext: session.category == ArisSessionCategory.palm
+                  ? AiChatContext.palmReadingMadamAris(
+                      sessionId: session.sessionId,
+                    )
+                  : null,
             ),
           ),
         )
@@ -509,11 +516,13 @@ class _MessageSessionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateLabel = _formatDate(session.updatedAt, locale);
-    final title =
-        session.category == ArisSessionCategory.coffee &&
-            session.cardNames.isEmpty
-        ? AppTexts.t('archive.coffee_title')
-        : session.titleLabel;
+    final title = switch (session.category) {
+      ArisSessionCategory.coffee when session.cardNames.isEmpty => AppTexts.t(
+        'archive.coffee_title',
+      ),
+      ArisSessionCategory.palm => AppTexts.t('archive.palm_title'),
+      _ => session.titleLabel,
+    };
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -538,7 +547,9 @@ class _MessageSessionTile extends StatelessWidget {
                   border: Border.all(color: _kPrimary.withValues(alpha: 0.35)),
                 ),
                 child: Icon(
-                  session.isSpread
+                  session.category == ArisSessionCategory.palm
+                      ? Icons.back_hand_rounded
+                      : session.isSpread
                       ? Icons.style_rounded
                       : Icons.auto_awesome_rounded,
                   color: _kTertiary,

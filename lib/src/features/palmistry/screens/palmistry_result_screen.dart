@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../home/ai_chat_context.dart';
+import '../../home/chat_page.dart';
 import '../models/palmistry_result.dart';
 import '../widgets/cosmic_scan_button.dart';
 import '../widgets/glass_panel.dart';
@@ -10,10 +13,7 @@ import '../widgets/palm_reading_card.dart';
 import 'palm_scanner_screen.dart';
 
 class PalmistryResultScreen extends StatelessWidget {
-  const PalmistryResultScreen({
-    super.key,
-    required this.result,
-  });
+  const PalmistryResultScreen({super.key, required this.result});
 
   final PalmistryResult result;
 
@@ -57,13 +57,15 @@ class PalmistryResultScreen extends StatelessWidget {
                             height: 94,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color:
-                                  AppColors.surfaceHigh.withValues(alpha: 0.72),
+                              color: AppColors.surfaceHigh.withValues(
+                                alpha: 0.72,
+                              ),
                               border: Border.all(color: AppColors.glassBorder),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.tertiaryGold
-                                      .withValues(alpha: 0.28),
+                                  color: AppColors.tertiaryGold.withValues(
+                                    alpha: 0.28,
+                                  ),
                                   blurRadius: 32,
                                   spreadRadius: 2,
                                 ),
@@ -92,8 +94,9 @@ class PalmistryResultScreen extends StatelessWidget {
                             AppTexts.t('palmResultDescription'),
                             textAlign: TextAlign.center,
                             style: GoogleFonts.manrope(
-                              color: AppColors.secondaryLavender
-                                  .withValues(alpha: 0.9),
+                              color: AppColors.secondaryLavender.withValues(
+                                alpha: 0.9,
+                              ),
                               fontSize: 15,
                               height: 1.45,
                               fontWeight: FontWeight.w500,
@@ -134,6 +137,14 @@ class PalmistryResultScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 22),
+                if ((result.sessionId ?? '').trim().isNotEmpty) ...[
+                  CosmicScanButton(
+                    text: AppTexts.t('palmChatWithMadamAris'),
+                    icon: Icons.chat_bubble_rounded,
+                    onTap: () => _openMadamArisChat(context),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 CosmicScanButton(
                   text: AppTexts.t('scanAgain'),
                   icon: Icons.refresh_rounded,
@@ -149,6 +160,22 @@ class PalmistryResultScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openMadamArisChat(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    final sessionId = result.sessionId?.trim() ?? '';
+    if (uid.isEmpty || sessionId.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => KozmikBilgePage(
+          uid: uid,
+          resumeSessionId: sessionId,
+          chatContext: AiChatContext.palmReadingMadamAris(sessionId: sessionId),
+        ),
       ),
     );
   }
