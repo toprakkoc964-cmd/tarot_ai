@@ -43,6 +43,12 @@
 	<string>Avucunun çizgilerini okuyabilmemiz ve kahve falı fotoğraflarını çekebilmen için kameranı kullanırız. Onboarding fotoğrafın saklanmaz.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We let you choose cup photos from your library for the coffee reading experience.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Debug modunda uygulama günlüklerini ve Flutter araçlarını cihazla eşleştirmek için yerel ağ erişimi kullanılır.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartobservatory._tcp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

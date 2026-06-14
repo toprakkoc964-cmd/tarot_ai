@@ -31,7 +31,12 @@ import { checkAndBumpThrottle } from './lib/rate-limit';
 import { AIPersonaDoc, UserDoc, UserProfile } from './lib/types';
 import { synthesizeSpeech } from './lib/audio';
 import { buildBirthFrequencyFallback } from './lib/birth-frequency';
-import { sendAudioReadyNotification, sendNotificationToUser } from './lib/fcm';
+import {
+  registerFcmTokenForUid,
+  sendAudioReadyNotification,
+  sendNotificationToUser,
+  unregisterFcmTokenForUid
+} from './lib/fcm';
 import { zodiacFromBirthDate } from './lib/zodiac';
 import { buildNotifVars, resolveUserLang } from './lib/notif-personalization';
 import { pickNotification } from './notif-templates';
@@ -116,10 +121,14 @@ function requireAppCheckIfEnabled(request: { app?: unknown }) {
   }
 }
 
+function normalizeFcmToken(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function resolveLanguage(lang: unknown): string {
-  if (typeof lang !== 'string') return 'en';
+  if (typeof lang !== 'string') return 'tr';
   const normalized = lang.trim().toLowerCase();
-  return supportedLanguages.has(normalized) ? normalized : 'en';
+  return supportedLanguages.has(normalized) ? normalized : 'tr';
 }
 
 function resolveOptionalLanguage(lang: unknown): string | null {
@@ -867,9 +876,22 @@ function birthMonthReply(input: {
     : `${address}according to your profile, you were born in ${monthText}.`;
 }
 
-function isUsableBirthFrequencyComment(value: string): boolean {
+function hasUnexpectedBirthFrequencyLanguageBlock(value: string, lang?: string): boolean {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  const target = resolveLanguage(lang);
+  if (target !== 'tr') return false;
+
+  const hasTurkishSignal =
+    /\b(bug[uü]n|senin|i[cç]|sesin|ruh|enerji|huzur|kalb|yol|sezgi|rehber|getirecektir)\b/i.test(normalized);
+  const hasGermanSignal =
+    /\b(deine|dein|heute|innere|stimme|ratgeber|bringt|wird|energie|frieden|vertrauen)\b/i.test(normalized);
+  return hasTurkishSignal && hasGermanSignal;
+}
+
+function isUsableBirthFrequencyComment(value: string, lang?: string): boolean {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length < 24) return false;
+  if (hasUnexpectedBirthFrequencyLanguageBlock(normalized, lang)) return false;
   if (/^(bug[uü]n ruhunuz|bugun ruhunuz|today your soul)$/i.test(normalized)) {
     return false;
   }
@@ -1251,6 +1273,42 @@ export const handleUserDocumentDeleted = onDocumentDeleted(
   }
 });
 
+export const registerFcmToken = onCall(
+  { region: 'us-central1', enforceAppCheck: false },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const token = normalizeFcmToken(request.data?.token);
+    if (!token || token.length < 16) {
+      throw new HttpsError('invalid-argument', 'INVALID_FCM_TOKEN');
+    }
+
+    await registerFcmTokenForUid(uid, token);
+    return { success: true };
+  }
+);
+
+export const unregisterFcmToken = onCall(
+  { region: 'us-central1', enforceAppCheck: false },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    const token = normalizeFcmToken(request.data?.token);
+    if (!token || token.length < 16) {
+      throw new HttpsError('invalid-argument', 'INVALID_FCM_TOKEN');
+    }
+
+    await unregisterFcmTokenForUid(uid, token);
+    return { success: true };
+  }
+);
+
 export const registerAppleAuthorization = onCall(
   { region: 'us-central1', enforceAppCheck: false, secrets: appleAuthSecretNames },
   async (request) => {
@@ -1515,7 +1573,8 @@ export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['
       const aiResponse = await createReadingText({
         systemPrompt,
         userPrompt: `Chosen cards: ${cards.join(', ')}. Provide a tarot reading in ${lang}.`,
-        maxOutputTokens: 500
+        maxOutputTokens: 500,
+        lang
       });
 
       const shareDeepLink = buildShareDeepLink(readingRef.id);
@@ -2103,7 +2162,7 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
       if (cached.birthDate === birthDate &&
         cached.lang === lang &&
         cachedComment &&
-        isUsableBirthFrequencyComment(cachedComment)) {
+        isUsableBirthFrequencyComment(cachedComment, lang)) {
         return {
           comment: cachedComment,
           day,
@@ -2120,7 +2179,8 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
       'Do not use markdown, lists, or emojis.',
       'Use 2 complete short sentences only.',
       'Keep it between 28 and 48 words.',
-      'Avoid repetition, disclaimers, and generic filler.'
+      'Avoid repetition, disclaimers, and generic filler.',
+      'Do not repeat the answer as a translation.'
     ].join(' ');
 
     const userPrompt = [
@@ -2134,9 +2194,10 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
     let comment = (await createReadingText({
       systemPrompt,
       userPrompt,
-      maxOutputTokens: 120
+      maxOutputTokens: 120,
+      lang
     })).trim();
-    if (!isUsableBirthFrequencyComment(comment)) {
+    if (!isUsableBirthFrequencyComment(comment, lang)) {
       logger.warn('generateBirthFrequencyComment using fallback', {
         uid,
         day,
@@ -2300,7 +2361,8 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
       openingMessage = (await createReadingText({
         ...prompts,
         maxOutputTokens: cardNamesInput.length > 1 ? 640 : 320,
-        modelName: arisModel
+        modelName: arisModel,
+        lang
       })).trim();
     } catch (err) {
       source = 'fallback';
@@ -2563,7 +2625,8 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       const reply = cleanArisPersonaText(profileReply ?? (await createReadingText({
         ...prompts!,
         maxOutputTokens: 260,
-        modelName: arisModel
+        modelName: arisModel,
+        lang
       })).trim());
       if (!reply) {
         throw new Error('EMPTY_ARIS_REPLY');

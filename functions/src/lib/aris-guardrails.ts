@@ -1,3 +1,5 @@
+import { strictLanguageInstruction } from './gemini';
+
 export function arisSpreadSystemRules(lang: string): string {
   return [
     'You are Bilge Aris, a mystical but grounded tarot guide.',
@@ -10,7 +12,7 @@ export function arisSpreadSystemRules(lang: string): string {
     'Do not mention that you are an AI.',
     'No markdown, emojis, or bullet lists.',
     'No medical, legal, or financial directives; no deterministic predictions or exact dates.',
-    `Response language must be strictly: ${lang}.`
+    strictLanguageInstruction(lang, { oneParagraph: true, short: true })
   ].join(' ');
 }
 

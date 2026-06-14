@@ -9,7 +9,7 @@ import '../../core/localization_service.dart';
 import '../home/home_page.dart';
 import 'auth_service.dart';
 import 'login_page.dart';
-import 'onboarding_page.dart';
+import 'onboarding_flow_entry.dart';
 import 'register_page.dart';
 import 'user_profile_contract.dart';
 import 'verify_email_page.dart';
@@ -62,8 +62,8 @@ class _AuthGatePageState extends State<AuthGatePage> {
 
   void _markDeletedAccountAndSignOut() {
     Future<void>.microtask(() async {
-      await _authService.markPostDeletionRedirectPending();
-      await _authService.signOut();
+      await _authService.clearPostDeletionRedirect();
+      await _authService.signOut(redirectToLogin: false);
     });
   }
 
@@ -89,7 +89,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
           e.code == 'invalid-user-token' ||
           e.code == 'user-disabled') {
         try {
-          await _authService.signOut();
+          await _authService.signOut(redirectToLogin: false);
         } catch (_) {}
         return false;
       }
@@ -104,6 +104,10 @@ class _AuthGatePageState extends State<AuthGatePage> {
     _sessionCheckUid = user.uid;
     _sessionCheckFuture = _verifySession(user);
     return _sessionCheckFuture!;
+  }
+
+  Widget _buildOnboardingEntry() {
+    return OnboardingFlowEntry(authService: _authService);
   }
 
   @override
@@ -121,239 +125,218 @@ class _AuthGatePageState extends State<AuthGatePage> {
           valueListenable: _authService.registrationRedirectSuppressed,
           builder: (context, registrationRedirectSuppressed, __) {
             return ValueListenableBuilder<String?>(
-              valueListenable: _authService.registrationCompletedOnboardingUid,
-              builder: (context, registrationCompletedOnboardingUid, ___) {
+              valueListenable: _authService.redirectIntent,
+              builder: (context, redirectIntent, ___) {
                 return ValueListenableBuilder<bool>(
-                  valueListenable: _authService.forceLoginAfterAccountDeletion,
-                  builder: (context, forceLoginAfterAccountDeletion, ____) {
+                  valueListenable: _authService.redirectIntentHydrated,
+                  builder: (context, redirectIntentHydrated, ____) {
                     return ValueListenableBuilder<bool>(
                       valueListenable: _authService.socialProfileSyncInProgress,
                       builder: (context, socialProfileSyncInProgress, _____) {
                         return Stack(
                           children: [
                             StreamBuilder<User?>(
-                                  stream: _authService.authChanges(),
-                                  builder: (context, authSnapshot) {
-                                    if (registrationRedirectSuppressed) {
-                                      return _buildAuthEntry();
-                                    }
+                              stream: _authService.authChanges(),
+                              builder: (context, authSnapshot) {
+                                if (!redirectIntentHydrated) {
+                                  return _buildLoading();
+                                }
+                                if (registrationRedirectSuppressed) {
+                                  return _buildAuthEntry();
+                                }
 
-                                    if (socialProfileSyncInProgress) {
-                                      return _buildLoading();
-                                    }
+                                if (socialProfileSyncInProgress) {
+                                  return _buildLoading();
+                                }
 
-                                    if (authSnapshot.connectionState ==
+                                if (authSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return _buildLoading();
+                                }
+
+                                final user = authSnapshot.data;
+                                if (user == null) {
+                                  if (redirectIntent ==
+                                      AuthService.redirectIntentLogin) {
+                                    _showLoginOnNextFrame();
+                                    return _buildLoginEntry();
+                                  }
+                                  return _buildOnboardingEntry();
+                                }
+
+                                return FutureBuilder<bool>(
+                                  future: _sessionFutureFor(user),
+                                  builder: (context, sessionSnapshot) {
+                                    if (sessionSnapshot.connectionState ==
                                         ConnectionState.waiting) {
                                       return _buildLoading();
                                     }
-
-                                    final user = authSnapshot.data;
-                                    if (forceLoginAfterAccountDeletion) {
-                                      _showLoginOnNextFrame();
-                                      if (user != null) {
-                                        Future<void>.microtask(
-                                          _authService.signOut,
-                                        );
-                                        return _buildLoading();
-                                      }
-                                      Future<void>.microtask(() async {
-                                        await _authService
-                                            .clearPostDeletionRedirect();
-                                      });
-                                      return _buildLoginEntry();
+                                    if (sessionSnapshot.data != true) {
+                                      return _buildOnboardingEntry();
                                     }
+                                    final verifiedUser =
+                                        FirebaseAuth.instance.currentUser ??
+                                        user;
 
-                                    if (user == null) {
-                                      return _buildAuthEntry();
-                                    }
-
-                                    if (registrationCompletedOnboardingUid ==
-                                        user.uid) {
-                                      return OnboardingPage(
-                                        key: ValueKey('onboarding_${user.uid}'),
+                                    if (_authService.requiresEmailVerification(
+                                      verifiedUser,
+                                    )) {
+                                      return VerifyEmailPage(
                                         authService: _authService,
-                                        uid: user.uid,
+                                        user: verifiedUser,
+                                        onVerified: () {
+                                          _sessionCheckFuture = null;
+                                          _sessionCheckUid = null;
+                                          if (mounted) setState(() {});
+                                        },
+                                        onChangeEmail: () {
+                                          if (mounted) {
+                                            setState(
+                                              () => _showRegister = true,
+                                            );
+                                          }
+                                        },
                                       );
                                     }
 
-                                    return FutureBuilder<bool>(
-                                      future: _sessionFutureFor(user),
-                                      builder: (context, sessionSnapshot) {
-                                        if (sessionSnapshot.connectionState ==
-                                            ConnectionState.waiting) {
+                                    return ValueListenableBuilder<bool>(
+                                      valueListenable: _authService
+                                          .accountDeletionInProgress,
+                                      builder: (context, deletingAccount, _) {
+                                        if (deletingAccount) {
                                           return _buildLoading();
                                         }
-                                        if (sessionSnapshot.data != true) {
-                                          return _buildAuthEntry();
-                                        }
-                                        final verifiedUser =
-                                            FirebaseAuth.instance.currentUser ??
-                                            user;
 
-                                        if (_authService
-                                            .requiresEmailVerification(
-                                              verifiedUser,
-                                            )) {
-                                          return VerifyEmailPage(
-                                            authService: _authService,
-                                            user: verifiedUser,
-                                            onVerified: () {
-                                              _sessionCheckFuture = null;
-                                              _sessionCheckUid = null;
-                                              if (mounted) setState(() {});
-                                            },
-                                            onChangeEmail: () {
-                                              if (mounted) {
-                                                setState(
-                                                  () => _showRegister = true,
-                                                );
-                                              }
-                                            },
-                                          );
-                                        }
-
-                                        return ValueListenableBuilder<bool>(
-                                          valueListenable: _authService
-                                              .accountDeletionInProgress,
-                                          builder: (context, deletingAccount, _) {
-                                            if (deletingAccount) {
+                                        return StreamBuilder<
+                                          DocumentSnapshot<Map<String, dynamic>>
+                                        >(
+                                          stream: FirebaseFirestore.instance
+                                              .collection(
+                                                UserProfileContract
+                                                    .usersCollection,
+                                              )
+                                              .doc(user.uid)
+                                              .snapshots(),
+                                          builder: (context, profileSnapshot) {
+                                            if (profileSnapshot
+                                                    .connectionState ==
+                                                ConnectionState.waiting) {
                                               return _buildLoading();
                                             }
 
-                                            return StreamBuilder<
-                                              DocumentSnapshot<
-                                                Map<String, dynamic>
-                                              >
-                                            >(
-                                              stream: FirebaseFirestore.instance
-                                                  .collection(
+                                            final data = profileSnapshot.data
+                                                ?.data();
+                                            final storedLanguage =
+                                                (data?[UserProfileContract
+                                                            .language]
+                                                        as String?)
+                                                    ?.trim();
+                                            _syncProfileLanguage(
+                                              storedLanguage,
+                                            );
+                                            final accountStatus =
+                                                data?[UserProfileContract
+                                                        .accountStatus]
+                                                    as String?;
+                                            if (accountStatus ==
+                                                UserProfileContract
+                                                    .statusDeleted) {
+                                              _markDeletedAccountAndSignOut();
+                                              return _buildLoading();
+                                            }
+
+                                            if (accountStatus ==
                                                     UserProfileContract
-                                                        .usersCollection,
-                                                  )
-                                                  .doc(user.uid)
-                                                  .snapshots(),
-                                              builder: (context, profileSnapshot) {
-                                                if (profileSnapshot
-                                                        .connectionState ==
-                                                    ConnectionState.waiting) {
-                                                  return _buildLoading();
-                                                }
+                                                        .statusPendingEmailVerification &&
+                                                verifiedUser.emailVerified) {
+                                              Future<void>.microtask(
+                                                _authService
+                                                    .markCurrentUserEmailVerified,
+                                              );
+                                              return _buildLoading();
+                                            }
 
-                                                final data = profileSnapshot
-                                                    .data
-                                                    ?.data();
-                                                final storedLanguage =
-                                                    (data?[UserProfileContract
-                                                                .language]
-                                                            as String?)
-                                                        ?.trim();
-                                                _syncProfileLanguage(
-                                                  storedLanguage,
-                                                );
-                                                final accountStatus =
-                                                    data?[UserProfileContract
-                                                            .accountStatus]
-                                                        as String?;
-                                                if (accountStatus ==
-                                                    UserProfileContract
-                                                        .statusDeleted) {
-                                                  _markDeletedAccountAndSignOut();
-                                                  return _buildLoading();
-                                                }
-
-                                                if (accountStatus ==
-                                                        UserProfileContract
-                                                            .statusPendingEmailVerification &&
-                                                    verifiedUser
-                                                        .emailVerified) {
-                                                  Future<void>.microtask(
-                                                    _authService
-                                                        .markCurrentUserEmailVerified,
-                                                  );
-                                                  return _buildLoading();
-                                                }
-
-                                                if (accountStatus ==
-                                                    UserProfileContract
-                                                        .statusPendingEmailVerification) {
-                                                  return VerifyEmailPage(
-                                                    authService: _authService,
-                                                    user: verifiedUser,
-                                                    onVerified: () {
-                                                      _sessionCheckFuture =
-                                                          null;
-                                                      _sessionCheckUid = null;
-                                                      if (mounted) {
-                                                        setState(() {});
-                                                      }
-                                                    },
-                                                    onChangeEmail: () {
-                                                      if (mounted) {
-                                                        setState(
-                                                          () => _showRegister =
-                                                              true,
-                                                        );
-                                                      }
-                                                    },
-                                                  );
-                                                }
-
-                                                final profileName =
-                                                    UserProfileContract.normalizeName(
-                                                      ((data?[UserProfileContract
-                                                                      .displayName]
-                                                                  as String?) ??
-                                                              (data?[UserProfileContract
-                                                                      .name]
-                                                                  as String?) ??
-                                                              '')
-                                                          .trim(),
+                                            if (accountStatus ==
+                                                UserProfileContract
+                                                    .statusPendingEmailVerification) {
+                                              return VerifyEmailPage(
+                                                authService: _authService,
+                                                user: verifiedUser,
+                                                onVerified: () {
+                                                  _sessionCheckFuture = null;
+                                                  _sessionCheckUid = null;
+                                                  if (mounted) setState(() {});
+                                                },
+                                                onChangeEmail: () {
+                                                  if (mounted) {
+                                                    setState(
+                                                      () =>
+                                                          _showRegister = true,
                                                     );
-                                                final hasRequiredName =
-                                                    profileName.isNotEmpty;
-                                                final hasRequiredBirthDate =
-                                                    ((data?[UserProfileContract
-                                                                    .birthDate]
-                                                                as String?) ??
-                                                            '')
-                                                        .trim()
-                                                        .isNotEmpty;
-                                                final isProfileComplete =
-                                                    hasRequiredName &&
-                                                    hasRequiredBirthDate &&
-                                                    (data?[UserProfileContract
-                                                                .isProfileComplete] ==
-                                                            true ||
-                                                        data?[UserProfileContract
-                                                                .onboardingCompleted] ==
-                                                            true ||
-                                                        accountStatus ==
-                                                            UserProfileContract
-                                                                .statusActive);
+                                                  }
+                                                },
+                                              );
+                                            }
 
-                                                if (!isProfileComplete) {
-                                                  return OnboardingPage(
-                                                    key: ValueKey(
-                                                      'onboarding_${user.uid}',
-                                                    ),
-                                                    authService: _authService,
-                                                    uid: user.uid,
-                                                  );
-                                                }
-
-                                                return HomePage(
-                                                  key: HomePage.rootKey,
-                                                  authService: _authService,
-                                                  uid: user.uid,
+                                            final profileName =
+                                                UserProfileContract.normalizeName(
+                                                  ((data?[UserProfileContract
+                                                                  .displayName]
+                                                              as String?) ??
+                                                          (data?[UserProfileContract
+                                                                  .name]
+                                                              as String?) ??
+                                                          '')
+                                                      .trim(),
                                                 );
-                                              },
+                                            final hasRequiredName =
+                                                profileName.isNotEmpty;
+                                            final hasRequiredBirthDate =
+                                                ((data?[UserProfileContract
+                                                                .birthDate]
+                                                            as String?) ??
+                                                        '')
+                                                    .trim()
+                                                    .isNotEmpty;
+                                            final hasCompletionFlag =
+                                                data?[UserProfileContract
+                                                        .isProfileComplete] ==
+                                                    true ||
+                                                data?[UserProfileContract
+                                                        .onboardingCompleted] ==
+                                                    true ||
+                                                accountStatus ==
+                                                    UserProfileContract
+                                                        .statusActive;
+                                            final isProfileComplete =
+                                                hasCompletionFlag ||
+                                                (hasRequiredName &&
+                                                    hasRequiredBirthDate);
+
+                                            if (!isProfileComplete) {
+                                              debugPrint(
+                                                '[auth-gate] incomplete profile '
+                                                'uid=${user.uid} '
+                                                'hasName=$hasRequiredName '
+                                                'hasBirthDate=$hasRequiredBirthDate '
+                                                'accountStatus=$accountStatus',
+                                              );
+                                              return _buildOnboardingEntry();
+                                            }
+
+                                            return HomePage(
+                                              key: HomePage.rootKey,
+                                              authService: _authService,
+                                              uid: user.uid,
                                             );
                                           },
                                         );
                                       },
                                     );
                                   },
-                                ),
+                                );
+                              },
+                            ),
                             if (registrationPortalActive)
                               const RegistrationPortalTransitionOverlay(),
                           ],

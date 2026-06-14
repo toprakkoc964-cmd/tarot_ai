@@ -122,12 +122,12 @@ class LocalizationService {
         'AI readings are for entertainment and personal reflection; they are not certain predictions.',
     'auth.forgot_password.title': 'Reset Your Password',
     'auth.forgot_password.description':
-        'Enter your email. If the account is eligible, we will send a password reset link.',
+        'Enter your email. If it can use password sign-in, we will send a reset link. If you joined with Apple or Google, continue with that method.',
     'auth.forgot_password.email_hint': 'your@email.com',
     'auth.forgot_password.send': 'SEND RESET LINK',
     'auth.forgot_password.sending': 'SENDING...',
     'auth.forgot_password.success':
-        'If the email is eligible, a password reset link has been sent.',
+        'If this email can use password sign-in, a reset link has been sent. If you joined with Apple or Google, continue with that method.',
     'auth.forgot_password.error':
         'The link could not be sent. Please try again.',
     'auth.forgot_password.cancel': 'Cancel',
@@ -305,6 +305,13 @@ class LocalizationService {
     'onboarding.coffee.title_sealed': 'Your cup is ready',
     'onboarding.coffee.subtitle_sealed':
         'Madam Aris keeps your cup closed for now.',
+    'onboarding.coffee.hold_button': 'HOLD INTENTION',
+    'onboarding.coffee.release_hint':
+        'The cup is not empty yet — keep holding your intention.',
+    'onboarding.coffee.bridge_title':
+        'Complete a few steps to see your reading',
+    'onboarding.coffee.bridge_subtitle':
+        'Madam Aris needs to know you a little before reading your cup.',
     'onboarding.coffee.cta_drink': 'INTEND & DRINK',
     'onboarding.coffee.cta_flip': 'CLOSE THE CUP',
     'onboarding.coffee.cta_wait': 'SHAPES ARE FORMING...',
@@ -378,6 +385,7 @@ class LocalizationService {
     'onboarding.account.guest': 'Continue as guest',
     'onboarding.account.email_register': 'Sign up with email',
     'onboarding.account.login': 'Already have an account? Log in',
+    'onboarding.account.auth_failed': 'Giriş yapılamadı, lütfen tekrar dene.',
     'onboarding.hero_title': 'COSMIC\nPROFILE',
     'onboarding.hero_subtitle':
         'These details are collected once so the cards can know you better.',
@@ -700,6 +708,27 @@ class LocalizationService {
     'profile.email.save_error': 'Email could not be saved: {error}',
     'profile.email.edit_title': 'Update Email',
     'profile.email.edit_hint': 'Enter your new email address.',
+    'profile.guest.upgrade_value': 'Upgrade your profile',
+    'profile.guest.upgrade_title': 'Upgrade Your Profile',
+    'profile.guest.upgrade_subtitle':
+        'Keep your readings, credits, and cosmic profile safe.',
+    'profile.guest.upgrade_apple': 'Connect with Apple',
+    'profile.guest.upgrade_google': 'Connect with Google',
+    'profile.guest.upgrade_email': 'Connect with email',
+    'profile.guest.email_title': 'Upgrade with email',
+    'profile.guest.email_subtitle':
+        'Verify your email to make your guest profile permanent.',
+    'profile.guest.email_password_hint': 'Create password',
+    'profile.guest.email_confirm_hint': 'Repeat password',
+    'profile.guest.email_cta': 'Send Verification',
+    'profile.guest.upgrade_success': 'Your profile has been upgraded.',
+    'profile.guest.upgrade_email_sent': 'Verification link sent.',
+    'profile.guest.upgrade_error':
+        'Could not upgrade profile. Please try again.',
+    'profile.guest.password_short': 'Password must be at least 6 characters.',
+    'profile.guest.password_mismatch': 'Passwords do not match.',
+    'profile.guest.email_in_use':
+        'This email is already in use. Try signing in.',
     'profile.purchases.history': 'Purchase History',
     'profile.purchases.history_opening': 'Opening purchase history...',
     'profile.purchases.manage_subscription': 'Manage Subscription',
@@ -1018,12 +1047,12 @@ class LocalizationService {
         'AI yorumları eğlence ve kişisel farkındalık amaçlıdır; kesin gelecek tahmini değildir.',
     'auth.forgot_password.title': 'Şifreni Sıfırla',
     'auth.forgot_password.description':
-        'E-posta adresini gir. Hesabın uygunsa şifre yenileme bağlantısını göndereceğiz.',
+        'E-posta adresini gir. Bu e-posta şifreli girişe uygunsa yenileme bağlantısı göndereceğiz. Apple veya Google ile katıldıysan aynı yöntemle devam et.',
     'auth.forgot_password.email_hint': 'senin@adresin.com',
     'auth.forgot_password.send': 'YENİLEME BAĞLANTISI GÖNDER',
     'auth.forgot_password.sending': 'GÖNDERİLİYOR...',
     'auth.forgot_password.success':
-        'E-posta adresi uygunsa şifre yenileme bağlantısı gönderildi.',
+        'Bu e-posta şifreli girişe uygunsa yenileme bağlantısı gönderildi. Apple veya Google ile katıldıysan aynı yöntemle devam et.',
     'auth.forgot_password.error': 'Bağlantı gönderilemedi. Lütfen tekrar dene.',
     'auth.forgot_password.cancel': 'Vazgeç',
     'toast.error_title': 'Bir sorun oluştu',
@@ -1199,6 +1228,13 @@ class LocalizationService {
     'onboarding.coffee.title_sealed': 'Fincanın hazır',
     'onboarding.coffee.subtitle_sealed':
         'Madam Aris fincanını şimdilik kapalı tutuyor.',
+    'onboarding.coffee.hold_button': 'NİYET TUT',
+    'onboarding.coffee.release_hint':
+        'Fincan henüz boşalmadı — niyetini tutmaya devam et.',
+    'onboarding.coffee.bridge_title':
+        'Yorumunu görmek için birkaç adımı tamamla',
+    'onboarding.coffee.bridge_subtitle':
+        'Madam Aris fincanını okuyabilmek için önce seni biraz tanımalı.',
     'onboarding.coffee.cta_drink': 'NİYET TUT & İÇ',
     'onboarding.coffee.cta_flip': 'FİNCANI KAPAT',
     'onboarding.coffee.cta_wait': 'ŞEKİLLER OLUŞUYOR...',
@@ -1272,6 +1308,7 @@ class LocalizationService {
     'onboarding.account.guest': 'Misafir olarak devam et',
     'onboarding.account.email_register': 'E-posta ile kayıt ol',
     'onboarding.account.login': 'Zaten hesabın var mı? Giriş yap',
+    'onboarding.account.auth_failed': 'Giriş yapılamadı, lütfen tekrar dene.',
     'onboarding.hero_title': 'KOZMIK\nPROFIL',
     'onboarding.hero_subtitle':
         'Bu bilgiler yalnizca bir kez alinir. Kartlar seni daha iyi tanisin.',
@@ -1594,6 +1631,26 @@ class LocalizationService {
     'profile.email.save_error': 'E-posta kaydedilemedi: {error}',
     'profile.email.edit_title': 'E-posta Guncelle',
     'profile.email.edit_hint': 'Yeni e-posta adresini gir.',
+    'profile.guest.upgrade_value': 'Profilini yukselt',
+    'profile.guest.upgrade_title': 'Profilini Yukselt',
+    'profile.guest.upgrade_subtitle':
+        'Fal gecmisin, jetonlarin ve kozmik profilin kaybolmasin.',
+    'profile.guest.upgrade_apple': 'Apple ile bagla',
+    'profile.guest.upgrade_google': 'Google ile bagla',
+    'profile.guest.upgrade_email': 'E-posta ile bagla',
+    'profile.guest.email_title': 'E-posta ile yukselt',
+    'profile.guest.email_subtitle':
+        'E-postani dogrulayarak misafir profilini kalici hale getir.',
+    'profile.guest.email_password_hint': 'Sifre olustur',
+    'profile.guest.email_confirm_hint': 'Sifreyi tekrar gir',
+    'profile.guest.email_cta': 'Dogrulama Gonder',
+    'profile.guest.upgrade_success': 'Profilin yukseltildi.',
+    'profile.guest.upgrade_email_sent': 'Dogrulama baglantisi gonderildi.',
+    'profile.guest.upgrade_error': 'Profil yukseltilemedi. Lutfen tekrar dene.',
+    'profile.guest.password_short': 'Sifre en az 6 karakter olmali.',
+    'profile.guest.password_mismatch': 'Sifreler eslesmiyor.',
+    'profile.guest.email_in_use':
+        'Bu e-posta zaten kullaniliyor. Giris yapmayi dene.',
     'profile.purchases.history': 'Satin Alim Gecmisi',
     'profile.purchases.history_opening': 'Satin alim gecmisi aciliyor...',
     'profile.purchases.manage_subscription': 'Aboneligi Yonet',

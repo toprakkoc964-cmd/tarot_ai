@@ -1,5 +1,6 @@
 import { BatchResponse, getMessaging } from 'firebase-admin/messaging';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { createHash } from 'node:crypto';
+import { FieldPath, FieldValue, getFirestore } from 'firebase-admin/firestore';
 
 function db() {
   return getFirestore();
@@ -7,6 +8,97 @@ function db() {
 
 function messaging() {
   return getMessaging();
+}
+
+function tokenOwnerId(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function tokenOwnerRef(token: string) {
+  return db().collection('fcm_token_owners').doc(tokenOwnerId(token));
+}
+
+async function removeTokenFromUid(uid: string, token: string): Promise<void> {
+  const userRef = db().collection('users').doc(uid);
+  await Promise.all([
+    userRef
+      .set({ fcmTokens: FieldValue.arrayRemove(token) }, { merge: true })
+      .catch(() => {}),
+    userRef.collection('fcm_tokens').doc(token).delete().catch(() => {}),
+  ]);
+}
+
+async function removeTokenFromOtherUsers(token: string, ownerUid: string): Promise<void> {
+  const inlineSnap = await db()
+    .collection('users')
+    .where('fcmTokens', 'array-contains', token)
+    .get();
+
+  await Promise.all(
+    inlineSnap.docs
+      .filter((doc) => doc.id !== ownerUid)
+      .map((doc) => removeTokenFromUid(doc.id, token))
+  );
+
+  try {
+    const subcollectionSnap = await db()
+      .collectionGroup('fcm_tokens')
+      .where(FieldPath.documentId(), '==', token)
+      .get();
+
+    await Promise.all(
+      subcollectionSnap.docs.map(async (doc) => {
+        const userRef = doc.ref.parent.parent;
+        const uid = userRef?.id;
+        if (!uid || uid === ownerUid) return;
+        await removeTokenFromUid(uid, token);
+      })
+    );
+  } catch {
+    // Some legacy token ids can be awkward for collectionGroup document-id
+    // queries. The inline-token cleanup and owner mapping still protect future
+    // sends, so do not fail registration.
+  }
+}
+
+export async function registerFcmTokenForUid(uid: string, token: string): Promise<void> {
+  await removeTokenFromOtherUsers(token, uid);
+  const userRef = db().collection('users').doc(uid);
+  await Promise.all([
+    userRef.set(
+      {
+        fcmTokens: FieldValue.arrayUnion(token),
+        fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ),
+    userRef.collection('fcm_tokens').doc(token).set(
+      {
+        uid,
+        token,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ),
+    tokenOwnerRef(token).set(
+      {
+        uid,
+        tokenHash: tokenOwnerId(token),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ),
+  ]);
+}
+
+export async function unregisterFcmTokenForUid(uid: string, token: string): Promise<void> {
+  await removeTokenFromUid(uid, token);
+  const ownerRef = tokenOwnerRef(token);
+  const ownerSnap = await ownerRef.get();
+  if (ownerSnap.get('uid') === uid) {
+    await ownerRef.delete().catch(() => {});
+  }
 }
 
 export type NotificationSendResult = {
@@ -64,6 +156,22 @@ async function pruneInvalidTokens(
   );
 }
 
+async function filterTokensOwnedByUid(uid: string, tokens: string[]): Promise<string[]> {
+  const result: string[] = [];
+  await Promise.all(
+    tokens.map(async (token) => {
+      const ownerSnap = await tokenOwnerRef(token).get().catch(() => null);
+      const ownerUid = ownerSnap?.get('uid');
+      if (ownerUid && ownerUid !== uid) {
+        await removeTokenFromUid(uid, token);
+        return;
+      }
+      result.push(token);
+    })
+  );
+  return result;
+}
+
 export async function getUserFcmTokens(uid: string): Promise<string[]> {
   const userRef = db().collection('users').doc(uid);
   const [userSnap, tokensSnap] = await Promise.all([
@@ -81,7 +189,8 @@ export async function getUserFcmTokens(uid: string): Promise<string[]> {
     .map((doc) => doc.id)
     .filter((token) => token.length > 8);
 
-  return [...new Set([...inlineTokens, ...subcollectionTokens])];
+  const uniqueTokens = [...new Set([...inlineTokens, ...subcollectionTokens])];
+  return filterTokensOwnedByUid(uid, uniqueTokens);
 }
 
 export async function sendAudioReadyNotification(input: {

@@ -13,7 +13,8 @@ abstract final class GoogleAuthConfig {
   );
 
   /// Paste your Firebase Web client ID here if you are not using dart-define.
-  static const String _defaultWebClientId = '';
+  static const String _defaultWebClientId =
+      '880569553052-v2gl92gv2ejl25nasacvt8r6jj2fsb4r.apps.googleusercontent.com';
 
   static bool get hasWebClientId => webClientId.trim().isNotEmpty;
 }

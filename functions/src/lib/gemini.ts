@@ -6,6 +6,16 @@ import { logger } from 'firebase-functions';
 
 let client: GoogleGenerativeAI | null = null;
 
+const languageNames: Record<string, string> = {
+  tr: 'Turkish (Türkçe)',
+  en: 'English',
+  de: 'German (Deutsch)',
+  es: 'Spanish (Español)',
+  fr: 'French (Français)',
+  it: 'Italian (Italiano)',
+  pt: 'Portuguese (Português)'
+};
+
 function getClient(): GoogleGenerativeAI {
   if (client) return client;
 
@@ -18,11 +28,36 @@ function getClient(): GoogleGenerativeAI {
   return client;
 }
 
+function normalizeLanguageCode(lang?: string): string {
+  const normalized = (lang ?? 'tr').trim().toLowerCase().split(/[-_]/)[0];
+  return languageNames[normalized] ? normalized : 'tr';
+}
+
+export function geminiLanguageName(lang?: string): string {
+  return languageNames[normalizeLanguageCode(lang)];
+}
+
+export function strictLanguageInstruction(
+  lang?: string,
+  options: { oneParagraph?: boolean; short?: boolean } = {}
+): string {
+  const languageName = geminiLanguageName(lang);
+  return [
+    `Write all user-facing text ONLY in ${languageName}.`,
+    'Do not add any other language, translation, bilingual block, or parenthetical equivalent.',
+    options.oneParagraph ? 'Use one paragraph only.' : '',
+    options.short
+      ? 'Prefer 2-3 short clear sentences; avoid repetition; keep the tone mystical but understandable.'
+      : ''
+  ].filter(Boolean).join(' ');
+}
+
 export async function createReadingText(input: {
   systemPrompt: string;
   userPrompt: string;
   maxOutputTokens?: number;
   modelName?: string;
+  lang?: string;
 }): Promise<string> {
   try {
     const modelName =
@@ -31,12 +66,19 @@ export async function createReadingText(input: {
       process.env.GEMINI_MODEL ??
       'gemini-2.5-flash-lite';
     logger.info('gemini_model_resolved', { fn: 'text', modelName });
+    const systemInstruction = input.lang
+      ? [
+        input.systemPrompt,
+        strictLanguageInstruction(input.lang, { oneParagraph: true, short: true })
+      ].join('\n\n')
+      : input.systemPrompt;
     const model = getClient().getGenerativeModel({
       model: modelName,
-      systemInstruction: input.systemPrompt,
-      generationConfig: input.maxOutputTokens
-        ? { maxOutputTokens: input.maxOutputTokens }
-        : undefined,
+      systemInstruction,
+      generationConfig: {
+        temperature: 0.25,
+        ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {})
+      },
     });
 
     const result = await model.generateContent(input.userPrompt);

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/google_auth_config.dart';
+import '../../core/notification_service.dart' as fcm_notifications;
 import 'user_profile_contract.dart';
 
 class VerificationResendLimitException implements Exception {
@@ -38,6 +39,8 @@ class AuthService {
   final ValueNotifier<bool> forceLoginAfterAccountDeletion = ValueNotifier(
     false,
   );
+  final ValueNotifier<String?> redirectIntent = ValueNotifier(null);
+  final ValueNotifier<bool> redirectIntentHydrated = ValueNotifier(false);
   final ValueNotifier<bool> registrationPortalActive = ValueNotifier(false);
   final ValueNotifier<bool> registrationRedirectSuppressed = ValueNotifier(
     false,
@@ -49,6 +52,8 @@ class AuthService {
   static const int verificationResendCooldownSeconds = 60;
   static const int verificationMaxResendPerWindow = 5;
   static const Duration verificationResendWindow = Duration(hours: 24);
+  static const String redirectIntentLogin = 'login';
+  static const String _redirectIntentKey = 'auth_redirect_intent';
   static const String _postDeletionRedirectKey =
       'auth.post_deletion_redirect_to_login';
 
@@ -65,10 +70,14 @@ class AuthService {
 
   Stream<User?> authChanges() => _auth.authStateChanges();
 
-  Future<void> signInAnonymously() async {
+  Future<void> signInAnonymously({bool replaceCurrentUser = false}) async {
     final currentUser = _auth.currentUser;
     if (currentUser != null) {
-      return;
+      if (!replaceCurrentUser || currentUser.isAnonymous) {
+        return;
+      }
+      await clearAuthRedirectIntent();
+      await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
     }
     await _auth.signInAnonymously();
   }
@@ -82,6 +91,14 @@ class AuthService {
         if (error.code == 'credential-already-in-use' ||
             error.code == 'email-already-in-use' ||
             error.code == 'provider-already-linked') {
+          if (kDebugMode) {
+            debugPrint(
+              'Social credential belongs to an existing account; '
+              'signing out anonymous user before direct sign-in. '
+              'code=${error.code}',
+            );
+          }
+          await _auth.signOut();
           return _auth.signInWithCredential(credential);
         }
         rethrow;
@@ -92,6 +109,7 @@ class AuthService {
 
   Future<void> signIn({required String email, required String password}) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
+    await clearAuthRedirectIntent();
   }
 
   Future<UserCredential> register({
@@ -102,6 +120,7 @@ class AuthService {
       email: email,
       password: password,
     );
+    await clearAuthRedirectIntent();
     await credential.user?.sendEmailVerification();
     return credential;
   }
@@ -111,6 +130,8 @@ class AuthService {
     accountDeletionInProgress.dispose();
     socialProfileSyncInProgress.dispose();
     forceLoginAfterAccountDeletion.dispose();
+    redirectIntent.dispose();
+    redirectIntentHydrated.dispose();
     registrationPortalActive.dispose();
     registrationRedirectSuppressed.dispose();
     registrationCompletedOnboardingUid.dispose();
@@ -120,34 +141,26 @@ class AuthService {
     await _auth.sendPasswordResetEmail(email: email);
   }
 
-  Future<void> signOut() async {
+  Future<void> signOut({bool redirectToLogin = true}) async {
     registrationCompletedOnboardingUid.value = null;
     registrationRedirectSuppressed.value = false;
     registrationPortalActive.value = false;
+    if (redirectToLogin) {
+      await setAuthRedirectIntentLogin();
+    } else {
+      await clearAuthRedirectIntent();
+    }
+    await fcm_notifications.NotificationService.instance
+        .detachTokenForCurrentUser();
     await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 
   Future<void> markPostDeletionRedirectPending() async {
     if (!_disposed) {
-      forceLoginAfterAccountDeletion.value = true;
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_postDeletionRedirectKey, true);
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('Post deletion redirect marker could not be saved: $error');
-      }
-    }
-  }
-
-  Future<void> clearPostDeletionRedirect() async {
-    if (!_disposed) {
       forceLoginAfterAccountDeletion.value = false;
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_postDeletionRedirectKey);
+      await clearAuthRedirectIntent();
     } catch (error) {
       if (kDebugMode) {
         debugPrint(
@@ -157,16 +170,65 @@ class AuthService {
     }
   }
 
+  Future<void> clearPostDeletionRedirect() async {
+    if (!_disposed) {
+      forceLoginAfterAccountDeletion.value = false;
+    }
+    await clearAuthRedirectIntent();
+  }
+
+  Future<void> setAuthRedirectIntentLogin() async {
+    if (!_disposed) {
+      redirectIntent.value = redirectIntentLogin;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_redirectIntentKey, redirectIntentLogin);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Auth redirect intent could not be saved: $error');
+      }
+    }
+  }
+
+  Future<void> clearAuthRedirectIntent() async {
+    if (!_disposed) {
+      redirectIntent.value = null;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_redirectIntentKey);
+      await prefs.remove(_postDeletionRedirectKey);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Auth redirect intent could not be cleared: $error');
+      }
+    }
+  }
+
   Future<void> _hydratePostDeletionRedirect() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final shouldForceLogin = prefs.getBool(_postDeletionRedirectKey) ?? false;
-      if (!_disposed && shouldForceLogin) {
-        forceLoginAfterAccountDeletion.value = true;
+      final intent = prefs.getString(_redirectIntentKey);
+      final legacyShouldForceLogin =
+          prefs.getBool(_postDeletionRedirectKey) ?? false;
+      if (!_disposed) {
+        redirectIntent.value =
+            !legacyShouldForceLogin && intent == redirectIntentLogin
+            ? redirectIntentLogin
+            : null;
+        forceLoginAfterAccountDeletion.value = false;
+      }
+      if (legacyShouldForceLogin) {
+        await clearAuthRedirectIntent();
       }
     } catch (error) {
       if (kDebugMode) {
-        debugPrint('Post deletion redirect marker could not be read: $error');
+        debugPrint('Auth redirect intent could not be read: $error');
+      }
+    } finally {
+      if (!_disposed) {
+        redirectIntentHydrated.value = true;
       }
     }
   }
@@ -198,6 +260,7 @@ class AuthService {
       );
 
       final result = await _auth.signInWithCredential(credential);
+      await clearAuthRedirectIntent();
       final user = result.user;
       final normalizedName = UserProfileContract.normalizeName(
         user?.displayName ?? '',
@@ -253,6 +316,7 @@ class AuthService {
         idToken: idToken,
       );
       final result = await linkWithCredential(credential);
+      await clearAuthRedirectIntent();
       final user = result.user;
       final normalizedName = UserProfileContract.normalizeName(
         user?.displayName ?? '',
@@ -368,6 +432,7 @@ class AuthService {
         '🍎 APPLE_SIGNIN_OK uid=${user?.uid} '
         'isNew=${result.additionalUserInfo?.isNewUser}',
       );
+      await clearAuthRedirectIntent();
       if (user != null) {
         await _registerAppleAuthorization(appleCredential.authorizationCode);
         final appleName = UserProfileContract.normalizeName(
@@ -438,7 +503,24 @@ class AuthService {
         rawNonce: rawNonce,
         accessToken: appleCredential.authorizationCode,
       );
-      final result = await linkWithCredential(oauth);
+
+      UserCredential result;
+      try {
+        result = await linkWithCredential(oauth);
+      } on FirebaseAuthException catch (e) {
+        debugPrint(
+          '🍎 APPLE_LINK_OR_SIGNIN_FAILED code=${e.code} msg=${e.message}',
+        );
+        rethrow;
+      } catch (e) {
+        debugPrint('🍎 APPLE_LINK_OR_SIGNIN_FAILED_OTHER: $e');
+        rethrow;
+      }
+      debugPrint(
+        '🍎 APPLE_LINK_OR_SIGNIN_OK uid=${result.user?.uid} '
+        'isNew=${result.additionalUserInfo?.isNewUser}',
+      );
+      await clearAuthRedirectIntent();
       final user = result.user;
       if (user != null) {
         await _registerAppleAuthorization(appleCredential.authorizationCode);
@@ -552,6 +634,8 @@ class AuthService {
   }
 
   Future<void> deleteCurrentUserCompletely() async {
+    await fcm_notifications.NotificationService.instance
+        .detachTokenForCurrentUser();
     final callable = FirebaseFunctions.instanceFor(
       region: 'us-central1',
     ).httpsCallable('deleteCurrentUserCompletely');

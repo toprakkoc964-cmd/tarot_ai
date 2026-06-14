@@ -1,5 +1,6 @@
 import { zodiacFromBirthDate } from './zodiac';
 import { AIPersonaDoc, UserProfile } from './types';
+import { strictLanguageInstruction } from './gemini';
 
 export function buildSystemPrompt(
   profile: UserProfile,
@@ -14,7 +15,7 @@ export function buildSystemPrompt(
     `Persona: ${persona.name}, tone=${persona.tone ?? 'balanced'}, version=${persona.version}.`,
     `User context: zodiac=${zodiac}, occupation=${profile.occupation}, name=${profile.name}.`,
     `Reading intent: ${intent}.`,
-    `Response language must be strictly: ${lang}.`,
+    strictLanguageInstruction(lang, { oneParagraph: true, short: true }),
     'Use compassionate tone and concrete advice tailored to profession and intent.',
     'Keep output concise, empowering, and avoid deterministic future claims.'
   ].join(' ');

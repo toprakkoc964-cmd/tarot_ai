@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -11,6 +12,7 @@ import '../../core/localization_service.dart';
 import '../../core/notification_service.dart' as fcm_notifications;
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import '../auth/verify_email_page.dart';
 import '../auth/widgets/mystic_toast.dart';
 import '../settings/notification_settings_page.dart';
 import 'cosmic_personalization_screen.dart';
@@ -50,6 +52,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String _email = 'ornek@email.com';
   String _languageCode = AppLocale.current;
   bool _profileLoading = true;
+  bool _isGuestProfile = false;
+  bool _upgradeInProgress = false;
 
   DocumentReference<Map<String, dynamic>> get _userDocRef => FirebaseFirestore
       .instance
@@ -88,18 +92,21 @@ class _ProfilePageState extends State<ProfilePage> {
       );
       final storedEmail =
           (data[UserProfileContract.email] as String?)?.trim() ?? '';
+      final authUser = FirebaseAuth.instance.currentUser;
+      final storedIsGuest = data[UserProfileContract.isGuest] == true;
       final storedBirthDate = _parseStoredBirthDate(
         data[UserProfileContract.birthDate] as String?,
       );
       final notificationPrefs =
           data[UserProfileContract.notificationPrefs] as Map<String, dynamic>?;
       final storedNotificationsEnabled = notificationPrefs?['enabled'] as bool?;
-      final storedLanguage =
-          (data[UserProfileContract.language] as String?)?.trim();
+      final storedLanguage = (data[UserProfileContract.language] as String?)
+          ?.trim();
 
       setState(() {
         if (storedName.isNotEmpty) _name = storedName;
         if (storedEmail.isNotEmpty) _email = storedEmail;
+        _isGuestProfile = authUser?.isAnonymous == true || storedIsGuest;
         if (storedBirthDate != null) _birthDate = storedBirthDate;
         if (storedNotificationsEnabled != null) {
           _notificationsEnabled = storedNotificationsEnabled;
@@ -120,6 +127,217 @@ class _ProfilePageState extends State<ProfilePage> {
       ...fields,
       UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  DocumentReference<Map<String, dynamic>> _docRefForUid(String uid) =>
+      FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(uid);
+
+  bool _isSocialCancel(Object error) {
+    if (error is! FirebaseAuthException) return false;
+    final code = error.code.toLowerCase();
+    return code == 'social-auth-cancelled' ||
+        code == 'canceled' ||
+        code == 'cancelled' ||
+        code == 'user-cancelled' ||
+        code == 'sign_in_canceled';
+  }
+
+  Future<void> _markCurrentUserLinked({
+    required String provider,
+    required List<String> providers,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final email = (user.email ?? '').trim();
+    final displayName = UserProfileContract.normalizeName(
+      user.displayName ?? '',
+    );
+    await _docRefForUid(user.uid).set({
+      UserProfileContract.uid: user.uid,
+      if (email.isNotEmpty) UserProfileContract.email: email,
+      if (displayName.isNotEmpty) UserProfileContract.name: displayName,
+      UserProfileContract.provider: provider,
+      UserProfileContract.providers: providers,
+      UserProfileContract.providerVerified: true,
+      UserProfileContract.emailVerified: true,
+      UserProfileContract.isGuest: false,
+      UserProfileContract.accountStatus: UserProfileContract.statusActive,
+      UserProfileContract.cleanupEligible: false,
+      UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _showGuestUpgradeSheet() async {
+    if (_upgradeInProgress) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _GuestUpgradeSheet(
+        isLoading: _upgradeInProgress,
+        onApple: () {
+          Navigator.of(sheetContext).pop();
+          _upgradeGuestWithApple();
+        },
+        onGoogle: () {
+          Navigator.of(sheetContext).pop();
+          _upgradeGuestWithGoogle();
+        },
+        onEmail: () {
+          Navigator.of(sheetContext).pop();
+          _showGuestEmailUpgradeSheet();
+        },
+      ),
+    );
+  }
+
+  Future<void> _upgradeGuestWithGoogle() async {
+    if (_upgradeInProgress) return;
+    setState(() => _upgradeInProgress = true);
+    try {
+      await widget.authService.linkOrSignInWithGoogle();
+      await _markCurrentUserLinked(
+        provider: 'google.com',
+        providers: const ['google.com'],
+      );
+      if (!mounted) return;
+      _showSnack(AppTexts.t('profile.guest.upgrade_success'));
+      await _loadProfileFromFirestore();
+    } catch (error) {
+      if (!mounted || _isSocialCancel(error)) return;
+      _showSnack(AppTexts.t('profile.guest.upgrade_error'));
+    } finally {
+      if (mounted) setState(() => _upgradeInProgress = false);
+    }
+  }
+
+  Future<void> _upgradeGuestWithApple() async {
+    if (_upgradeInProgress) return;
+    setState(() => _upgradeInProgress = true);
+    try {
+      await widget.authService.linkOrSignInWithApple();
+      await _markCurrentUserLinked(
+        provider: 'apple.com',
+        providers: const ['apple.com'],
+      );
+      if (!mounted) return;
+      _showSnack(AppTexts.t('profile.guest.upgrade_success'));
+      await _loadProfileFromFirestore();
+    } catch (error) {
+      if (!mounted || _isSocialCancel(error)) return;
+      _showSnack(AppTexts.t('profile.guest.upgrade_error'));
+    } finally {
+      if (mounted) setState(() => _upgradeInProgress = false);
+    }
+  }
+
+  Future<void> _showGuestEmailUpgradeSheet() async {
+    if (_upgradeInProgress) return;
+    final input = await showModalBottomSheet<_GuestEmailUpgradeInput>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _GuestEmailUpgradeSheet(),
+    );
+    if (!mounted || input == null) return;
+    await _upgradeGuestWithEmail(input);
+  }
+
+  Future<void> _upgradeGuestWithEmail(_GuestEmailUpgradeInput input) async {
+    if (_upgradeInProgress) return;
+    final email = input.email.trim();
+    final password = input.password;
+    final confirmPassword = input.confirmPassword;
+    if (email.isEmpty || !email.contains('@')) {
+      _showSnack(AppTexts.t('auth.register.invalid_email'));
+      return;
+    }
+    if (password.length < 6) {
+      _showSnack(AppTexts.t('profile.guest.password_short'));
+      return;
+    }
+    if (password != confirmPassword) {
+      _showSnack(AppTexts.t('profile.guest.password_mismatch'));
+      return;
+    }
+
+    setState(() => _upgradeInProgress = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || !user.isAnonymous) {
+        throw FirebaseAuthException(code: 'missing-guest-user');
+      }
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+      final result = await user.linkWithCredential(credential);
+      final linkedUser = result.user ?? FirebaseAuth.instance.currentUser;
+      if (linkedUser == null) {
+        throw FirebaseAuthException(code: 'missing-linked-user');
+      }
+      await linkedUser.sendEmailVerification();
+      await _docRefForUid(linkedUser.uid).set({
+        UserProfileContract.uid: linkedUser.uid,
+        UserProfileContract.email: email,
+        UserProfileContract.provider: 'password',
+        UserProfileContract.providers: const ['password'],
+        UserProfileContract.emailVerified: linkedUser.emailVerified,
+        UserProfileContract.providerVerified: false,
+        UserProfileContract.isGuest: false,
+        UserProfileContract.accountStatus:
+            UserProfileContract.statusPendingEmailVerification,
+        UserProfileContract.cleanupEligible: true,
+        UserProfileContract.verificationEmailSentAt:
+            FieldValue.serverTimestamp(),
+        UserProfileContract.verificationDeadlineAt: Timestamp.fromDate(
+          DateTime.now().add(
+            const Duration(hours: AuthService.verificationTtlHours),
+          ),
+        ),
+        UserProfileContract.verificationResendCount: 0,
+        UserProfileContract.verificationResendWindowStartedAt:
+            FieldValue.serverTimestamp(),
+        UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() {
+        _email = email;
+        _isGuestProfile = false;
+      });
+      _showSnack(AppTexts.t('profile.guest.upgrade_email_sent'));
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailPage(
+            authService: widget.authService,
+            user: linkedUser,
+            onVerified: () {
+              Navigator.of(context, rootNavigator: true).maybePop();
+              _loadProfileFromFirestore();
+            },
+            onChangeEmail: () {
+              Navigator.of(context, rootNavigator: true).maybePop();
+              _showGuestEmailUpgradeSheet();
+            },
+          ),
+        ),
+      );
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'email-already-in-use' ||
+          error.code == 'credential-already-in-use') {
+        _showSnack(AppTexts.t('profile.guest.email_in_use'));
+      } else {
+        _showSnack(AppTexts.t('profile.guest.upgrade_error'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(AppTexts.t('profile.guest.upgrade_error'));
+    } finally {
+      if (mounted) setState(() => _upgradeInProgress = false);
+    }
   }
 
   Future<void> _openNotificationSettings() async {
@@ -447,10 +665,9 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) return;
       setState(() => _languageCode = selected);
       _showSnack(
-        AppTexts.t('profile.language.updated').replaceAll(
-          '{language}',
-          AppLanguage.displayName(selected),
-        ),
+        AppTexts.t(
+          'profile.language.updated',
+        ).replaceAll('{language}', AppLanguage.displayName(selected)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -548,7 +765,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!mounted || confirm != true) return;
     Future<void> forceSignOut() async {
       try {
-        await widget.authService.signOut();
+        await widget.authService.signOut(redirectToLogin: false);
       } catch (_) {}
     }
 
@@ -613,8 +830,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 _ProfileInfoRow(
                   label: AppTexts.t('profile.field.email'),
-                  value: _email,
-                  onTap: _editEmailPage,
+                  value: _isGuestProfile
+                      ? AppTexts.t('profile.guest.upgrade_value')
+                      : _email,
+                  onTap: _isGuestProfile
+                      ? _showGuestUpgradeSheet
+                      : _editEmailPage,
                   isLast: true,
                 ),
               ],
@@ -674,8 +895,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 _ActionRow(
                   icon: Icons.history_rounded,
                   title: AppTexts.t('profile.purchases.history'),
-                  onTap: () =>
-                      _showSnack(AppTexts.t('profile.purchases.history_opening')),
+                  onTap: () => _showSnack(
+                    AppTexts.t('profile.purchases.history_opening'),
+                  ),
                 ),
                 _ActionRow(
                   icon: Icons.card_membership_rounded,
@@ -687,8 +909,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 _ActionRow(
                   icon: Icons.restore_rounded,
                   title: AppTexts.t('profile.purchases.restore'),
-                  onTap: () =>
-                      _showSnack(AppTexts.t('profile.purchases.restore_started')),
+                  onTap: () => _showSnack(
+                    AppTexts.t('profile.purchases.restore_started'),
+                  ),
                   isLast: true,
                 ),
               ],
@@ -1463,6 +1686,381 @@ class _ProfileInfoRow extends StatelessWidget {
         if (!isLast)
           Divider(color: _kOutlineVariant.withValues(alpha: 0.2), height: 1),
       ],
+    );
+  }
+}
+
+class _GuestEmailUpgradeInput {
+  const _GuestEmailUpgradeInput({
+    required this.email,
+    required this.password,
+    required this.confirmPassword,
+  });
+
+  final String email;
+  final String password;
+  final String confirmPassword;
+}
+
+class _GuestUpgradeSheet extends StatelessWidget {
+  const _GuestUpgradeSheet({
+    required this.isLoading,
+    required this.onApple,
+    required this.onGoogle,
+    required this.onEmail,
+  });
+
+  final bool isLoading;
+  final VoidCallback onApple;
+  final VoidCallback onGoogle;
+  final VoidCallback onEmail;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF26112E).withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: _kPrimary.withValues(alpha: 0.28),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kPrimary.withValues(alpha: 0.16),
+                    blurRadius: 34,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: _kSecondary.withValues(alpha: 0.28),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    AppTexts.t('profile.guest.upgrade_title'),
+                    style: GoogleFonts.newsreader(
+                      fontSize: 30,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                      color: _kOnSurface,
+                      shadows: [
+                        Shadow(
+                          color: _kPrimary.withValues(alpha: 0.22),
+                          blurRadius: 14,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppTexts.t('profile.guest.upgrade_subtitle'),
+                    style: GoogleFonts.manrope(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: _kOnSurface.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _GuestUpgradeAction(
+                    icon: Icons.apple_rounded,
+                    title: AppTexts.t('profile.guest.upgrade_apple'),
+                    onTap: isLoading ? null : onApple,
+                    isPrimary: true,
+                  ),
+                  const SizedBox(height: 10),
+                  _GuestUpgradeAction(
+                    icon: Icons.g_mobiledata_rounded,
+                    title: AppTexts.t('profile.guest.upgrade_google'),
+                    onTap: isLoading ? null : onGoogle,
+                  ),
+                  const SizedBox(height: 10),
+                  _GuestUpgradeAction(
+                    icon: Icons.alternate_email_rounded,
+                    title: AppTexts.t('profile.guest.upgrade_email'),
+                    onTap: isLoading ? null : onEmail,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuestUpgradeAction extends StatelessWidget {
+  const _GuestUpgradeAction({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.isPrimary = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final VoidCallback? onTap;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: isPrimary
+              ? const LinearGradient(colors: [_kPrimary, Color(0xFFFF00D4)])
+              : null,
+          color: isPrimary ? null : Colors.black.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: isPrimary
+                ? Colors.white.withValues(alpha: 0.14)
+                : _kSecondary.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: isPrimary ? const Color(0xFF430036) : _kTertiary),
+            const SizedBox(width: 14),
+            Text(
+              title,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: isPrimary ? const Color(0xFF430036) : _kOnSurface,
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: isPrimary
+                  ? const Color(0xFF430036).withValues(alpha: 0.7)
+                  : _kOutlineVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuestEmailUpgradeSheet extends StatefulWidget {
+  const _GuestEmailUpgradeSheet();
+
+  @override
+  State<_GuestEmailUpgradeSheet> createState() =>
+      _GuestEmailUpgradeSheetState();
+}
+
+class _GuestEmailUpgradeSheetState extends State<_GuestEmailUpgradeSheet> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  InputDecoration _decoration(String hint, {Widget? suffixIcon}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: GoogleFonts.manrope(
+        color: _kOnSurface.withValues(alpha: 0.38),
+      ),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.black.withValues(alpha: 0.24),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: _kSecondary.withValues(alpha: 0.18)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: _kSecondary.withValues(alpha: 0.18)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: _kPrimary, width: 1.2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF26112E).withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: _kPrimary.withValues(alpha: 0.25),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: _kSecondary.withValues(alpha: 0.28),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    AppTexts.t('profile.guest.email_title'),
+                    style: GoogleFonts.newsreader(
+                      fontSize: 28,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                      color: _kOnSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppTexts.t('profile.guest.email_subtitle'),
+                    style: GoogleFonts.manrope(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: _kOnSurface.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    style: GoogleFonts.manrope(color: _kOnSurface),
+                    decoration: _decoration('ornek@email.com'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.next,
+                    style: GoogleFonts.manrope(color: _kOnSurface),
+                    decoration: _decoration(
+                      AppTexts.t('profile.guest.email_password_hint'),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: _kSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _confirmController,
+                    obscureText: _obscureConfirm,
+                    textInputAction: TextInputAction.done,
+                    style: GoogleFonts.manrope(color: _kOnSurface),
+                    decoration: _decoration(
+                      AppTexts.t('profile.guest.email_confirm_hint'),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
+                        icon: Icon(
+                          _obscureConfirm
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: _kSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(
+                        _GuestEmailUpgradeInput(
+                          email: _emailController.text,
+                          password: _passwordController.text,
+                          confirmPassword: _confirmController.text,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _kPrimary,
+                        foregroundColor: const Color(0xFF430036),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                      ),
+                      child: Text(
+                        AppTexts.t('profile.guest.email_cta'),
+                        style: GoogleFonts.spaceGrotesk(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

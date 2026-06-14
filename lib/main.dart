@@ -1,5 +1,9 @@
 import 'dart:async';
 
+// Legacy private preview helpers are kept below for manual local debugging.
+// Runtime onboarding now uses OnboardingFlowEntry.
+// ignore_for_file: unused_element, unused_element_parameter
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -18,15 +22,13 @@ import 'src/features/auth/auth_service.dart';
 import 'src/features/auth/auth_gate_page.dart';
 import 'src/features/auth/onboarding_account_page.dart';
 import 'src/features/auth/onboarding_card_pick_page.dart';
-import 'src/features/auth/onboarding_coffee_ritual_page.dart';
 import 'src/features/auth/onboarding_focus_areas_page.dart';
+import 'src/features/auth/onboarding_flow_entry.dart';
 import 'src/features/auth/onboarding_name_birth_page.dart';
 import 'src/features/auth/onboarding_paywall_page.dart';
-import 'src/features/auth/onboarding_palm_scan_page.dart';
 import 'src/features/auth/onboarding_personalization_page.dart';
 import 'src/features/auth/onboarding_reveal_page.dart';
 import 'src/features/auth/onboarding_tarot_draw_page.dart' as tarot_draw;
-import 'src/features/auth/onboarding_welcome_page.dart';
 import 'src/features/readings/tarot_service.dart';
 import 'src/features/shop/services/purchase_service.dart';
 
@@ -145,11 +147,13 @@ Future<bool> _runBootstrapTaskWithTimeout(
     }
   }());
 
-  unawaited(Future<void>.delayed(timeout, () {
-    if (!completer.isCompleted) {
-      completer.complete(false);
-    }
-  }));
+  unawaited(
+    Future<void>.delayed(timeout, () {
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+    }),
+  );
 
   return completer.future;
 }
@@ -186,6 +190,9 @@ class TarotAiApp extends StatelessWidget {
                   backgroundColor: Color(0xFF17081C),
                   surfaceTintColor: Colors.transparent,
                 ),
+              ),
+              builder: (context, child) => _LifecyclePrivacyOverlay(
+                child: child ?? const SizedBox.shrink(),
               ),
               home: const AppBootstrapPage(),
             );
@@ -226,16 +233,125 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
           return FirebaseSetupRequiredPage(error: bootstrapError);
         }
 
-        if (_showOnboardingWelcomePreview) {
-          return OnboardingWelcomePage(
-            onStart: () {
-              unawaited(
-                AuthService().signInAnonymously().catchError((Object error) {
-                  debugPrint('Anonymous preview sign-in skipped: $error');
-                }),
-              );
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
+        if (kDebugMode && _showOnboardingWelcomePreview) {
+          return OnboardingFlowEntry(authService: AuthService());
+        }
+
+        return const AuthGatePage();
+      },
+    );
+  }
+}
+
+class _LifecyclePrivacyOverlay extends StatefulWidget {
+  const _LifecyclePrivacyOverlay({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_LifecyclePrivacyOverlay> createState() =>
+      _LifecyclePrivacyOverlayState();
+}
+
+class _LifecyclePrivacyOverlayState extends State<_LifecyclePrivacyOverlay>
+    with WidgetsBindingObserver {
+  bool _isCovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final shouldCover =
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden;
+    if (shouldCover == _isCovered || !mounted) return;
+    setState(() => _isCovered = shouldCover);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (_isCovered)
+          const ColoredBox(color: Color(0xFF17081C), child: SizedBox.expand()),
+      ],
+    );
+  }
+}
+
+class _OnboardingModalityPlaceholderPage extends StatelessWidget {
+  const _OnboardingModalityPlaceholderPage({required this.modality});
+
+  final OnboardingModality modality;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (modality) {
+      OnboardingModality.tarot => AppTexts.t(
+        'onboarding.card_pick.tarot_title',
+      ),
+      OnboardingModality.coffee => AppTexts.t(
+        'onboarding.card_pick.coffee_title',
+      ),
+      OnboardingModality.palm => AppTexts.t('onboarding.card_pick.palm_title'),
+    };
+    return Scaffold(
+      backgroundColor: const Color(0xFF17081C),
+      appBar: AppBar(backgroundColor: Colors.transparent),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFFADCFF),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          _OnboardingNameBirthPreviewPage(modality: modality),
+                    ),
+                  );
+                },
+                child: Text(AppTexts.t('onboarding.cta_continue')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/*
+Legacy manual preview chain kept for local debugging reference. Runtime preview
+now uses OnboardingFlowEntry above so AuthGate and preview share the same entry.
+*/
+/*
                   builder: (_) => OnboardingCardPickPage(
                     onModalityChosen: (modality) {
                       if (modality == OnboardingModality.tarot) {
@@ -365,65 +481,7 @@ class _AppBootstrapPageState extends State<AppBootstrapPage> {
           );
         }
 
-        return const AuthGatePage();
-      },
-    );
-  }
-}
-
-class _OnboardingModalityPlaceholderPage extends StatelessWidget {
-  const _OnboardingModalityPlaceholderPage({required this.modality});
-
-  final OnboardingModality modality;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = switch (modality) {
-      OnboardingModality.tarot => AppTexts.t(
-        'onboarding.card_pick.tarot_title',
-      ),
-      OnboardingModality.coffee => AppTexts.t(
-        'onboarding.card_pick.coffee_title',
-      ),
-      OnboardingModality.palm => AppTexts.t('onboarding.card_pick.palm_title'),
-    };
-    return Scaffold(
-      backgroundColor: const Color(0xFF17081C),
-      appBar: AppBar(backgroundColor: Colors.transparent),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFFFADCFF),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          _OnboardingNameBirthPreviewPage(modality: modality),
-                    ),
-                  );
-                },
-                child: Text(AppTexts.t('onboarding.cta_continue')),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+*/
 
 class _OnboardingNameBirthPreviewPage extends StatelessWidget {
   const _OnboardingNameBirthPreviewPage({

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Schema } from '@google/generative-ai';
+import { strictLanguageInstruction } from './gemini';
 
 let client: GoogleGenerativeAI | null = null;
 
@@ -186,6 +187,8 @@ export async function createCoffeeReadingWithVision(input: {
       'First validate whether the three images are suitable for coffee fortune reading.',
       'If validation fails, set validation.isValid=false and reading=null.',
       'If validation passes, produce a warm premium reading in the requested language.',
+      strictLanguageInstruction(input.languageCode),
+      'Apply the language rule to every user-facing JSON string, including validation messages and reading fields.',
       'Never provide medical, legal, or financial advice.',
       'Never make deterministic predictions about death, illness, pregnancy, betrayal, or accidents.',
       'Do not infer sensitive personal traits.',

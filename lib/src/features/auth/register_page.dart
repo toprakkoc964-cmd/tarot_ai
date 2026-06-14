@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -13,9 +15,11 @@ import '../../core/theme/app_colors.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
 import 'user_profile_contract.dart';
+import 'verify_email_page.dart';
 import 'widgets/falling_mystic_symbols.dart';
 import 'widgets/mystic_legal_checkbox.dart';
 import 'widgets/mystic_primary_button.dart';
+import 'widgets/registration_portal_transition_overlay.dart';
 import 'widgets/mystic_register_text_field.dart';
 import 'widgets/mystic_toast.dart';
 
@@ -29,6 +33,7 @@ enum RegisterSubmitState {
 }
 
 const _registrationPortalDuration = Duration(milliseconds: 1500);
+const _registerSubmitCooldown = Duration(milliseconds: 1400);
 const _blockedEmailDomains = <String>{
   '10minutemail.com',
   'guerrillamail.com',
@@ -72,6 +77,7 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _passwordError;
   String? _confirmationError;
   String? _termsError;
+  DateTime? _lastSubmitAttemptAt;
 
   bool get _isBusy =>
       _submitState == RegisterSubmitState.validating ||
@@ -156,7 +162,15 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
-    if (_isBusy || !_validateForm()) return;
+    final now = DateTime.now();
+    final lastAttempt = _lastSubmitAttemptAt;
+    if (_isBusy ||
+        (lastAttempt != null &&
+            now.difference(lastAttempt) < _registerSubmitCooldown)) {
+      return;
+    }
+    _lastSubmitAttemptAt = now;
+    if (!_validateForm()) return;
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _submitState = RegisterSubmitState.submitting);
     widget.authService.registrationRedirectSuppressed.value = true;
@@ -189,6 +203,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (mounted) {
         setState(() => _submitState = RegisterSubmitState.navigating);
+      }
+      if (mounted) {
+        _openVerifyEmailPage(user);
       }
       _releaseRegistrationTransitionGuards();
     } catch (error) {
@@ -277,6 +294,41 @@ class _RegisterPageState extends State<RegisterPage> {
       _registrationPortalDuration - const Duration(milliseconds: 650),
     );
     widget.authService.registrationPortalActive.value = false;
+  }
+
+  void _openVerifyEmailPage(User user) {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    debugPrint('[register] opening verify email page uid=${user.uid}');
+    unawaited(
+      navigator.pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => VerifyEmailPage(
+            authService: widget.authService,
+            user: user,
+            onVerified: () {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).popUntil((route) => route.isFirst);
+            },
+            onChangeEmail: () {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pushReplacement<void, void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => RegisterPage(
+                    authService: widget.authService,
+                    onSwitchToLogin: widget.onSwitchToLogin,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        (route) => route.isFirst,
+      ),
+    );
   }
 
   void _releaseRegistrationTransitionGuards() {
@@ -385,6 +437,9 @@ class _RegisterPageState extends State<RegisterPage> {
                     },
                   ),
                 ),
+                if (_submitState == RegisterSubmitState.successAnimating ||
+                    _submitState == RegisterSubmitState.navigating)
+                  const RegistrationPortalTransitionOverlay(),
               ],
             ),
           ),

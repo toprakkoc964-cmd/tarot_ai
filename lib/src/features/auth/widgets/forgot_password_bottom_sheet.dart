@@ -84,7 +84,8 @@ class _ForgotPasswordBottomSheetState
       await widget.authService.sendResetEmail(email);
       if (mounted) Navigator.of(context).pop(true);
     } on FirebaseAuthException catch (error) {
-      if (error.code == 'user-not-found') {
+      if (error.code == 'user-not-found' ||
+          error.code == 'invalid-recipient-email') {
         if (mounted) Navigator.of(context).pop(true);
         return;
       }

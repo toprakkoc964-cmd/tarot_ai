@@ -20,6 +20,7 @@ class OnboardingPaywallPage extends StatefulWidget {
     required this.uid,
     required this.onContinue,
     required this.onClose,
+    this.nextPageBuilder,
     PurchaseService? purchaseService,
     ShopConfigService? shopConfigService,
   }) : _purchaseService = purchaseService,
@@ -28,6 +29,7 @@ class OnboardingPaywallPage extends StatefulWidget {
   final String uid;
   final VoidCallback onContinue;
   final VoidCallback onClose;
+  final WidgetBuilder? nextPageBuilder;
   final PurchaseService? _purchaseService;
   final ShopConfigService? _shopConfigService;
 
@@ -57,6 +59,12 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
   bool _loadingConfig = true;
   bool _purchaseStarted = false;
   bool _continued = false;
+
+  bool _blocksClose(PurchaseServicePhase phase) {
+    return phase == PurchaseServicePhase.purchasing ||
+        phase == PurchaseServicePhase.pending ||
+        phase == PurchaseServicePhase.verifying;
+  }
 
   static const _creditProductIds = <String>{
     ShopProductCatalog.credits50,
@@ -110,7 +118,7 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
     if (state.phase == PurchaseServicePhase.success &&
         state.activeProductId == _selectedProductId) {
       _continued = true;
-      widget.onContinue();
+      _goNext(fallback: widget.onContinue);
       return;
     }
 
@@ -127,6 +135,24 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
 
   Future<void> _restore() async {
     await _purchaseService.restorePurchases();
+  }
+
+  void _close() {
+    if (_continued) return;
+    debugPrint('[onboarding-paywall] close tapped');
+    _continued = true;
+    _goNext(fallback: widget.onClose);
+  }
+
+  void _goNext({required VoidCallback fallback}) {
+    final builder = widget.nextPageBuilder;
+    if (builder == null) {
+      fallback();
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute<void>(builder: builder));
   }
 
   List<_CreditPack> _packs(Map<String, ProductDetails> products) {
@@ -162,6 +188,7 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
         );
         final selectedProduct = products[selectedPack.productId];
         final busy = purchaseState.isBusy;
+        final canClose = !_blocksClose(purchaseState.phase);
         final loadingProducts =
             _loadingConfig ||
             purchaseState.phase == PurchaseServicePhase.loadingProducts;
@@ -173,7 +200,7 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
               SafeArea(
                 child: Column(
                   children: [
-                    _topBar(busy),
+                    _topBar(canClose: canClose, canRestore: !busy),
                     Expanded(
                       child: loadingProducts && products.isEmpty
                           ? _loadingBody()
@@ -198,18 +225,18 @@ class _OnboardingPaywallPageState extends State<OnboardingPaywallPage>
     );
   }
 
-  Widget _topBar(bool busy) {
+  Widget _topBar({required bool canClose, required bool canRestore}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Row(
         children: [
           IconButton(
-            onPressed: busy ? null : widget.onClose,
+            onPressed: canClose ? _close : null,
             icon: const Icon(Icons.close_rounded, color: _secondary, size: 28),
           ),
           const Spacer(),
           TextButton.icon(
-            onPressed: busy ? null : _restore,
+            onPressed: canRestore ? _restore : null,
             icon: const Icon(Icons.restore_rounded, size: 18),
             label: Text(AppTexts.t('shopRestorePurchases')),
             style: TextButton.styleFrom(

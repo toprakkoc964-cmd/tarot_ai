@@ -10,6 +10,7 @@ import '../../core/localization_service.dart';
 import '../../core/theme/app_colors.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
+import 'register_page.dart';
 import 'widgets/forgot_password_bottom_sheet.dart';
 import 'widgets/login_legal_footer.dart';
 import 'widgets/mystic_primary_button.dart';
@@ -86,11 +87,14 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _activeAction = _LoginAction.email);
 
     try {
+      debugPrint('[login] email sign-in started');
       await widget.authService.signIn(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+      debugPrint('[login] email sign-in ok');
     } catch (error) {
+      _logAuthError('email', error);
       _showError(mapAuthError(error));
     } finally {
       if (mounted) setState(() => _activeAction = null);
@@ -126,7 +130,8 @@ class _LoginPageState extends State<LoginPage> {
         );
       }
     } on FirebaseAuthException catch (error) {
-      if (error.code == 'user-not-found') {
+      if (error.code == 'user-not-found' ||
+          error.code == 'invalid-recipient-email') {
         if (mounted) {
           MysticToast.showSuccess(
             context,
@@ -146,8 +151,11 @@ class _LoginPageState extends State<LoginPage> {
     FocusScope.of(context).unfocus();
     setState(() => _activeAction = _LoginAction.google);
     try {
+      debugPrint('[login] google sign-in started');
       await widget.authService.signInWithGoogle();
+      debugPrint('[login] google sign-in ok');
     } catch (error) {
+      _logAuthError('google', error);
       _showError(mapAuthError(error));
     } finally {
       if (mounted) setState(() => _activeAction = null);
@@ -159,12 +167,33 @@ class _LoginPageState extends State<LoginPage> {
     FocusScope.of(context).unfocus();
     setState(() => _activeAction = _LoginAction.apple);
     try {
+      debugPrint('[login] apple sign-in started');
       await widget.authService.signInWithApple();
+      debugPrint('[login] apple sign-in ok');
     } catch (error) {
+      _logAuthError('apple', error);
       _showError(mapAuthError(error));
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }
+  }
+
+  void _logAuthError(String action, Object error) {
+    if (error is FirebaseAuthException) {
+      debugPrint(
+        '[login] $action failed FirebaseAuthException '
+        'code=${error.code} message=${error.message}',
+      );
+      return;
+    }
+    if (error is FirebaseException) {
+      debugPrint(
+        '[login] $action failed FirebaseException '
+        'plugin=${error.plugin} code=${error.code} message=${error.message}',
+      );
+      return;
+    }
+    debugPrint('[login] $action failed $error');
   }
 
   void _showError(String message) {
@@ -176,6 +205,20 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.of(
       context,
     ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  void _openRegisterPage() {
+    if (_isBusy) return;
+    FocusScope.of(context).unfocus();
+    debugPrint('[login] opening register page');
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => RegisterPage(
+          authService: widget.authService,
+          onSwitchToLogin: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -479,7 +522,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
         TextButton(
-          onPressed: _isBusy ? null : widget.onSwitchToRegister,
+          onPressed: _isBusy ? null : _openRegisterPage,
           style: TextButton.styleFrom(
             foregroundColor: AppColors.primaryPink,
             minimumSize: const Size(44, 44),

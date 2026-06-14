@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -214,14 +215,82 @@ class NotificationService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await FirebaseFirestore.instance
-        .collection(UserProfileContract.usersCollection)
-        .doc(user.uid)
-        .set({
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('registerFcmToken');
+      await callable.call(<String, dynamic>{'token': token});
+    } catch (error) {
+      debugPrint('registerFcmToken callable skipped: $error');
+      final userRef = FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(user.uid);
+      await Future.wait([
+        userRef.set({
           UserProfileContract.fcmTokens: FieldValue.arrayUnion([token]),
           UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
           UserProfileContract.fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        }, SetOptions(merge: true)),
+        userRef.collection('fcm_tokens').doc(token).set({
+          'uid': user.uid,
+          'token': token,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true)),
+      ]);
+    }
+  }
+
+  Future<void> detachTokenForCurrentUser({
+    bool deleteDeviceToken = true,
+  }) async {
+    if (_shouldSkipFcmTokenWork()) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    String? token = fcmToken.value;
+    try {
+      token ??= await FirebaseMessaging.instance.getToken();
+    } catch (error) {
+      debugPrint('FCM token lookup before detach skipped: $error');
+    }
+
+    if (token != null && token.isNotEmpty) {
+      final userRef = FirebaseFirestore.instance
+          .collection(UserProfileContract.usersCollection)
+          .doc(user.uid);
+      try {
+        final callable = FirebaseFunctions.instanceFor(
+          region: 'us-central1',
+        ).httpsCallable('unregisterFcmToken');
+        await callable.call(<String, dynamic>{'token': token});
+      } catch (error) {
+        debugPrint('unregisterFcmToken callable skipped: $error');
+      }
+
+      try {
+        await Future.wait([
+          userRef.set({
+            UserProfileContract.fcmTokens: FieldValue.arrayRemove([token]),
+            UserProfileContract.updatedAt: FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)),
+          userRef.collection('fcm_tokens').doc(token).delete(),
+        ]);
+      } catch (error) {
+        debugPrint('Local FCM token detach skipped: $error');
+      }
+    }
+
+    if (deleteDeviceToken) {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+        fcmToken.value = null;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_campaignTopicKey);
+      } catch (error) {
+        debugPrint('FCM deleteToken skipped: $error');
+      }
+    }
   }
 
   Future<String?> _resolveDeviceTimezone() async {

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
@@ -23,14 +24,18 @@ class OnboardingCoffeeRitualPage extends StatefulWidget {
       _OnboardingCoffeeRitualPageState();
 }
 
-enum _CoffeeRitualPhase { intro, drank, flipping, sealed }
+enum _CoffeeRitualPhase { drink, flipping, bridge }
 
 class _OnboardingCoffeeRitualPageState extends State<OnboardingCoffeeRitualPage>
     with TickerProviderStateMixin {
   static const _bg = Color(0xFF17081C);
+  static const _surface = Color(0xFF1E0C25);
   static const _primary = Color(0xFFFF5ED6);
+  static const _primaryDeep = Color(0xFFFF00D4);
   static const _secondary = Color(0xFFCDBDFF);
   static const _onSurface = Color(0xFFFADCFF);
+  static const _gold = Color(0xFFFFE792);
+  static const _outline = Color(0xFF5B3C66);
 
   static const _teaserKeys = [
     'coffee_road',
@@ -40,187 +45,200 @@ class _OnboardingCoffeeRitualPageState extends State<OnboardingCoffeeRitualPage>
   ];
 
   final math.Random _random = math.Random();
-  late final AnimationController _steamController;
-  late final AnimationController _drinkController;
+  late final AnimationController _holdController;
+  late final AnimationController _capController;
   late final AnimationController _flipController;
-  late final AnimationController _settleController;
-  late final AnimationController _haloController;
+  late final AnimationController _glowController;
 
-  _CoffeeRitualPhase _phase = _CoffeeRitualPhase.intro;
+  _CoffeeRitualPhase _phase = _CoffeeRitualPhase.drink;
   String? _coffeeTeaserKey;
+  bool _releasedEarly = false;
   bool _busy = false;
+  int _lastHapticStep = 0;
 
   @override
   void initState() {
     super.initState();
-    _steamController = AnimationController(
+    _holdController =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 2600),
+          )
+          ..addListener(_handleHoldProgress)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed) {
+              _completeHold();
+            }
+          });
+    _capController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3600),
-    )..repeat();
-    _drinkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 600),
     );
     _flipController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1000),
     );
-    _settleController = AnimationController(
+    _glowController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _haloController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2600),
+      duration: const Duration(milliseconds: 1600),
     )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _steamController.dispose();
-    _drinkController.dispose();
+    _holdController
+      ..removeListener(_handleHoldProgress)
+      ..dispose();
+    _capController.dispose();
     _flipController.dispose();
-    _settleController.dispose();
-    _haloController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleCta() async {
-    if (_busy) return;
-    if (_phase == _CoffeeRitualPhase.sealed) {
-      widget.onCoffeeSealed(_coffeeTeaserKey ?? _teaserKeys.first);
+  void _handleHoldProgress() {
+    final step = (_holdController.value * 4).floor();
+    if (step > _lastHapticStep && step < 4) {
+      _lastHapticStep = step;
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  bool get _reduceMotion {
+    final media = MediaQuery.maybeOf(context);
+    return media?.disableAnimations ?? false;
+  }
+
+  void _startHold() {
+    if (_phase != _CoffeeRitualPhase.drink || _busy) return;
+    setState(() => _releasedEarly = false);
+    _lastHapticStep = 0;
+    if (_reduceMotion) {
+      _holdController.value = 1;
+      _completeHold();
       return;
     }
-    setState(() => _busy = true);
+    _holdController.forward();
+  }
+
+  void _cancelHold() {
+    if (_phase != _CoffeeRitualPhase.drink || _busy) return;
+    if (_holdController.isCompleted) return;
+    setState(() => _releasedEarly = true);
+    _holdController.reverse();
+  }
+
+  Future<void> _completeHold() async {
+    if (_busy || _phase != _CoffeeRitualPhase.drink) return;
+    setState(() {
+      _busy = true;
+      _phase = _CoffeeRitualPhase.flipping;
+    });
+    _coffeeTeaserKey = _teaserKeys[_random.nextInt(_teaserKeys.length)];
+
     try {
-      if (_phase == _CoffeeRitualPhase.intro) {
-        _steamController.stop();
-        await _drinkController.forward(from: 0);
+      HapticFeedback.mediumImpact();
+      if (_reduceMotion) {
+        _capController.value = 1;
+        _flipController.value = 1;
+      } else {
+        await _capController.forward(from: 0);
         if (!mounted) return;
-        setState(() => _phase = _CoffeeRitualPhase.drank);
-        return;
-      }
-      if (_phase == _CoffeeRitualPhase.drank) {
-        setState(() => _phase = _CoffeeRitualPhase.flipping);
         await _flipController.forward(from: 0);
-        await _settleController.forward(from: 0);
-        _coffeeTeaserKey = _teaserKeys[_random.nextInt(_teaserKeys.length)];
-        if (!mounted) return;
-        setState(() => _phase = _CoffeeRitualPhase.sealed);
       }
+      HapticFeedback.lightImpact();
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _phase = _CoffeeRitualPhase.bridge;
+      });
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _phase != _CoffeeRitualPhase.bridge) {
+        setState(() => _busy = false);
+      }
     }
+  }
+
+  void _continue() {
+    if (_phase != _CoffeeRitualPhase.bridge) return;
+    widget.onCoffeeSealed(_coffeeTeaserKey ?? _teaserKeys.first);
   }
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: _CoffeeBackground()),
-          SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                22,
-                10,
-                22,
-                math.max(18, bottom + 8),
-              ),
-              child: Column(
-                children: [
-                  _topBar(),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        const Spacer(),
-                        _header(),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          height: 310,
-                          child: _CoffeeScene(
-                            phase: _phase,
-                            steamController: _steamController,
-                            drinkController: _drinkController,
-                            flipController: _flipController,
-                            settleController: _settleController,
-                            haloController: _haloController,
-                          ),
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: Stack(
+          children: [
+            const Positioned.fill(child: _CoffeeRitualBackground()),
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  22,
+                  18,
+                  22,
+                  math.max(22, bottom + 10),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 16),
+                    _header(),
+                    Expanded(
+                      child: Center(
+                        child: _CoffeeRitualScene(
+                          hold: _holdController,
+                          cap: _capController,
+                          flip: _flipController,
+                          glow: _glowController,
                         ),
-                        const SizedBox(height: 18),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 260),
-                          child: _phase == _CoffeeRitualPhase.sealed
-                              ? Text(
-                                  _confirmationText(),
-                                  key: const ValueKey('sealedText'),
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.newsreader(
-                                    color: _onSurface.withValues(alpha: 0.94),
-                                    fontSize: 23,
-                                    height: 1.18,
-                                    fontStyle: FontStyle.italic,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                )
-                              : const SizedBox(
-                                  key: ValueKey('emptyText'),
-                                  height: 56,
-                                ),
-                        ),
-                        const Spacer(),
-                      ],
+                      ),
                     ),
-                  ),
-                  _PrimaryButton(label: _ctaLabel(), onTap: _handleCta),
-                ],
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 240),
+                      child: _phase == _CoffeeRitualPhase.bridge
+                          ? _BridgeButton(onTap: _continue)
+                          : _HoldIntentionButton(
+                              key: const ValueKey('holdButton'),
+                              progress: _holdController,
+                              glow: _glowController,
+                              enabled: _phase == _CoffeeRitualPhase.drink,
+                              onStart: _startHold,
+                              onCancel: _cancelHold,
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _topBar() {
-    return Row(
-      children: [
-        IconButton(
-          onPressed: _busy ? null : widget.onBack,
-          icon: const Icon(
-            Icons.chevron_left_rounded,
-            color: _secondary,
-            size: 34,
-          ),
+          ],
         ),
-        const Spacer(),
-        _MadamAvatar(size: 44),
-      ],
+      ),
     );
   }
 
   Widget _header() {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 260),
       child: Column(
-        key: ValueKey(_phase),
+        key: ValueKey(_phase.name + _releasedEarly.toString()),
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             _title(),
             textAlign: TextAlign.center,
             style: GoogleFonts.newsreader(
               color: _onSurface,
-              fontSize: 40,
-              height: 1.05,
+              fontSize: _phase == _CoffeeRitualPhase.bridge ? 34 : 38,
+              height: 1.08,
               fontWeight: FontWeight.w600,
               shadows: [
                 Shadow(color: _primary.withValues(alpha: 0.22), blurRadius: 16),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 13),
           Text(
             _subtitle(),
             textAlign: TextAlign.center,
@@ -238,425 +256,491 @@ class _OnboardingCoffeeRitualPageState extends State<OnboardingCoffeeRitualPage>
 
   String _title() {
     return switch (_phase) {
-      _CoffeeRitualPhase.intro => AppTexts.t('onboarding.coffee.title_intro'),
-      _CoffeeRitualPhase.drank => AppTexts.t('onboarding.coffee.title_drank'),
+      _CoffeeRitualPhase.drink => AppTexts.t('onboarding.coffee.title_intro'),
       _CoffeeRitualPhase.flipping => AppTexts.t(
         'onboarding.coffee.title_settle',
       ),
-      _CoffeeRitualPhase.sealed => AppTexts.t('onboarding.coffee.title_sealed'),
+      _CoffeeRitualPhase.bridge => AppTexts.t('onboarding.coffee.bridge_title'),
     };
   }
 
   String _subtitle() {
+    if (_phase == _CoffeeRitualPhase.drink && _releasedEarly) {
+      return AppTexts.t('onboarding.coffee.release_hint');
+    }
     return switch (_phase) {
-      _CoffeeRitualPhase.intro => AppTexts.t(
+      _CoffeeRitualPhase.drink => AppTexts.t(
         'onboarding.coffee.subtitle_intro',
-      ),
-      _CoffeeRitualPhase.drank => AppTexts.t(
-        'onboarding.coffee.subtitle_drank',
       ),
       _CoffeeRitualPhase.flipping => AppTexts.t(
         'onboarding.coffee.subtitle_settle',
       ),
-      _CoffeeRitualPhase.sealed => AppTexts.t(
-        'onboarding.coffee.subtitle_sealed',
+      _CoffeeRitualPhase.bridge => AppTexts.t(
+        'onboarding.coffee.bridge_subtitle',
       ),
     };
   }
-
-  String _ctaLabel() {
-    if (_busy && _phase == _CoffeeRitualPhase.flipping) {
-      return AppTexts.t('onboarding.coffee.cta_wait');
-    }
-    return switch (_phase) {
-      _CoffeeRitualPhase.intro => AppTexts.t('onboarding.coffee.cta_drink'),
-      _CoffeeRitualPhase.drank => AppTexts.t('onboarding.coffee.cta_flip'),
-      _CoffeeRitualPhase.flipping => AppTexts.t('onboarding.coffee.cta_wait'),
-      _CoffeeRitualPhase.sealed => AppTexts.t('onboarding.coffee.cta_continue'),
-    };
-  }
-
-  String _confirmationText() {
-    final name = widget.name.trim();
-    final key = name.isEmpty
-        ? 'onboarding.coffee.confirm_no_name'
-        : 'onboarding.coffee.confirm';
-    return AppTexts.t(key).replaceAll('{name}', name);
-  }
 }
 
-class _CoffeeScene extends StatelessWidget {
-  const _CoffeeScene({
-    required this.phase,
-    required this.steamController,
-    required this.drinkController,
-    required this.flipController,
-    required this.settleController,
-    required this.haloController,
+class _HoldIntentionButton extends StatelessWidget {
+  const _HoldIntentionButton({
+    super.key,
+    required this.progress,
+    required this.glow,
+    required this.enabled,
+    required this.onStart,
+    required this.onCancel,
   });
 
-  final _CoffeeRitualPhase phase;
-  final AnimationController steamController;
-  final AnimationController drinkController;
-  final AnimationController flipController;
-  final AnimationController settleController;
-  final AnimationController haloController;
+  final Animation<double> progress;
+  final Animation<double> glow;
+  final bool enabled;
+  final VoidCallback onStart;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([
-        steamController,
-        drinkController,
-        flipController,
-        settleController,
-        haloController,
-      ]),
-      builder: (context, _) {
-        final flipT = Curves.easeInOutCubic.transform(flipController.value);
-        final sealed = phase == _CoffeeRitualPhase.sealed;
-        final flipping = phase == _CoffeeRitualPhase.flipping;
-        final cupY = flipping
-            ? lerpDouble(0, -58, math.sin(flipT * math.pi))!
-            : 0.0;
-        final cupAngle = (flipping || sealed)
-            ? lerpDouble(0, math.pi, flipT)!
-            : 0.0;
-        final haloT = Curves.easeInOut.transform(haloController.value);
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              bottom: 34,
-              child: CustomPaint(
-                size: const Size(240, 90),
-                painter: _SaucerPainter(),
-              ),
-            ),
-            if (sealed || flipping)
-              Positioned(
-                bottom: 80,
-                child: Opacity(
-                  opacity: sealed ? 1 : settleController.value,
-                  child: Transform.rotate(
-                    angle: settleController.value * math.pi * 2,
-                    child: CustomPaint(
-                      size: const Size(190, 120),
-                      painter: _TelveSwirlPainter(
-                        progress: settleController.value,
-                        sealed: sealed,
-                        halo: haloT,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => onStart() : null,
+      onTapUp: enabled ? (_) => onCancel() : null,
+      onTapCancel: enabled ? onCancel : null,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([progress, glow]),
+        builder: (context, _) {
+          final pulse = Curves.easeInOut.transform(glow.value);
+          return SizedBox(
+            width: 150,
+            height: 150,
+            child: CustomPaint(
+              painter: _HoldRingPainter(progress: progress.value),
+              child: Center(
+                child: Container(
+                  width: 118,
+                  height: 118,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        _OnboardingCoffeeRitualPageState._primary,
+                        _OnboardingCoffeeRitualPageState._primaryDeep,
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _OnboardingCoffeeRitualPageState._primaryDeep
+                            .withValues(alpha: 0.34 + pulse * 0.18),
+                        blurRadius: 22 + pulse * 22,
+                        spreadRadius: 1 + pulse * 2,
                       ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    AppTexts.t('onboarding.coffee.hold_button'),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.spaceGrotesk(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.8,
                     ),
                   ),
                 ),
               ),
-            Transform.translate(
-              offset: Offset(0, cupY),
-              child: Transform.rotate(
-                angle: cupAngle,
-                child: CustomPaint(
-                  size: const Size(190, 170),
-                  painter: _CupPainter(
-                    coffeeLevel: 1 - drinkController.value,
-                    steamProgress: steamController.value,
-                    showSteam:
-                        phase == _CoffeeRitualPhase.intro &&
-                        drinkController.value < 0.18,
-                    inverted: sealed || flipping,
-                    wobble:
-                        math.sin(drinkController.value * math.pi * 8) *
-                        (phase == _CoffeeRitualPhase.intro ? 0.025 : 0),
-                  ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BridgeButton extends StatelessWidget {
+  const _BridgeButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('bridgeButton'),
+      width: double.infinity,
+      height: 60,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          gradient: const LinearGradient(
+            colors: [
+              _OnboardingCoffeeRitualPageState._primary,
+              _OnboardingCoffeeRitualPageState._primaryDeep,
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _OnboardingCoffeeRitualPageState._primary.withValues(
+                alpha: 0.36,
+              ),
+              blurRadius: 26,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(32),
+            onTap: onTap,
+            child: Center(
+              child: Text(
+                AppTexts.t('onboarding.coffee.cta_continue'),
+                style: GoogleFonts.spaceGrotesk(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2.2,
                 ),
               ),
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CoffeeRitualScene extends StatelessWidget {
+  const _CoffeeRitualScene({
+    required this.hold,
+    required this.cap,
+    required this.flip,
+    required this.glow,
+  });
+
+  final Animation<double> hold;
+  final Animation<double> cap;
+  final Animation<double> flip;
+  final Animation<double> glow;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([hold, cap, flip, glow]),
+      builder: (context, _) {
+        final capT = Curves.easeInOutCubic.transform(cap.value);
+        final flipT = Curves.easeInOutCubic.transform(flip.value);
+        final pulse = Curves.easeInOut.transform(glow.value);
+        final coffeeLevel = lerpDouble(0.82, 0.0, hold.value)!;
+        return RepaintBoundary(
+          child: SizedBox(
+            width: 310,
+            height: 330,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 230 + pulse * 18,
+                  height: 230 + pulse * 18,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        _OnboardingCoffeeRitualPageState._primary.withValues(
+                          alpha: 0.22 + pulse * 0.08,
+                        ),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                Transform.rotate(
+                  angle: math.pi * flipT,
+                  alignment: Alignment.center,
+                  child: CustomPaint(
+                    size: const Size(260, 260),
+                    painter: _CoffeeCupPainter(
+                      coffeeLevel: coffeeLevel,
+                      capProgress: capT,
+                      flipProgress: flipT,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 }
 
-class _CupPainter extends CustomPainter {
-  const _CupPainter({
+class _CoffeeCupPainter extends CustomPainter {
+  const _CoffeeCupPainter({
     required this.coffeeLevel,
-    required this.steamProgress,
-    required this.showSteam,
-    required this.inverted,
-    required this.wobble,
+    required this.capProgress,
+    required this.flipProgress,
   });
 
   final double coffeeLevel;
-  final double steamProgress;
-  final bool showSteam;
-  final bool inverted;
-  final double wobble;
+  final double capProgress;
+  final double flipProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.translate(size.width / 2, size.height / 2);
-    canvas.rotate(wobble);
-    canvas.translate(-size.width / 2, -size.height / 2);
+    // TODO(onboarding): Replace this painter with coffee_cup/coffee_fill/
+    // coffee_saucer assets when final transparent PNGs are added.
+    final center = Offset(size.width / 2, size.height / 2);
+    final saucerY = lerpDouble(186, 102, capProgress)!;
+    final cupY = center.dy - 16;
 
-    final cupRect = Rect.fromLTWH(36, 44, 118, 86);
-    final cupBody = RRect.fromRectAndCorners(
-      cupRect,
-      bottomLeft: const Radius.circular(34),
-      bottomRight: const Radius.circular(34),
-      topLeft: const Radius.circular(22),
-      topRight: const Radius.circular(22),
+    final shadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.24)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(center.dx, 216), width: 170, height: 30),
+      shadow,
     );
-    final bodyPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFFFFF7FB), Color(0xFFDCC9E6), Color(0xFF8F6AA2)],
-      ).createShader(cupRect);
-    canvas.drawRRect(cupBody, bodyPaint);
 
-    final rimPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..color = _CoffeePalette.gold.withValues(alpha: 0.92);
-    final rimRect = Rect.fromLTWH(34, 36, 122, 30);
-    canvas.drawOval(rimRect, rimPaint);
-
-    final coffeePaint = Paint()
-      ..color = const Color(0xFF3A1711).withValues(alpha: 0.92);
-    if (!inverted && coffeeLevel > 0.05) {
-      final levelHeight = 22 * coffeeLevel.clamp(0.0, 1.0);
-      final coffeeRect = Rect.fromLTWH(
-        42,
-        43 + (22 - levelHeight),
-        106,
-        math.max(3, levelHeight),
-      );
-      canvas.drawOval(coffeeRect, coffeePaint);
-    }
-
-    final handlePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFFF7FB), Color(0xFFB897CA)],
-      ).createShader(Rect.fromLTWH(134, 58, 46, 58));
-    canvas.drawArc(
-      Rect.fromLTWH(132, 58, 46, 58),
-      -math.pi / 2,
-      math.pi,
-      false,
-      handlePaint,
+    final saucerRect = Rect.fromCenter(
+      center: Offset(center.dx, saucerY),
+      width: 178,
+      height: 40,
     );
-    canvas.drawArc(
-      Rect.fromLTWH(137, 66, 28, 40),
-      -math.pi / 2,
-      math.pi,
-      false,
+    final saucerPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFFBEEFF), Color(0xFFD8CAFF), Color(0xFFF6E4FF)],
+      ).createShader(saucerRect);
+    canvas.drawOval(saucerRect, saucerPaint);
+    canvas.drawOval(
+      saucerRect.deflate(8),
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
-        ..color = _CoffeePalette.bg,
+        ..strokeWidth = 2
+        ..color = const Color(0xFF8E77AC).withValues(alpha: 0.54),
     );
 
-    final glossPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.26)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawOval(Rect.fromLTWH(58, 58, 28, 54), glossPaint);
+    final bodyPath = Path()
+      ..moveTo(center.dx - 62, cupY - 22)
+      ..cubicTo(
+        center.dx - 54,
+        cupY + 70,
+        center.dx - 42,
+        cupY + 104,
+        center.dx,
+        cupY + 110,
+      )
+      ..cubicTo(
+        center.dx + 42,
+        cupY + 104,
+        center.dx + 54,
+        cupY + 70,
+        center.dx + 62,
+        cupY - 22,
+      )
+      ..close();
+    final bodyRect = bodyPath.getBounds();
+    canvas.drawPath(
+      bodyPath,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF5E6FF), Color(0xFFB29AFF), Color(0xFFFFB7E9)],
+        ).createShader(bodyRect),
+    );
 
-    if (showSteam) {
-      final steamPaint = Paint()
+    if (coffeeLevel > 0.01) {
+      canvas.save();
+      canvas.clipPath(bodyPath);
+      final fillHeight = bodyRect.height * coffeeLevel.clamp(0.0, 1.0);
+      final liquidTop = bodyRect.bottom - fillHeight;
+      final liquidRect = Rect.fromLTRB(
+        bodyRect.left + 8,
+        liquidTop,
+        bodyRect.right - 8,
+        bodyRect.bottom,
+      );
+      canvas.drawRect(
+        liquidRect,
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF4A2410), Color(0xFF1F0D04)],
+          ).createShader(liquidRect),
+      );
+      final surfaceRect = Rect.fromCenter(
+        center: Offset(center.dx, liquidTop + 3),
+        width: 106,
+        height: 18,
+      );
+      canvas.drawOval(
+        surfaceRect,
+        Paint()
+          ..shader = const RadialGradient(
+            colors: [Color(0xFF7C4A22), Color(0xFF2D1307)],
+          ).createShader(surfaceRect),
+      );
+      canvas.restore();
+    }
+
+    canvas.drawPath(
+      bodyPath,
+      Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..color = _CoffeePalette.secondary.withValues(alpha: 0.46);
-      for (var i = 0; i < 3; i++) {
-        final x = 72.0 + i * 22;
-        final shift = math.sin(steamProgress * math.pi * 2 + i) * 8;
-        final path = Path()
-          ..moveTo(x, 24)
-          ..cubicTo(x - 18 + shift, 10, x + 18 - shift, -8, x + shift, -24);
-        canvas.drawPath(path, steamPaint);
+        ..strokeWidth = 2.2
+        ..color = const Color(0xFFEAD9F6).withValues(alpha: 0.78),
+    );
+
+    final rimRect = Rect.fromCenter(
+      center: Offset(center.dx, cupY - 24),
+      width: 136,
+      height: 46,
+    );
+    canvas.drawOval(
+      rimRect,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [Color(0xFFFFFFFF), Color(0xFFCDBDFF)],
+        ).createShader(rimRect),
+    );
+    canvas.drawOval(
+      rimRect.deflate(8),
+      Paint()..color = _OnboardingCoffeeRitualPageState._surface,
+    );
+
+    if (coffeeLevel > 0.01) {
+      final fillRect = Rect.fromCenter(
+        center: Offset(center.dx, cupY - 24),
+        width: 104,
+        height: 28,
+      );
+      canvas.drawOval(
+        fillRect,
+        Paint()
+          ..shader = const RadialGradient(
+            colors: [Color(0xFF7C4A22), Color(0xFF1F0D04)],
+          ).createShader(fillRect),
+      );
+      for (var i = 0; i < 9; i++) {
+        final angle = i * math.pi * 0.41 + coffeeLevel * 1.4;
+        final radius = 18 + (i % 3) * 7;
+        canvas.drawCircle(
+          Offset(
+            center.dx + math.cos(angle) * radius,
+            cupY - 24 + math.sin(angle) * 6,
+          ),
+          1.6,
+          Paint()
+            ..color = _OnboardingCoffeeRitualPageState._gold.withValues(
+              alpha: 0.28 * coffeeLevel,
+            ),
+        );
       }
     }
 
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _CupPainter oldDelegate) {
-    return oldDelegate.coffeeLevel != coffeeLevel ||
-        oldDelegate.steamProgress != steamProgress ||
-        oldDelegate.showSteam != showSteam ||
-        oldDelegate.inverted != inverted ||
-        oldDelegate.wobble != wobble;
-  }
-}
-
-class _SaucerPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.28)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
-    canvas.drawOval(rect.deflate(16).translate(0, 12), shadowPaint);
-    final saucerPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFEEDDF5), Color(0xFF9D79B4), Color(0xFFFFE792)],
-      ).createShader(rect);
-    canvas.drawOval(rect.deflate(14), saucerPaint);
-    canvas.drawOval(
-      rect.deflate(34),
+    final handlePath = Path()
+      ..moveTo(center.dx + 58, cupY + 16)
+      ..cubicTo(
+        center.dx + 96,
+        cupY + 14,
+        center.dx + 98,
+        cupY + 66,
+        center.dx + 63,
+        cupY + 68,
+      )
+      ..cubicTo(
+        center.dx + 84,
+        cupY + 58,
+        center.dx + 82,
+        cupY + 28,
+        center.dx + 58,
+        cupY + 30,
+      );
+    canvas.drawPath(
+      handlePath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 9
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0xFFF7DEFF).withValues(alpha: 0.78),
+    );
+    canvas.drawPath(
+      handlePath,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = _CoffeePalette.gold.withValues(alpha: 0.64),
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0xFFBDAFDB).withValues(alpha: 0.56),
     );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _CoffeeCupPainter oldDelegate) {
+    return coffeeLevel != oldDelegate.coffeeLevel ||
+        capProgress != oldDelegate.capProgress ||
+        flipProgress != oldDelegate.flipProgress;
+  }
 }
 
-class _TelveSwirlPainter extends CustomPainter {
-  const _TelveSwirlPainter({
-    required this.progress,
-    required this.sealed,
-    required this.halo,
-  });
+class _HoldRingPainter extends CustomPainter {
+  const _HoldRingPainter({required this.progress});
 
   final double progress;
-  final bool sealed;
-  final double halo;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final haloPaint = Paint()
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2 - 9;
+    final track = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..color = _CoffeePalette.gold.withValues(
-        alpha: sealed ? 0.42 + halo * 0.24 : 0.18,
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..color = _OnboardingCoffeeRitualPageState._outline.withValues(
+        alpha: 0.62,
       );
-    canvas.drawCircle(
-      center,
-      size.shortestSide * (0.30 + halo * 0.04),
-      haloPaint,
-    );
-
-    final markPaint = Paint()
-      ..color = const Color(0xFF4A2119).withValues(alpha: sealed ? 0.46 : 0.24);
-    for (var i = 0; i < 16; i++) {
-      final angle = i * 0.9 + progress * math.pi * 2;
-      final radius = 18.0 + (i % 5) * 8.0;
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: center + Offset(math.cos(angle), math.sin(angle)) * radius,
-          width: 4 + (i % 3).toDouble(),
-          height: 2.5,
-        ),
-        markPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _TelveSwirlPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.sealed != sealed ||
-        oldDelegate.halo != halo;
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 58,
-        width: double.infinity,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          gradient: const LinearGradient(
-            colors: [_CoffeePalette.primary, _CoffeePalette.primaryDeep],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _CoffeePalette.primaryDeep.withValues(alpha: 0.34),
-              blurRadius: 28,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.spaceGrotesk(
-            color: _CoffeePalette.ctaText,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2.5,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MadamAvatar extends StatelessWidget {
-  const _MadamAvatar({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [_CoffeePalette.primary, _CoffeePalette.gold],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _CoffeePalette.primary.withValues(alpha: 0.26),
-            blurRadius: 26,
-          ),
+    final active = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..shader = const SweepGradient(
+        colors: [
+          _OnboardingCoffeeRitualPageState._gold,
+          _OnboardingCoffeeRitualPageState._primary,
+          _OnboardingCoffeeRitualPageState._gold,
         ],
-      ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/onboarding/madam_aris.png',
-          fit: BoxFit.cover,
-        ),
-      ),
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    canvas.drawCircle(center, radius, track);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      math.pi * 2 * progress,
+      false,
+      active,
     );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HoldRingPainter oldDelegate) {
+    return progress != oldDelegate.progress;
   }
 }
 
-class _CoffeeBackground extends StatelessWidget {
-  const _CoffeeBackground();
+class _CoffeeRitualBackground extends StatelessWidget {
+  const _CoffeeRitualBackground();
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
+    return DecoratedBox(
+      decoration: const BoxDecoration(
         gradient: RadialGradient(
-          center: Alignment(0.18, -0.78),
-          radius: 1.22,
-          colors: [Color(0xFF32133B), Color(0xFF17081C), Color(0xFF0D0411)],
-          stops: [0, 0.62, 1],
+          center: Alignment(0, -0.35),
+          radius: 1.15,
+          colors: [Color(0xFF361A41), Color(0xFF17081C), Color(0xFF0B0410)],
+          stops: [0, 0.56, 1],
         ),
       ),
       child: CustomPaint(painter: _CoffeeStarsPainter()),
@@ -665,42 +749,33 @@ class _CoffeeBackground extends StatelessWidget {
 }
 
 class _CoffeeStarsPainter extends CustomPainter {
-  const _CoffeeStarsPainter();
-
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
-    for (var i = 0; i < 58; i++) {
-      final x = _fract(math.sin(i * 12.9898) * 43758.5453);
-      final y = _fract(math.sin(i * 78.233) * 12731.731);
+    const points = [
+      Offset(0.12, 0.14),
+      Offset(0.2, 0.31),
+      Offset(0.82, 0.17),
+      Offset(0.74, 0.35),
+      Offset(0.18, 0.72),
+      Offset(0.86, 0.68),
+      Offset(0.5, 0.08),
+      Offset(0.43, 0.84),
+    ];
+    for (var i = 0; i < points.length; i++) {
       paint.color =
-          (i % 3 == 0
-                  ? _CoffeePalette.gold
-                  : i % 3 == 1
-                  ? _CoffeePalette.primary
-                  : _CoffeePalette.secondary)
-              .withValues(alpha: i % 5 == 0 ? 0.34 : 0.16);
+          (i.isEven
+                  ? _OnboardingCoffeeRitualPageState._gold
+                  : _OnboardingCoffeeRitualPageState._primary)
+              .withValues(alpha: 0.22);
       canvas.drawCircle(
-        Offset(x * size.width, y * size.height),
-        i % 6 == 0 ? 1.8 : 1.0,
+        Offset(points[i].dx * size.width, points[i].dy * size.height),
+        i.isEven ? 2.2 : 1.6,
         paint,
       );
     }
   }
 
-  double _fract(double value) => value - value.floorToDouble();
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _CoffeePalette {
-  const _CoffeePalette._();
-
-  static const bg = Color(0xFF17081C);
-  static const primary = Color(0xFFFF5ED6);
-  static const primaryDeep = Color(0xFFFF00D4);
-  static const secondary = Color(0xFFCDBDFF);
-  static const gold = Color(0xFFFFE792);
-  static const ctaText = Color(0xFF430036);
 }

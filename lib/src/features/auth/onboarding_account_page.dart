@@ -8,14 +8,12 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_locale.dart';
 import '../../core/app_texts.dart';
-import '../../core/auth_error_mapper.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
 import 'login_page.dart';
 import 'onboarding_payload.dart';
 import 'register_page.dart';
 import 'user_profile_contract.dart';
-import 'widgets/mystic_toast.dart';
 
 class OnboardingAccountPage extends StatefulWidget {
   const OnboardingAccountPage({
@@ -30,6 +28,8 @@ class OnboardingAccountPage extends StatefulWidget {
     required this.interpretationTone,
     required this.focusAreas,
     required this.onComplete,
+    this.finalizeProfileOnAuth = true,
+    this.autoCompleteAuthenticatedUser = false,
     this.onBack,
   });
 
@@ -43,6 +43,8 @@ class OnboardingAccountPage extends StatefulWidget {
   final String interpretationTone;
   final List<String> focusAreas;
   final VoidCallback onComplete;
+  final bool finalizeProfileOnAuth;
+  final bool autoCompleteAuthenticatedUser;
   final VoidCallback? onBack;
 
   @override
@@ -66,8 +68,10 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
 
   late final AnimationController _glowController;
   _AccountAction? _activeAction;
+  bool _autoCompleting = false;
+  bool _autoCompleteStarted = false;
 
-  bool get _busy => _activeAction != null;
+  bool get _busy => _activeAction != null || _autoCompleting;
 
   @override
   void initState() {
@@ -76,6 +80,9 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
       vsync: this,
       duration: const Duration(milliseconds: 3200),
     )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoCompleteIfAlreadyAuthenticated();
+    });
   }
 
   @override
@@ -88,11 +95,13 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     if (_busy) return;
     setState(() => _activeAction = _AccountAction.guest);
     try {
-      await widget.authService.signInAnonymously();
+      debugPrint('[onboarding-account] guest auth started');
+      await widget.authService.signInAnonymously(replaceCurrentUser: true);
       final guestUid = FirebaseAuth.instance.currentUser?.uid;
-      await _finalizeOnboarding(sourceGuestUid: guestUid);
+      debugPrint('[onboarding-account] guest auth ok uid=$guestUid');
+      await _completeAuth(sourceGuestUid: guestUid);
     } catch (error) {
-      _showError(mapAuthError(error));
+      _handleAuthError(error, action: 'guest');
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }
@@ -102,15 +111,23 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     if (_busy) return;
     setState(() => _activeAction = _AccountAction.google);
     try {
-      await widget.authService.signInAnonymously();
-      final guestUid = FirebaseAuth.instance.currentUser?.uid;
+      debugPrint('[onboarding-account] google auth started');
+      final guestUid = FirebaseAuth.instance.currentUser?.isAnonymous == true
+          ? FirebaseAuth.instance.currentUser?.uid
+          : null;
+      if (guestUid != null) {
+        debugPrint('[onboarding-account] google source guest uid=$guestUid');
+      }
       await widget.authService.linkOrSignInWithGoogle();
-      await _finalizeOnboarding(
+      debugPrint(
+        '[onboarding-account] google link/sign-in ok uid=${FirebaseAuth.instance.currentUser?.uid}',
+      );
+      await _completeAuth(
         sourceGuestUid: guestUid,
         linkedProvider: 'google.com',
       );
     } catch (error) {
-      _showError(mapAuthError(error));
+      _handleAuthError(error, action: 'google');
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }
@@ -120,18 +137,102 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     if (_busy) return;
     setState(() => _activeAction = _AccountAction.apple);
     try {
-      await widget.authService.signInAnonymously();
-      final guestUid = FirebaseAuth.instance.currentUser?.uid;
+      debugPrint('[onboarding-account] apple auth started');
+      final guestUid = FirebaseAuth.instance.currentUser?.isAnonymous == true
+          ? FirebaseAuth.instance.currentUser?.uid
+          : null;
+      if (guestUid != null) {
+        debugPrint('[onboarding-account] apple source guest uid=$guestUid');
+      }
       await widget.authService.linkOrSignInWithApple();
-      await _finalizeOnboarding(
+      debugPrint(
+        '[onboarding-account] apple link/sign-in ok uid=${FirebaseAuth.instance.currentUser?.uid}',
+      );
+      await _completeAuth(
         sourceGuestUid: guestUid,
         linkedProvider: 'apple.com',
       );
     } catch (error) {
-      _showError(mapAuthError(error));
+      _handleAuthError(error, action: 'apple');
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }
+  }
+
+  Future<void> _completeAuth({
+    String? sourceGuestUid,
+    String? linkedProvider,
+  }) async {
+    if (!widget.finalizeProfileOnAuth) {
+      if (!mounted) return;
+      debugPrint('[onboarding-account] auth-only complete, advancing');
+      widget.onComplete();
+      return;
+    }
+    debugPrint('[onboarding-account] finalizing onboarding profile');
+    await _finalizeOnboarding(
+      sourceGuestUid: sourceGuestUid,
+      linkedProvider: linkedProvider,
+    );
+  }
+
+  Future<void> _autoCompleteIfAlreadyAuthenticated() async {
+    if (_autoCompleteStarted ||
+        !widget.autoCompleteAuthenticatedUser ||
+        !widget.finalizeProfileOnAuth) {
+      return;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return;
+    _autoCompleteStarted = true;
+    if (mounted) setState(() => _autoCompleting = true);
+    try {
+      debugPrint(
+        '[onboarding-account] auto-completing authenticated user '
+        'uid=${user.uid}',
+      );
+      await _completeAuth(linkedProvider: _resolvePrimaryProvider(user));
+    } catch (error) {
+      _handleAuthError(error, action: 'auto-complete');
+    } finally {
+      if (mounted) setState(() => _autoCompleting = false);
+    }
+  }
+
+  void _handleAuthError(Object error, {required String action}) {
+    _logAuthError(action, error);
+    if (_isAuthCancel(error)) return;
+    _showError(AppTexts.t('onboarding.account.auth_failed'));
+  }
+
+  void _logAuthError(String action, Object error) {
+    if (error is FirebaseAuthException) {
+      debugPrint(
+        '[onboarding-account] $action failed FirebaseAuthException '
+        'code=${error.code} message=${error.message}',
+      );
+      return;
+    }
+    if (error is FirebaseException) {
+      debugPrint(
+        '[onboarding-account] $action failed FirebaseException '
+        'plugin=${error.plugin} code=${error.code} message=${error.message}',
+      );
+      return;
+    }
+    debugPrint('[onboarding-account] $action failed $error');
+  }
+
+  bool _isAuthCancel(Object error) {
+    if (error is FirebaseAuthException) {
+      final code = error.code.toLowerCase();
+      return code.contains('cancel') || code == 'web-context-cancelled';
+    }
+    final message = error.toString().toLowerCase();
+    return message.contains('cancel') ||
+        message.contains('canceled') ||
+        message.contains('cancelled') ||
+        message.contains('authorizationerrorcode.canceled');
   }
 
   Future<void> _finalizeOnboarding({
@@ -142,6 +243,10 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     if (user == null) {
       throw FirebaseAuthException(code: 'missing-user');
     }
+    debugPrint(
+      '[onboarding-account] finalize uid=${user.uid} '
+      'anonymous=${user.isAnonymous} provider=$linkedProvider',
+    );
     final normalizedSourceGuestUid = sourceGuestUid?.trim();
     final guestUidChanged =
         normalizedSourceGuestUid != null &&
@@ -213,6 +318,7 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
     map[UserProfileContract.updatedAt] = FieldValue.serverTimestamp();
 
     await userDocRef.set(map, SetOptions(merge: true));
+    debugPrint('[onboarding-account] user profile write ok uid=${user.uid}');
     await _syncGuestRegistry(
       currentUid: user.uid,
       sourceGuestUid: normalizedSourceGuestUid,
@@ -220,7 +326,7 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
       linkedProvider: linkedProvider,
       onboardingSnapshot: onboardingSnapshot,
     );
-    if (!mounted) return;
+    debugPrint('[onboarding-account] guest registry sync ok uid=${user.uid}');
     widget.onComplete();
   }
 
@@ -368,7 +474,9 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
 
   void _showError(String message) {
     if (!mounted) return;
-    MysticToast.showError(context, message);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _openLegal(Widget page) {

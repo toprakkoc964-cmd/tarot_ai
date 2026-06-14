@@ -1,4 +1,4 @@
-import { getGenerativeModelForVision } from './gemini';
+import { getGenerativeModelForVision, strictLanguageInstruction } from './gemini';
 import { logger } from 'firebase-functions';
 
 export type PalmReadingPayload = {
@@ -101,7 +101,8 @@ export async function analyzePalmWithGemini(input: {
     validationPolicy,
     'Never invent medical, legal, or deterministic predictions.',
     'No markdown. Respond with JSON only.',
-    `Write reading text strictly in language: ${lang}.`
+    strictLanguageInstruction(lang),
+    'Apply the language rule to every user-facing JSON string, including rejection text if any and all reading fields.'
   ].join(' ');
 
   const userPrompt = [
