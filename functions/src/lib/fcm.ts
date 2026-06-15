@@ -201,8 +201,8 @@ export async function sendAudioReadyNotification(input: {
   const title = input.lang === 'tr' ? 'Sesli falın hazır' : 'Your audio reading is ready';
   const body =
     input.lang === 'tr'
-      ? 'Emilia mesajını seslendirdi. Dinlemek için uygulamayı aç.'
-      : 'Emilia has narrated your reading. Open the app to listen.';
+      ? 'Bilge Aris mesajını seslendirdi. Dinlemek için uygulamayı aç.'
+      : 'Bilge Aris has narrated your reading. Open the app to listen.';
 
   return sendNotificationToUser({
     uid: input.uid,

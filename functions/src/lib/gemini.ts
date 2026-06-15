@@ -59,6 +59,8 @@ export async function createReadingText(input: {
   modelName?: string;
   lang?: string;
   languageLock?: { oneParagraph?: boolean; short?: boolean };
+  temperature?: number;
+  topP?: number;
 }): Promise<string> {
   try {
     const modelName =
@@ -77,7 +79,8 @@ export async function createReadingText(input: {
       model: modelName,
       systemInstruction,
       generationConfig: {
-        temperature: 0.25,
+        temperature: input.temperature ?? 0.25,
+        ...(input.topP ? { topP: input.topP } : {}),
         ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {})
       },
     });
