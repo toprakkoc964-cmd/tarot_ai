@@ -542,26 +542,6 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     });
   }
 
-  void _enterVerifiedPhase() {
-    if (!mounted || _isScanning) return;
-    _challengeTimer?.cancel();
-    setState(() {
-      _livenessPhase = _PalmLivenessPhase.verified;
-      _livenessStatusOverride = null;
-      _showScanAnyway = false;
-      _stableAimFrames = 0;
-    });
-    HapticFeedback.mediumImpact();
-    _challengeTimer = Timer(const Duration(seconds: 6), () {
-      if (!mounted ||
-          _isScanning ||
-          _livenessPhase != _PalmLivenessPhase.verified) {
-        return;
-      }
-      setState(() => _showScanAnyway = true);
-    });
-  }
-
   Future<void> _scanAnyway() async {
     if (!mounted || _isScanning || !Platform.isIOS) return;
     _challengeTimer?.cancel();
@@ -633,7 +613,6 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     var nextSawClosed = _challengeSawClosed;
     var nextVerifiedOpenCount = _verifiedOpenFrameCount;
     var nextStableAimFrames = _stableAimFrames;
-    var shouldVerify = false;
     var shouldStartChallengeTimer = false;
     var shouldScan = false;
 
@@ -657,20 +636,25 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       }
       if (nextSawClosed && opened) {
         nextVerifiedOpenCount += 1;
-        shouldVerify = nextVerifiedOpenCount >= 2;
+        if (nextVerifiedOpenCount >= 2) {
+          nextPhase = _PalmLivenessPhase.scanning;
+          shouldScan = true;
+        }
       } else if (nextSawClosed) {
         nextVerifiedOpenCount = 0;
       }
     } else if (phase == _PalmLivenessPhase.verified) {
       final rotation = result.rotationAngle?.abs();
       final aligned =
-          result.extendedFingerCount >= 4 &&
-          result.openPalmScore >= 0.6 &&
-          rotation != null &&
-          rotation <= 18 &&
-          result.reliablePointCount >= 12;
+          result.extendedFingerCount >= 3 &&
+          result.openPalmScore >= 0.45 &&
+          (rotation == null || rotation <= 25) &&
+          result.reliablePointCount >= 8;
       nextStableAimFrames = aligned ? nextStableAimFrames + 1 : 0;
-      shouldScan = nextStableAimFrames >= 4;
+      if (nextStableAimFrames >= 1) {
+        nextPhase = _PalmLivenessPhase.scanning;
+        shouldScan = true;
+      }
     }
 
     setState(() {
@@ -690,11 +674,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       _startChallengeTimeout();
     }
 
-    if (shouldVerify) {
-      _enterVerifiedPhase();
-    }
-
     if (shouldScan) {
+      HapticFeedback.mediumImpact();
       unawaited(_startScan());
     }
   }

@@ -135,7 +135,7 @@ class CameraDiagnostics {
     _append(line);
 
     if (enabled) {
-      debugPrint(line);
+      debugPrintSynchronously(line);
       dev.log(line, name: 'camera', error: error, stackTrace: stackTrace);
     }
 

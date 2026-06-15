@@ -87,6 +87,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /diagnostics/{uid}/camera/{logId} {
+      allow read, create: if isOwner(uid);
+      allow update, delete: if false;
+    }
+
     match /app_localization/{lang} {
       allow read: if true;
       allow write: if false;
