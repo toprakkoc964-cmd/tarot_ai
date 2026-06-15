@@ -1,6 +1,6 @@
 name: tarot_ai
 publish_to: none
-version: 0.1.5+13
+version: 0.1.6+14
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
