@@ -215,6 +215,21 @@ class _MessagesPageState extends State<MessagesPage> {
 
   void _openSession(ArisSessionRecord session) {
     final isTarot = session.category == ArisSessionCategory.tarot;
+    final chatContext = switch (session.category) {
+      ArisSessionCategory.palm => AiChatContext.palmReadingMadamAris(
+          sessionId: session.sessionId,
+        ),
+      ArisSessionCategory.coffee => AiChatContext(
+          persona: AiPersona.madamAris,
+          mode: AiChatMode.coffeeReading,
+          title: AppTexts.t('coffeeMadamArisTitle'),
+          metadata: {
+            'source': 'coffee_reading',
+            'sessionId': session.sessionId,
+          },
+        ),
+      ArisSessionCategory.tarot => null,
+    };
     Navigator.of(context)
         .push(
           MaterialPageRoute<String>(
@@ -224,11 +239,7 @@ class _MessagesPageState extends State<MessagesPage> {
               spreadCards: isTarot ? session.toDrawnCards() : const [],
               spreadSessionId: isTarot ? session.sessionId : null,
               cardTitle: isTarot && !session.isSpread ? session.cardName : '',
-              chatContext: session.category == ArisSessionCategory.palm
-                  ? AiChatContext.palmReadingMadamAris(
-                      sessionId: session.sessionId,
-                    )
-                  : null,
+              chatContext: chatContext,
             ),
           ),
         )
