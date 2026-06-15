@@ -118,7 +118,11 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
       if (guestUid != null) {
         debugPrint('[onboarding-account] google source guest uid=$guestUid');
       }
-      await widget.authService.linkOrSignInWithGoogle();
+      final error = await widget.authService.linkOrSignInWithGoogle();
+      if (error != null) {
+        _handleAuthError(error, action: 'google');
+        return;
+      }
       debugPrint(
         '[onboarding-account] google link/sign-in ok uid=${FirebaseAuth.instance.currentUser?.uid}',
       );
@@ -126,8 +130,6 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
         sourceGuestUid: guestUid,
         linkedProvider: 'google.com',
       );
-    } catch (error) {
-      _handleAuthError(error, action: 'google');
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }

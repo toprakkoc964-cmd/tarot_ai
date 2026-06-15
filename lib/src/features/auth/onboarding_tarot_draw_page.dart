@@ -367,56 +367,68 @@ class _FlowingBelt extends StatelessWidget {
   Widget build(BuildContext context) {
     final itemExtent = cardWidth + 18;
     final groupWidth = itemExtent * 8;
-    return ClipRect(
-      child: ShaderMask(
-        shaderCallback: (rect) => const LinearGradient(
-          colors: [
-            Colors.transparent,
-            Colors.white,
-            Colors.white,
-            Colors.transparent,
-          ],
-          stops: [0, 0.12, 0.88, 1],
-        ).createShader(rect),
-        blendMode: BlendMode.dstIn,
-        child: AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            final dx = -groupWidth * controller.value;
-            return Stack(
-              alignment: Alignment.centerLeft,
-              children: [
-                for (var copy = 0; copy < 3; copy++)
-                  Transform.translate(
-                    offset: Offset(dx + copy * groupWidth, 0),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(8, (index) {
-                        final lift =
-                            math.sin((controller.value * math.pi * 2) + index) *
-                            6;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 9),
-                          child: Transform.translate(
-                            offset: Offset(0, lift),
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: onTap,
-                              child: _ClosedTarotBack(
-                                width: cardWidth,
-                                height: cardHeight,
-                                glow: 0.32,
-                                shimmer: (controller.value + index * 0.12) % 1,
+    return SizedBox(
+      height: cardHeight + 18,
+      child: ClipRect(
+        child: ShaderMask(
+          shaderCallback: (rect) => const LinearGradient(
+            colors: [
+              Colors.transparent,
+              Colors.white,
+              Colors.white,
+              Colors.transparent,
+            ],
+            stops: [0, 0.12, 0.88, 1],
+          ).createShader(rect),
+          blendMode: BlendMode.dstIn,
+          child: AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) {
+              final dx = -groupWidth * controller.value;
+              return Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.centerLeft,
+                children: [
+                  for (var copy = 0; copy < 3; copy++)
+                    Transform.translate(
+                      offset: Offset(dx + copy * groupWidth, 0),
+                      child: OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: groupWidth,
+                        maxWidth: groupWidth,
+                        minHeight: cardHeight + 18,
+                        maxHeight: cardHeight + 18,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(8, (index) {
+                            final lift =
+                                math.sin((controller.value * math.pi * 2) + index) *
+                                6;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 9),
+                              child: Transform.translate(
+                                offset: Offset(0, lift),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: onTap,
+                                  child: _ClosedTarotBack(
+                                    width: cardWidth,
+                                    height: cardHeight,
+                                    glow: 0.32,
+                                    shimmer:
+                                        (controller.value + index * 0.12) % 1,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }),
+                            );
+                          }),
+                        ),
+                      ),
                     ),
-                  ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

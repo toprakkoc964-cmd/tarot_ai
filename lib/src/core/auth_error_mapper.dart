@@ -93,6 +93,14 @@ String _mapPlatformError(PlatformException error) {
     return AppTexts.t('auth.login.network_error');
   }
 
+  if (code.contains('invalid_credential') ||
+      code.contains('invalid-credential') ||
+      message.contains('invalid credential') ||
+      message.contains('credential is incorrect') ||
+      message.contains('malformed or has expired')) {
+    return AppTexts.t('auth.login.invalid_credentials');
+  }
+
   if (code == 'sign_in_failed' ||
       message.contains('apiexception: 10') ||
       message.contains('developer_error')) {

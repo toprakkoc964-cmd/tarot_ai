@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -53,6 +54,8 @@ class AuthService {
   static const int verificationResendCooldownSeconds = 60;
   static const int verificationMaxResendPerWindow = 5;
   static const Duration verificationResendWindow = Duration(hours: 24);
+  static const Duration _googleSignInTimeout = Duration(seconds: 20);
+  static const Duration _googleAuthTimeout = Duration(seconds: 15);
   static const String redirectIntentLogin = 'login';
   static const String _redirectIntentKey = 'auth_redirect_intent';
   static const String _postDeletionRedirectKey =
@@ -70,6 +73,121 @@ class AuthService {
   }
 
   Stream<User?> authChanges() => _auth.authStateChanges();
+
+  void _ensureGoogleSignInConfigured() {
+    final webClientId = GoogleAuthConfig.webClientId.trim();
+    if (webClientId.isEmpty ||
+        !webClientId.endsWith('.apps.googleusercontent.com')) {
+      throw FirebaseAuthException(
+        code: 'google-sign-in-config',
+        message:
+            'Google Sign-In is not configured. Set a valid GOOGLE_WEB_CLIENT_ID and re-download google-services.json.',
+      );
+    }
+  }
+
+  Future<GoogleSignInAccount?> _startGoogleSignIn() async {
+    _ensureGoogleSignInConfigured();
+    return _googleSignIn.signIn().timeout(
+      _googleSignInTimeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Google Sign-In did not respond. Use an emulator image with Play Store / Google Play, add SHA-1 in Firebase, and update google-services.json.',
+        );
+      },
+    );
+  }
+
+  Future<GoogleSignInAuthentication> _loadGoogleAuthentication(
+    GoogleSignInAccount googleUser,
+  ) {
+    return googleUser.authentication.timeout(
+      _googleAuthTimeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Google authentication token could not be received. Add SHA-1 in Firebase, confirm the Web client ID, and update google-services.json.',
+        );
+      },
+    );
+  }
+
+  FirebaseAuthException _mapEmailPasswordError(
+    Object error,
+  ) {
+    if (error is FirebaseAuthException) {
+      return error;
+    }
+
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+
+      if (code.contains('invalid-credential') ||
+          code.contains('invalid_credential') ||
+          message.contains('invalid credential') ||
+          message.contains('credential is incorrect') ||
+          message.contains('malformed or has expired')) {
+        return FirebaseAuthException(
+          code: 'invalid-credential',
+          message: error.message,
+        );
+      }
+
+      if (code.contains('network') || message.contains('network')) {
+        return FirebaseAuthException(
+          code: 'network-request-failed',
+          message: error.message,
+        );
+      }
+
+      if (code.contains('too-many-requests') || message.contains('too many')) {
+        return FirebaseAuthException(
+          code: 'too-many-requests',
+          message: error.message,
+        );
+      }
+    }
+
+    if (error is! PlatformException) {
+      return FirebaseAuthException(
+        code: 'auth-failed',
+        message: error.toString(),
+      );
+    }
+
+    final code = error.code.toLowerCase();
+    final message = (error.message ?? '').toLowerCase();
+
+    if (code.contains('invalid_credential') ||
+        code.contains('invalid-credential') ||
+        message.contains('invalid credential') ||
+        message.contains('credential is incorrect') ||
+        message.contains('malformed or has expired')) {
+      return FirebaseAuthException(
+        code: 'invalid-credential',
+        message: error.message,
+      );
+    }
+
+    if (code.contains('network') || message.contains('network')) {
+      return FirebaseAuthException(
+        code: 'network-request-failed',
+        message: error.message,
+      );
+    }
+
+    if (code.contains('too-many-requests') || message.contains('too many')) {
+      return FirebaseAuthException(
+        code: 'too-many-requests',
+        message: error.message,
+      );
+    }
+
+    return FirebaseAuthException(
+      code: 'auth-failed',
+      message: error.message ?? error.code,
+    );
+  }
 
   Future<void> signInAnonymously({bool replaceCurrentUser = false}) async {
     final currentUser = _auth.currentUser;
@@ -110,7 +228,11 @@ class AuthService {
   }
 
   Future<void> signIn({required String email, required String password}) async {
-    await _auth.signInWithEmailAndPassword(email: email, password: password);
+    try {
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (error) {
+      throw _mapEmailPasswordError(error);
+    }
     await clearAuthRedirectIntent();
   }
 
@@ -236,21 +358,21 @@ class AuthService {
     }
   }
 
-  Future<void> signInWithGoogle() async {
+  Future<FirebaseAuthException?> signInWithGoogle() async {
     socialProfileSyncInProgress.value = true;
     try {
-      final googleUser = await _googleSignIn.signIn();
+      final googleUser = await _startGoogleSignIn();
       if (googleUser == null) {
-        throw FirebaseAuthException(
+        return FirebaseAuthException(
           code: 'social-auth-cancelled',
           message: 'Google sign in cancelled.',
         );
       }
 
-      final googleAuth = await googleUser.authentication;
+      final googleAuth = await _loadGoogleAuthentication(googleUser);
       final idToken = googleAuth.idToken;
       if (idToken == null) {
-        throw FirebaseAuthException(
+        return FirebaseAuthException(
           code: 'google-id-token-missing',
           message:
               'Google ID token is missing. Add SHA-1 to Firebase, re-download google-services.json, and set GOOGLE_WEB_CLIENT_ID.',
@@ -287,30 +409,41 @@ class AuthService {
           await ensureInitialDeviceLanguage(user: user);
         }
       }
-    } on FirebaseAuthException {
-      rethrow;
+      return null;
+    } on FirebaseAuthException catch (error) {
+      return error;
+    } on TimeoutException catch (error) {
+      return FirebaseAuthException(
+        code: 'google-sign-in-config',
+        message: error.message,
+      );
     } on PlatformException catch (e) {
-      throw _mapGooglePlatformException(e);
+      return _mapGooglePlatformException(e);
+    } catch (error) {
+      return FirebaseAuthException(
+        code: 'google-sign-in-failed',
+        message: error.toString(),
+      );
     } finally {
       socialProfileSyncInProgress.value = false;
     }
   }
 
-  Future<void> linkOrSignInWithGoogle() async {
+  Future<FirebaseAuthException?> linkOrSignInWithGoogle() async {
     socialProfileSyncInProgress.value = true;
     try {
-      final googleUser = await _googleSignIn.signIn();
+      final googleUser = await _startGoogleSignIn();
       if (googleUser == null) {
-        throw FirebaseAuthException(
+        return FirebaseAuthException(
           code: 'social-auth-cancelled',
           message: 'Google sign in cancelled.',
         );
       }
 
-      final googleAuth = await googleUser.authentication;
+      final googleAuth = await _loadGoogleAuthentication(googleUser);
       final idToken = googleAuth.idToken;
       if (idToken == null) {
-        throw FirebaseAuthException(
+        return FirebaseAuthException(
           code: 'google-id-token-missing',
           message:
               'Google ID token is missing. Add SHA-1 to Firebase, re-download google-services.json, and set GOOGLE_WEB_CLIENT_ID.',
@@ -346,10 +479,21 @@ class AuthService {
           await ensureInitialDeviceLanguage(user: user);
         }
       }
-    } on FirebaseAuthException {
-      rethrow;
+      return null;
+    } on FirebaseAuthException catch (error) {
+      return error;
+    } on TimeoutException catch (error) {
+      return FirebaseAuthException(
+        code: 'google-sign-in-config',
+        message: error.message,
+      );
     } on PlatformException catch (e) {
-      throw _mapGooglePlatformException(e);
+      return _mapGooglePlatformException(e);
+    } catch (error) {
+      return FirebaseAuthException(
+        code: 'google-sign-in-failed',
+        message: error.toString(),
+      );
     } finally {
       socialProfileSyncInProgress.value = false;
     }
@@ -362,6 +506,17 @@ class AuthService {
     if (code.contains('network') || message.contains('network')) {
       return FirebaseAuthException(
         code: 'network-request-failed',
+        message: error.message,
+      );
+    }
+
+    if (code.contains('canceled') ||
+        code.contains('cancelled') ||
+        message.contains('canceled') ||
+        message.contains('cancelled') ||
+        message.contains('12501')) {
+      return FirebaseAuthException(
+        code: 'social-auth-cancelled',
         message: error.message,
       );
     }

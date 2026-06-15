@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_texts.dart';
+import '../../core/language_picker_button.dart';
+import '../../core/localization_service.dart';
 
 class OnboardingWelcomePage extends StatefulWidget {
   const OnboardingWelcomePage({super.key, required this.onStart});
@@ -90,158 +92,189 @@ class _OnboardingWelcomePageState extends State<OnboardingWelcomePage>
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _backgroundController,
-              builder: (context, _) {
-                final t = Curves.easeInOut.transform(
-                  _backgroundController.value,
-                );
-                return Transform.translate(
-                  offset: Offset(lerpDouble(-4, 4, t)!, lerpDouble(-6, 5, t)!),
-                  child: Transform.scale(
-                    scale: lerpDouble(1.0, 1.06, t)!,
-                    child: Image.asset(
-                      'assets/onboarding/welcome_bg.png',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    _bg.withValues(alpha: 0.10),
-                    _bg.withValues(alpha: 0.78),
-                  ],
-                  stops: const [0, 0.58, 1],
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: RepaintBoundary(
+    return ValueListenableBuilder<int>(
+      valueListenable: LocalizationService.instance.revision,
+      builder: (context, _, __) => Scaffold(
+        backgroundColor: _bg,
+        body: Stack(
+          children: [
+            Positioned.fill(
               child: AnimatedBuilder(
-                animation: _particleController,
+                animation: _backgroundController,
                 builder: (context, _) {
-                  return CustomPaint(
-                    painter: _FloatingParticlesPainter(
-                      progress: _particleController.value,
+                  final t = Curves.easeInOut.transform(
+                    _backgroundController.value,
+                  );
+                  return Transform.translate(
+                    offset: Offset(lerpDouble(-4, 4, t)!, lerpDouble(-6, 5, t)!),
+                    child: Transform.scale(
+                      scale: lerpDouble(1.0, 1.06, t)!,
+                      child: Image.asset(
+                        'assets/onboarding/welcome_bg.png',
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   );
                 },
               ),
             ),
-          ),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    20,
-                    20,
-                    20,
-                    math.max(22, bottomInset + 18),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      _bg.withValues(alpha: 0.10),
+                      _bg.withValues(alpha: 0.78),
+                    ],
+                    stops: const [0, 0.58, 1],
                   ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight:
-                          constraints.maxHeight -
-                          math.max(22, bottomInset + 18) -
-                          20,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _particleController,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _FloatingParticlesPainter(
+                        progress: _particleController.value,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      20,
+                      20,
+                      math.max(22, bottomInset + 18),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _IntroReveal(
-                          controller: _introController,
-                          interval: const Interval(0.00, 0.30),
-                          slideY: -12,
-                          child: _BrandMark(controller: _brandController),
-                        ),
-                        const SizedBox(height: 24),
-                        _Ornament(controller: _ornamentController),
-                        const SizedBox(height: 14),
-                        _PersonaCards(
-                          introController: _introController,
-                          glowController: _cardGlowController,
-                          floatController: _cardFloatController,
-                        ),
-                        const SizedBox(height: 20),
-                        _Ornament(controller: _ornamentController, phase: 0.42),
-                        const SizedBox(height: 30),
-                        _IntroReveal(
-                          controller: _introController,
-                          interval: const Interval(0.56, 0.80),
-                          slideY: 14,
-                          child: _TitleShimmer(
-                            controller: _titleShimmerController,
-                            child: Text(
-                              AppTexts.t('onboarding.welcome.title'),
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.newsreader(
-                                color: _onSurface,
-                                fontSize: 32,
-                                height: 1.15,
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: 0,
-                                shadows: [
-                                  Shadow(
-                                    color: _primary.withValues(alpha: 0.25),
-                                    blurRadius: 12,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight:
+                            constraints.maxHeight -
+                            math.max(22, bottomInset + 18) -
+                            20,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _IntroReveal(
+                            controller: _introController,
+                            interval: const Interval(0.00, 0.26),
+                            slideY: -12,
+                            child: Align(
+                              alignment: Alignment.topRight,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.16),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: _secondary.withValues(alpha: 0.25),
                                   ),
-                                ],
+                                ),
+                                child: LanguagePickerButton(
+                                  iconColor: _primary,
+                                  onSelected: (lang) async {
+                                    await LocalizationService.instance
+                                        .setLanguage(lang);
+                                  },
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        _IntroReveal(
-                          controller: _introController,
-                          interval: const Interval(0.66, 0.88),
-                          slideY: 12,
-                          child: Text(
-                            AppTexts.t('onboarding.welcome.subtitle'),
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.manrope(
-                              color: _secondary.withValues(alpha: 0.85),
-                              fontSize: 15,
-                              height: 1.42,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0,
+                          const SizedBox(height: 8),
+                          _IntroReveal(
+                            controller: _introController,
+                            interval: const Interval(0.06, 0.30),
+                            slideY: -12,
+                            child: _BrandMark(controller: _brandController),
+                          ),
+                          const SizedBox(height: 24),
+                          _Ornament(controller: _ornamentController),
+                          const SizedBox(height: 14),
+                          _PersonaCards(
+                            introController: _introController,
+                            glowController: _cardGlowController,
+                            floatController: _cardFloatController,
+                          ),
+                          const SizedBox(height: 20),
+                          _Ornament(
+                            controller: _ornamentController,
+                            phase: 0.42,
+                          ),
+                          const SizedBox(height: 30),
+                          _IntroReveal(
+                            controller: _introController,
+                            interval: const Interval(0.56, 0.80),
+                            slideY: 14,
+                            child: _TitleShimmer(
+                              controller: _titleShimmerController,
+                              child: Text(
+                                AppTexts.t('onboarding.welcome.title'),
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.newsreader(
+                                  color: _onSurface,
+                                  fontSize: 32,
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0,
+                                  shadows: [
+                                    Shadow(
+                                      color: _primary.withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 36),
-                        _IntroReveal(
-                          controller: _introController,
-                          interval: const Interval(0.76, 1.00),
-                          slideY: 14,
-                          child: _StartButton(
-                            controller: _ctaPulseController,
-                            onTap: widget.onStart,
+                          const SizedBox(height: 16),
+                          _IntroReveal(
+                            controller: _introController,
+                            interval: const Interval(0.66, 0.88),
+                            slideY: 12,
+                            child: Text(
+                              AppTexts.t('onboarding.welcome.subtitle'),
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.manrope(
+                                color: _secondary.withValues(alpha: 0.85),
+                                fontSize: 15,
+                                height: 1.42,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0,
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 36),
+                          _IntroReveal(
+                            controller: _introController,
+                            interval: const Interval(0.76, 1.00),
+                            slideY: 14,
+                            child: _StartButton(
+                              controller: _ctaPulseController,
+                              onTap: widget.onStart,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

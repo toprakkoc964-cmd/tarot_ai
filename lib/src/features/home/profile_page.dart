@@ -197,7 +197,12 @@ class _ProfilePageState extends State<ProfilePage> {
     if (_upgradeInProgress) return;
     setState(() => _upgradeInProgress = true);
     try {
-      await widget.authService.linkOrSignInWithGoogle();
+      final error = await widget.authService.linkOrSignInWithGoogle();
+      if (error != null) {
+        if (!mounted || _isSocialCancel(error)) return;
+        _showSnack(AppTexts.t('profile.guest.upgrade_error'));
+        return;
+      }
       await _markCurrentUserLinked(
         provider: 'google.com',
         providers: const ['google.com'],
@@ -205,9 +210,6 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) return;
       _showSnack(AppTexts.t('profile.guest.upgrade_success'));
       await _loadProfileFromFirestore();
-    } catch (error) {
-      if (!mounted || _isSocialCancel(error)) return;
-      _showSnack(AppTexts.t('profile.guest.upgrade_error'));
     } finally {
       if (mounted) setState(() => _upgradeInProgress = false);
     }

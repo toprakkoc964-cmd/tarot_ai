@@ -152,11 +152,13 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _activeAction = _LoginAction.google);
     try {
       debugPrint('[login] google sign-in started');
-      await widget.authService.signInWithGoogle();
+      final error = await widget.authService.signInWithGoogle();
+      if (error != null) {
+        _logAuthError('google', error);
+        _showError(mapAuthError(error));
+        return;
+      }
       debugPrint('[login] google sign-in ok');
-    } catch (error) {
-      _logAuthError('google', error);
-      _showError(mapAuthError(error));
     } finally {
       if (mounted) setState(() => _activeAction = null);
     }
