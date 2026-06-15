@@ -76,6 +76,8 @@ const coffeeDailyAttemptLimit = 10;
 const readingThrottleWindowMs = 10 * 60 * 1000;
 const readingWindowLimit = Number(process.env.READING_WINDOW_LIMIT ?? '5');
 const readingDailyLimit = Number(process.env.READING_DAILY_LIMIT ?? '30');
+const convWindowLimit = Number(process.env.CONV_WINDOW_LIMIT ?? '20');
+const convDailyLimit = Number(process.env.CONV_DAILY_LIMIT ?? '120');
 const walletLowThreshold = 10;
 const readingFollowupMs = 48 * 60 * 60 * 1000;
 const dailyNudgeFallbackTimezone = process.env.DAILY_NUDGE_TIMEZONE ?? 'Europe/Istanbul';
@@ -2938,8 +2940,8 @@ export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforc
         throttle: freshUser.convThrottle,
         nowMs,
         windowMs: readingThrottleWindowMs,
-        windowLimit: readingWindowLimit,
-        dailyLimit: readingDailyLimit,
+        windowLimit: convWindowLimit,
+        dailyLimit: convDailyLimit,
         dayKey: coffeeDayKey(nowMs),
       });
       if (!throttle.allowed) {

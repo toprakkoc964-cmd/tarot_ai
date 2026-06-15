@@ -475,6 +475,8 @@ class LocalizationService {
     'messages.retry': 'Try again',
     'messages.resume_error': 'Could not open this chat. Please try again.',
     'messages.thread_count': '{count} messages',
+    'chat.rateLimited':
+        "You're sending messages too quickly. Please try again shortly.",
     'archive.tab.tarot': 'Tarot',
     'archive.tab.coffee': 'Coffee Reading',
     'archive.tab.palm': 'Palm Reading',
@@ -1405,6 +1407,8 @@ class LocalizationService {
     'messages.retry': 'Tekrar dene',
     'messages.resume_error': 'Sohbet yüklenemedi. Lütfen tekrar dene.',
     'messages.thread_count': '{count} mesaj',
+    'chat.rateLimited':
+        'Çok hızlı mesaj gönderdiniz. Lütfen birazdan tekrar deneyin.',
     'archive.tab.tarot': 'Tarot',
     'archive.tab.coffee': 'Kahve Falı',
     'archive.tab.palm': 'El Falı',

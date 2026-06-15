@@ -635,6 +635,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       if (!mounted) return;
       if (error.message == 'INSUFFICIENT_CREDITS') {
         await _showInsufficientCreditsDialog();
+      } else if (error.message == 'RATE_LIMITED') {
+        _showSnack(AppTexts.t('chat.rateLimited'));
       } else {
         _showSnack('Mesaj gonderilemedi. Tekrar dene.');
       }
@@ -688,6 +690,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       if (!mounted) return;
       if (error.message == 'INSUFFICIENT_CREDITS') {
         await _showInsufficientCreditsDialog();
+      } else if (error.message == 'RATE_LIMITED') {
+        _showSnack(AppTexts.t('chat.rateLimited'));
       } else {
         _showSnack(AppTexts.t('coffeeChatMessageFailed'));
       }
