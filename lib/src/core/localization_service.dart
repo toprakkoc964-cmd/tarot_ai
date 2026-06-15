@@ -433,6 +433,8 @@ class LocalizationService {
         'You need at least 5 tokens to draw a card.',
     'readingRateLimited':
         'You have made too many attempts. Please try again shortly.',
+    'reading.gate.insufficient':
+        'You do not have enough tokens. Please add tokens to continue.',
     'home.card.star.title': 'Star Card',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Hope & Inspiration',
@@ -536,7 +538,7 @@ class LocalizationService {
     'palmChatWithMadamAris': 'Continue with Madam Aris',
     'palmMadamArisTitle': 'Madam Aris · Palm Reading',
     'palmMadamArisSubtitle': 'Palm Reading Guide',
-    'palmMessageNote': 'Each message uses 10 credits.',
+    'palmMessageNote': 'Each follow-up message uses 20 credits.',
     'palmQuestionHint': 'Ask Madam Aris about your palm...',
     'mindLineTitle': 'Mind Line',
     'heartLineTitle': 'Heart Line',
@@ -765,7 +767,7 @@ class LocalizationService {
     'arisLoadingSubtitle': "Gathering your card's energy.",
     'arisTyping': '{name} is typing',
     'arisMessageMeta': '{name} • Now',
-    'arisMessageCost': 'Each message costs 10 tokens',
+    'arisMessageCost': 'Each follow-up message costs 20 tokens',
     'arisQuestionHint': 'Whisper a question to the sage...',
     'coffeeTitle': 'Coffee Reading',
     'coffeeDescription':
@@ -913,7 +915,7 @@ class LocalizationService {
     'coffeePhotoPrivacyNote':
         'Initial cup validation runs on your device. When you request a reading, your photos are sent securely for analysis and retained for up to 7 days.',
     'coffeeChatWithMadamAris': 'Chat with Madam Aris',
-    'coffeeMessageNote': 'A coffee reading costs 20 tokens.',
+    'coffeeMessageNote': 'Each follow-up message costs 20 tokens.',
     'coffeeQuestionHint': 'Ask about the symbols in the grounds...',
     'coffeeLoadingChatSubtitle': 'Listening to the symbols in the grounds.',
     'coffeeArisLookingAtCup': 'Madam Aris is looking into your cup...',
@@ -1363,6 +1365,8 @@ class LocalizationService {
         'Kart cekmek icin en az 5 jeton gerekli.',
     'readingRateLimited':
         'Cok fazla deneme yaptiniz, lutfen birazdan tekrar deneyin.',
+    'reading.gate.insufficient':
+        'Devam etmek icin yeterli jetonun yok. Lutfen jeton yukle.',
     'home.card.star.title': 'Yildiz Karti',
     'home.card.star.name': 'The Star',
     'home.card.star.subtitle': 'Umut & Ilham',
@@ -1463,7 +1467,7 @@ class LocalizationService {
     'palmChatWithMadamAris': 'Madam Aris ile devam et',
     'palmMadamArisTitle': 'Madam Aris · El Falı',
     'palmMadamArisSubtitle': 'El Falı Rehberi',
-    'palmMessageNote': 'Her mesaj 10 jeton kullanır.',
+    'palmMessageNote': 'Her takip mesajı 20 jeton kullanır.',
     'palmQuestionHint': 'El falını Madam Aris’e sor...',
     'mindLineTitle': 'Akıl Çizgisi',
     'heartLineTitle': 'Kalp Çizgisi',
@@ -1693,7 +1697,7 @@ class LocalizationService {
     'arisLoadingSubtitle': 'Kartının enerjisini topluyor.',
     'arisTyping': '{name} yazıyor',
     'arisMessageMeta': '{name} • Şimdi',
-    'arisMessageCost': 'Her mesaj 10 jeton',
+    'arisMessageCost': 'Her takip mesajı 20 jeton',
     'arisQuestionHint': 'Bilgeye bir soru fısılda...',
     'coffeeTitle': 'Kahve Falı',
     'coffeeDescription':
@@ -1834,7 +1838,7 @@ class LocalizationService {
     'coffeePhotoPrivacyNote':
         'İlk fincan doğrulaması cihazında yapılır. Yorumlatmayı seçtiğinde fotoğrafların güvenli analiz servisine gönderilir ve en fazla 7 gün saklanır.',
     'coffeeChatWithMadamAris': 'Madam Aris ile Sohbet Et',
-    'coffeeMessageNote': 'Kahve falı yorumlaması 20 jetondur.',
+    'coffeeMessageNote': 'Her takip mesajı 20 jetondur.',
     'coffeeQuestionHint': 'Telvedeki sembolleri sor...',
     'coffeeLoadingChatSubtitle': 'Telvedeki sembolleri dinliyor.',
     'coffeeArisLookingAtCup': 'Madam Aris fincanına bakıyor...',

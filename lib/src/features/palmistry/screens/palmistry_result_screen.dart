@@ -6,6 +6,7 @@ import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../home/ai_chat_context.dart';
 import '../../home/chat_page.dart';
+import '../../home/credit_page.dart';
 import '../models/palmistry_result.dart';
 import '../widgets/cosmic_scan_button.dart';
 import '../widgets/glass_panel.dart';
@@ -164,17 +165,26 @@ class PalmistryResultScreen extends StatelessWidget {
     );
   }
 
-  void _openMadamArisChat(BuildContext context) {
+  Future<void> _openMadamArisChat(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
     final sessionId = result.sessionId?.trim() ?? '';
     if (uid.isEmpty || sessionId.isEmpty) return;
 
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final chatResult = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
         builder: (_) => KozmikBilgePage(
           uid: uid,
           resumeSessionId: sessionId,
           chatContext: AiChatContext.palmReadingMadamAris(sessionId: sessionId),
+        ),
+      ),
+    );
+    if (!context.mounted || chatResult != 'credits') return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CreditPage(
+          bottomInset: MediaQuery.of(context).padding.bottom,
+          uid: uid,
         ),
       ),
     );

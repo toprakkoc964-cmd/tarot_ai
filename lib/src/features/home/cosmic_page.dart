@@ -9,7 +9,11 @@ import '../../core/app_texts.dart';
 import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
+import 'credit_page.dart';
 import 'home_palette.dart';
+
+const _kCoffeeReadingCost = 20;
+const _kPalmReadingCost = 20;
 
 class CosmicPage extends StatelessWidget {
   const CosmicPage({super.key, required this.bottomInset, required this.uid});
@@ -39,7 +43,7 @@ class CosmicPage extends StatelessWidget {
                   buttonText: AppTexts.t('home.cosmic.palm.button'),
                   icon: Icons.front_hand_rounded,
                   accentIcon: Icons.pan_tool_alt_rounded,
-                  onTap: () => _openPalmScanner(context),
+                  onTap: () => _openPalmScanner(context, uid),
                 ),
                 const SizedBox(height: 24),
                 CosmicFeatureCard(
@@ -58,7 +62,17 @@ class CosmicPage extends StatelessWidget {
     );
   }
 
-  static void _openPalmScanner(BuildContext context) {
+  static Future<void> _openPalmScanner(
+    BuildContext context,
+    String uid,
+  ) async {
+    final canStart = await _ensureCredits(
+      context,
+      uid: uid,
+      requiredCredits: _kPalmReadingCost,
+    );
+    if (!context.mounted || !canStart) return;
+
     Navigator.of(context).push(
       PageRouteBuilder<void>(
         pageBuilder: (_, animation, __) {
@@ -91,6 +105,13 @@ class CosmicPage extends StatelessWidget {
     BuildContext context,
     String uid,
   ) async {
+    final canStart = await _ensureCredits(
+      context,
+      uid: uid,
+      requiredCredits: _kCoffeeReadingCost,
+    );
+    if (!context.mounted || !canStart) return;
+
     await Navigator.of(context).push<void>(
       PageRouteBuilder<void>(
         pageBuilder: (_, animation, __) {
@@ -117,6 +138,43 @@ class CosmicPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  static Future<bool> _ensureCredits(
+    BuildContext context, {
+    required String uid,
+    required int requiredCredits,
+  }) async {
+    final credits = await _currentWalletCredits(uid);
+    if (credits >= requiredCredits) return true;
+    if (!context.mounted) return false;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(AppTexts.t('reading.gate.insufficient'))),
+      );
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CreditPage(
+          bottomInset: MediaQuery.of(context).padding.bottom,
+          uid: uid,
+        ),
+      ),
+    );
+    return await _currentWalletCredits(uid) >= requiredCredits;
+  }
+
+  static Future<int> _currentWalletCredits(String uid) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection(UserProfileContract.usersCollection)
+        .doc(uid)
+        .get();
+    final data = snapshot.data();
+    final wallet = Map<String, dynamic>.from(
+      data?[UserProfileContract.wallet] as Map? ?? const {},
+    );
+    return (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
   }
 }
 

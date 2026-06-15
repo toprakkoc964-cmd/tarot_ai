@@ -12,6 +12,7 @@ import '../../core/app_texts.dart';
 import 'ai_chat_context.dart';
 import 'aris_session_service.dart';
 import 'chat_page.dart';
+import 'credit_page.dart';
 import 'home_palette.dart';
 
 const _kBg = HomePalette.background;
@@ -243,8 +244,21 @@ class _MessagesPageState extends State<MessagesPage> {
             ),
           ),
         )
-        .then((_) {
-          if (mounted) unawaited(_refreshAll());
+        .then((result) {
+          if (!mounted) return;
+          if (result == 'credits') {
+            unawaited(
+              Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => CreditPage(
+                    bottomInset: widget.bottomInset,
+                    uid: widget.uid,
+                  ),
+                ),
+              ),
+            );
+          }
+          unawaited(_refreshAll());
         });
   }
 

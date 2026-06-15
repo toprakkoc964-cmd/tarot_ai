@@ -30,7 +30,7 @@ const _kSecondary = Color(0xFFCDBDFF);
 const _kTertiary = Color(0xFFFFE792);
 const _kOnSurface = Color(0xFFFADCFF);
 const _kGlass = Color(0x66361A41);
-const _kConversationCost = 10;
+const _kConversationCost = 20;
 
 class KozmikBilgePage extends StatefulWidget {
   const KozmikBilgePage({
@@ -597,7 +597,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     final text = _messageController.text.trim();
     if (_isSending || text.isEmpty || _sessionId == null) return;
     if (_isCoffeeChat) {
-      await _sendCoffeeMessage(text);
+      await _sendCoffeeMessage(text, credits);
       return;
     }
     if (credits < _kConversationCost) {
@@ -646,7 +646,13 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     }
   }
 
-  Future<void> _sendCoffeeMessage(String text) async {
+  Future<void> _sendCoffeeMessage(String text, int credits) async {
+    if ((!_coffeeAwaitingMood || _coffeeReadingGenerated) &&
+        credits < _kConversationCost) {
+      await _showInsufficientCreditsDialog();
+      return;
+    }
+
     setState(() {
       _isSending = true;
       _messageController.clear();
