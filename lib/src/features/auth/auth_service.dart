@@ -193,13 +193,14 @@ class AuthService {
     final currentUser = _auth.currentUser;
     if (currentUser != null) {
       if (!replaceCurrentUser || currentUser.isAnonymous) {
+        await ensureCurrentUserDocument(user: currentUser);
         return;
       }
       await clearAuthRedirectIntent();
       await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
     }
     final credential = await _auth.signInAnonymously();
-    await ensureInitialDeviceLanguage(user: credential.user);
+    await ensureCurrentUserDocument(user: credential.user);
   }
 
   Future<UserCredential> linkWithCredential(AuthCredential credential) async {
@@ -233,6 +234,7 @@ class AuthService {
     } catch (error) {
       throw _mapEmailPasswordError(error);
     }
+    await ensureCurrentUserDocument();
     await clearAuthRedirectIntent();
   }
 
@@ -245,7 +247,7 @@ class AuthService {
       password: password,
     );
     await clearAuthRedirectIntent();
-    await ensureInitialDeviceLanguage(user: credential.user);
+    await ensureCurrentUserDocument(user: credential.user);
     await credential.user?.sendEmailVerification();
     return credential;
   }
@@ -396,6 +398,7 @@ class AuthService {
         await user.updateDisplayName(normalizedName);
       }
       if (user != null) {
+        await ensureCurrentUserDocument(user: user);
         await upsertSocialUserProfile(
           user: user,
           providerId: 'google.com',
@@ -466,6 +469,7 @@ class AuthService {
         await user.updateDisplayName(normalizedName);
       }
       if (user != null) {
+        await ensureCurrentUserDocument(user: user);
         await upsertSocialUserProfile(
           user: user,
           providerId: 'google.com',
@@ -598,6 +602,7 @@ class AuthService {
       );
       await clearAuthRedirectIntent();
       if (user != null) {
+        await ensureCurrentUserDocument(user: user);
         await _registerAppleAuthorization(appleCredential.authorizationCode);
         final appleName = UserProfileContract.normalizeName(
           [
@@ -690,6 +695,7 @@ class AuthService {
       await clearAuthRedirectIntent();
       final user = result.user;
       if (user != null) {
+        await ensureCurrentUserDocument(user: user);
         await _registerAppleAuthorization(appleCredential.authorizationCode);
         final appleName = UserProfileContract.normalizeName(
           [
@@ -813,6 +819,17 @@ class AuthService {
     if (kDebugMode) {
       debugPrint('Account deletion completed: ${response.data}');
     }
+  }
+
+  Future<void> ensureCurrentUserDocument({User? user}) async {
+    final currentUser = user ?? _auth.currentUser;
+    if (currentUser == null) return;
+
+    final callable = FirebaseFunctions.instanceFor(
+      region: 'us-central1',
+    ).httpsCallable('ensureCurrentUserDocument');
+    await callable.call(<String, dynamic>{});
+    await ensureInitialDeviceLanguage(user: currentUser);
   }
 
   Future<void> resendVerificationEmail() async {

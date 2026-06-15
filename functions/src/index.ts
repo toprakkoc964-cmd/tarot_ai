@@ -1,13 +1,12 @@
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { getAuth, UserRecord } from 'firebase-admin/auth';
 import { getFirestore, FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentDeleted, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import * as functionsV1 from 'firebase-functions/v1';
 import * as logger from 'firebase-functions/logger';
 import jwt from 'jsonwebtoken';
 
@@ -1483,7 +1482,7 @@ async function getPersonaOrDefault(personaId: string): Promise<AIPersonaDoc> {
   return data;
 }
 
-export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) => {
+async function ensureUserDocumentForAuthRecord(user: UserRecord): Promise<void> {
   if (!user?.uid) return;
 
   const userRef = db.collection('users').doc(user.uid);
@@ -1587,25 +1586,21 @@ export const handleUserCreated = functionsV1.auth.user().onCreate(async (user) =
       linkedAt: null,
     }, { merge: true });
   }
-});
+}
 
-export const handleUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
-  if (!user?.uid) return;
+export const ensureCurrentUserDocument = onCall(
+  { enforceAppCheck: false, region: 'us-central1' },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
 
-  const userRef = db.collection('users').doc(user.uid);
-  const guestRef = db.collection('guests').doc(user.uid);
-  try {
-    await Promise.all([
-      db.recursiveDelete(userRef),
-      db.recursiveDelete(guestRef),
-    ]);
-  } catch (error) {
-    functionsV1.logger.error('Failed to cleanup user document on auth delete', {
-      uid: user.uid,
-      error
-    });
+    const user = await getAuth().getUser(uid);
+    await ensureUserDocumentForAuthRecord(user);
+    return { ok: true };
   }
-});
+);
 
 export const handleUserDocumentDeleted = onDocumentDeleted(
   { document: 'users/{uid}', region: 'us-central1', secrets: appleAuthSecretNames },

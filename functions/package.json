@@ -2,7 +2,7 @@
   "name": "tarot-ai-functions",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "lib/src/index.js",
   "scripts": {
