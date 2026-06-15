@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,8 @@ import '../../../core/function_error_codes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_compression_helper.dart';
 import '../../../core/utils/palm_detection_result.dart';
+import '../../home/ai_chat_context.dart';
+import '../../home/chat_page.dart';
 import '../services/i_palmistry_service.dart';
 import '../services/palmistry_analysis_exception.dart';
 import '../services/palm_vision_channel.dart';
@@ -391,12 +394,24 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       await _disposeCamera();
 
       if (!mounted) return;
+      final sessionId = result.sessionId?.trim() ?? '';
+      final uid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+      final destination = sessionId.isNotEmpty && uid.isNotEmpty
+          ? KozmikBilgePage(
+              uid: uid,
+              resumeSessionId: sessionId,
+              chatContext: AiChatContext.palmReadingMadamAris(
+                sessionId: sessionId,
+              ),
+            )
+          : PalmistryResultScreen(result: result);
+
       await Navigator.of(context).pushReplacement(
         PageRouteBuilder<void>(
           pageBuilder: (_, animation, __) {
             return FadeTransition(
               opacity: animation,
-              child: PalmistryResultScreen(result: result),
+              child: destination,
             );
           },
         ),
