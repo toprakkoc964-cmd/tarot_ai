@@ -2629,6 +2629,11 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
     if (!cardName || !openingMessage) {
       throw new HttpsError('failed-precondition', 'ARIS_SESSION_INCOMPLETE');
     }
+    const palmReading: PalmReadingPayload = {
+      mindLine: sanitizeShortText(session.palmReading?.mindLine, 700),
+      heartLine: sanitizeShortText(session.palmReading?.heartLine, 700),
+      lifeEnergy: sanitizeShortText(session.palmReading?.lifeEnergy, 500)
+    };
 
     const recentMessages = Array.isArray(session.recentMessages)
       ? session.recentMessages
@@ -2733,10 +2738,10 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       const profileReply = birthMonthReply({ user, message, lang });
       const prompts = profileReply
         ? null
-        : isPalmSession && session.palmReading
+        : isPalmSession
           ? buildPalmArisConversationPrompt({
             user,
-            palmReading: session.palmReading,
+            palmReading,
             openingMessage,
             recentMessages,
             userMessage: message,

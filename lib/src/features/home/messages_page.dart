@@ -42,16 +42,11 @@ class _MessagesPageState extends State<MessagesPage> {
   final _service = ArisSessionService();
   StreamSubscription<List<ArisSessionRecord>>? _subscription;
   List<ArisSessionRecord> _sessions = const [];
-  ArisSessionCategory _selectedCategory = ArisSessionCategory.tarot;
   bool _loading = true;
   String? _errorMessage;
   bool _usingServerFallback = false;
 
   String get _cacheKey => 'aris_archive_cache_${widget.uid}';
-
-  List<ArisSessionRecord> get _filteredSessions => _sessions
-      .where((session) => session.category == _selectedCategory)
-      .toList(growable: false);
 
   @override
   void initState() {
@@ -255,12 +250,6 @@ class _MessagesPageState extends State<MessagesPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _MessagesTopBar(showBackButton: widget.showBackButton),
-                _ArchiveCategoryTabs(
-                  selectedCategory: _selectedCategory,
-                  onChanged: (category) {
-                    setState(() => _selectedCategory = category);
-                  },
-                ),
                 Expanded(child: _buildBody(context)),
               ],
             ),
@@ -279,9 +268,7 @@ class _MessagesPageState extends State<MessagesPage> {
       return _MessagesError(message: _errorMessage!, onRetry: _refreshAll);
     }
 
-    final visibleSessions = _filteredSessions;
-
-    if (visibleSessions.isEmpty) {
+    if (_sessions.isEmpty) {
       return RefreshIndicator(
         color: _kPrimary,
         onRefresh: _refreshAll,
@@ -290,31 +277,71 @@ class _MessagesPageState extends State<MessagesPage> {
           padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
           children: [
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.16),
-            _MessagesEmpty(category: _selectedCategory),
+            const _MessagesEmpty(category: ArisSessionCategory.tarot),
           ],
         ),
       );
     }
 
+    final sections = _buildSections();
+
     return RefreshIndicator(
       color: _kPrimary,
       onRefresh: _refreshAll,
-      child: ListView.separated(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
-        itemCount: visibleSessions.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 14),
-        itemBuilder: (context, index) {
-          final session = visibleSessions[index];
-          return _MessageSessionTile(
-            session: session,
-            locale: Localizations.localeOf(context).toString(),
-            onTap: () => _openSession(session),
-          );
-        },
+        children: [
+          for (final section in sections) ...[
+            _ArchiveSessionSection(
+              category: section.category,
+              sessions: section.sessions,
+              locale: Localizations.localeOf(context).toString(),
+              onOpenSession: _openSession,
+            ),
+            const SizedBox(height: 22),
+          ],
+        ],
       ),
     );
   }
+
+  List<_ArchiveSectionData> _buildSections() {
+    final grouped = <ArisSessionCategory, List<ArisSessionRecord>>{
+      ArisSessionCategory.tarot: <ArisSessionRecord>[],
+      ArisSessionCategory.coffee: <ArisSessionRecord>[],
+      ArisSessionCategory.palm: <ArisSessionRecord>[],
+    };
+
+    for (final session in _sessions) {
+      grouped[session.category]?.add(session);
+    }
+
+    for (final sessions in grouped.values) {
+      sessions.sort((a, b) {
+        final aTime = a.updatedAt?.millisecondsSinceEpoch ?? 0;
+        final bTime = b.updatedAt?.millisecondsSinceEpoch ?? 0;
+        return bTime.compareTo(aTime);
+      });
+    }
+
+    return [
+      for (final category in const [
+        ArisSessionCategory.tarot,
+        ArisSessionCategory.coffee,
+        ArisSessionCategory.palm,
+      ])
+        if (grouped[category]!.isNotEmpty)
+          _ArchiveSectionData(category: category, sessions: grouped[category]!),
+    ];
+  }
+}
+
+class _ArchiveSectionData {
+  const _ArchiveSectionData({required this.category, required this.sessions});
+
+  final ArisSessionCategory category;
+  final List<ArisSessionRecord> sessions;
 }
 
 class _MessagesTopBar extends StatelessWidget {
@@ -378,126 +405,64 @@ class _MessagesTopBar extends StatelessWidget {
   }
 }
 
-class _ArchiveCategoryTabs extends StatelessWidget {
-  const _ArchiveCategoryTabs({
-    required this.selectedCategory,
-    required this.onChanged,
-  });
-
-  final ArisSessionCategory selectedCategory;
-  final ValueChanged<ArisSessionCategory> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: _kBg.withValues(alpha: 0.82),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ArchiveCategoryPill(
-              category: ArisSessionCategory.tarot,
-              selectedCategory: selectedCategory,
-              label: AppTexts.t('archive.tab.tarot'),
-              icon: Icons.auto_awesome_rounded,
-              onChanged: onChanged,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ArchiveCategoryPill(
-              category: ArisSessionCategory.coffee,
-              selectedCategory: selectedCategory,
-              label: AppTexts.t('archive.tab.coffee'),
-              icon: Icons.local_cafe_rounded,
-              onChanged: onChanged,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ArchiveCategoryPill(
-              category: ArisSessionCategory.palm,
-              selectedCategory: selectedCategory,
-              label: AppTexts.t('archive.tab.palm'),
-              icon: Icons.back_hand_rounded,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ArchiveCategoryPill extends StatelessWidget {
-  const _ArchiveCategoryPill({
+class _ArchiveSessionSection extends StatelessWidget {
+  const _ArchiveSessionSection({
     required this.category,
-    required this.selectedCategory,
-    required this.label,
-    required this.icon,
-    required this.onChanged,
+    required this.sessions,
+    required this.locale,
+    required this.onOpenSession,
   });
 
   final ArisSessionCategory category;
-  final ArisSessionCategory selectedCategory;
-  final String label;
-  final IconData icon;
-  final ValueChanged<ArisSessionCategory> onChanged;
+  final List<ArisSessionRecord> sessions;
+  final String locale;
+  final ValueChanged<ArisSessionRecord> onOpenSession;
 
   @override
   Widget build(BuildContext context) {
-    final selected = category == selectedCategory;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => onChanged(category),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            color: selected
-                ? _kPrimary.withValues(alpha: 0.2)
-                : _kGlassBg.withValues(alpha: 0.72),
-            border: Border.all(
-              color: selected
-                  ? _kPrimary.withValues(alpha: 0.62)
-                  : _kGlassBorder.withValues(alpha: 0.8),
-            ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: _kPrimary.withValues(alpha: 0.2),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ]
-                : null,
-          ),
+    final title = switch (category) {
+      ArisSessionCategory.tarot => AppTexts.t('archive.tab.tarot'),
+      ArisSessionCategory.coffee => AppTexts.t('archive.tab.coffee'),
+      ArisSessionCategory.palm => AppTexts.t('archive.tab.palm'),
+    };
+    final icon = switch (category) {
+      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
+      ArisSessionCategory.palm => Icons.back_hand_rounded,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 12),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 16, color: selected ? _kTertiary : _kSecondary),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? _kOnSurface : _kSecondary,
-                  ),
+              Icon(icon, color: _kTertiary, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.6,
+                  color: _kTertiary,
                 ),
               ),
             ],
           ),
         ),
-      ),
+        ...sessions.map(
+          (session) => Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _MessageSessionTile(
+              session: session,
+              locale: locale,
+              onTap: () => onOpenSession(session),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -523,6 +488,12 @@ class _MessageSessionTile extends StatelessWidget {
       ArisSessionCategory.palm => AppTexts.t('archive.palm_title'),
       _ => session.titleLabel,
     };
+    final icon = switch (session.category) {
+      ArisSessionCategory.palm => Icons.back_hand_rounded,
+      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
+      ArisSessionCategory.tarot when session.isSpread => Icons.style_rounded,
+      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+    };
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -546,15 +517,7 @@ class _MessageSessionTile extends StatelessWidget {
                   color: _kPrimary.withValues(alpha: 0.14),
                   border: Border.all(color: _kPrimary.withValues(alpha: 0.35)),
                 ),
-                child: Icon(
-                  session.category == ArisSessionCategory.palm
-                      ? Icons.back_hand_rounded
-                      : session.isSpread
-                      ? Icons.style_rounded
-                      : Icons.auto_awesome_rounded,
-                  color: _kTertiary,
-                  size: 22,
-                ),
+                child: Icon(icon, color: _kTertiary, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
