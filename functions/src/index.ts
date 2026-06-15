@@ -707,12 +707,6 @@ function newArisSessionId(): string {
   return `aris_${stamp}_${rand}`.slice(0, 48);
 }
 
-function newPalmArisSessionId(day: string): string {
-  const safeDay = day.replace(/[^0-9a-z_-]/gi, '');
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `palm_${safeDay}_${Date.now().toString(36)}_${rand}`.slice(0, 48);
-}
-
 function shouldUseSoftPersonalization(message?: string): boolean {
   if (!message) return true;
   const normalized = message.trim().toLowerCase();
@@ -2621,7 +2615,9 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       recentMessages?: Array<{ role?: string; text?: string }>;
     };
     const isPalmSession = session.mode === 'palmReading' || session.category === 'palm';
-    const isCoffeeSession = session.mode === 'coffeeReading';
+    const isCoffeeSession =
+      !isPalmSession &&
+      (session.mode === 'coffeeReading' || session.persona === 'madamAris');
     const isMadamArisSession = isCoffeeSession || isPalmSession || session.persona === 'madamAris';
     const cardName = session.cardName?.trim();
     const cardNames = Array.isArray(session.cardNames)
@@ -3816,14 +3812,15 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
     }
 
     const day = new Date().toISOString().slice(0, 10);
-    const sessionId = newPalmArisSessionId(day);
-    const sessionRef = userRef.collection('aris_sessions').doc(sessionId);
+    const sessionRef = userRef.collection('aris_sessions').doc();
+    const sessionId = sessionRef.id;
     const userSnap = await userRef.get();
     if (!userSnap.exists) {
       throw new HttpsError('not-found', 'USER_NOT_FOUND');
     }
     const user = userSnap.data() as UserDoc & Record<string, unknown>;
     let openingMessage = '';
+    let openingSource: 'ai' | 'fallback' = 'ai';
     try {
       openingMessage = (await createReadingText({
         ...buildPalmArisOpeningPrompt({
@@ -3836,6 +3833,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
         lang,
       })).trim();
     } catch (error) {
+      openingSource = 'fallback';
       logger.warn('analyzePalmReading opening fallback', {
         uid,
         sessionId,
@@ -3843,6 +3841,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       });
     }
     if (!openingMessage) {
+      openingSource = 'fallback';
       openingMessage = buildPalmArisFallbackOpening({
         user,
         reading: analysis.reading,
@@ -3868,6 +3867,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       cardName: 'palm',
       cardNames: [],
       openingMessage,
+      openingSource,
       palmReading: analysis.reading,
       recentMessages: [],
       createdAt: FieldValue.serverTimestamp(),
@@ -3879,7 +3879,8 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       isValid: true,
       reading: analysis.reading,
       sessionId,
-      openingMessage
+      openingMessage,
+      openingSource
     };
   } catch (err) {
     throw mapError(err);
