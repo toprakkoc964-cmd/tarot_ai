@@ -13,6 +13,7 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.1.0",
     "@google/generative-ai": "^0.24.1",
     "@napi-rs/canvas": "^0.1.68",
     "dotenv": "^17.4.2",

@@ -47,6 +47,7 @@ class PurchaseVerificationRequest {
       'productId': productId,
       'transactionId': transactionId,
       'purchaseId': transactionId,
+      'signedTransaction': receiptData,
       'receiptData': receiptData,
       'verificationData': receiptData,
       'idempotencyKey': idempotencyKey,

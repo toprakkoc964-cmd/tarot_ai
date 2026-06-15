@@ -12,6 +12,7 @@ class RestorePurchaseItem {
   Map<String, dynamic> toJson() => {
     'transactionId': transactionId,
     'productId': productId,
+    'signedTransaction': receiptData,
     'receiptData': receiptData,
   };
 }

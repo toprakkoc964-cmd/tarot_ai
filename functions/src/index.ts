@@ -3175,26 +3175,45 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
 
     const uid = request.auth.uid;
     const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
-    const transactionId = String(request.data?.transactionId ?? '');
-    const productId = String(request.data?.productId ?? '');
+    const signedTransaction = String(
+      request.data?.signedTransaction ??
+      request.data?.receiptData ??
+      request.data?.verificationData ??
+      ''
+    );
     const receiptData = String(request.data?.receiptData ?? '');
 
     const userRef = db.collection('users').doc(uid);
     const idemRef = userRef.collection('idempotency').doc(`purchase_${idemKey}`);
-    const safeTransactionId = transactionId || idemKey;
-    const transactionRef = userRef.collection('iap_transactions').doc(safeTransactionId);
     const idemSnap = await idemRef.get();
     if (idemSnap.exists) {
       return idemSnap.data();
     }
 
-    const validation = await validateAppleReceipt({ transactionId, productId, receiptData });
-    if (!validation.isValid || validation.productType === 'unknown') {
+    const validation = await validateAppleReceipt({
+      signedTransaction,
+      receiptData
+    });
+    const verifiedTransactionId = validation.verifiedTransactionId;
+    const verifiedOriginalTransactionId = validation.verifiedOriginalTransactionId;
+    const productId = validation.productId;
+    if (!validation.isValid ||
+        validation.productType === 'unknown' ||
+        !verifiedTransactionId ||
+        !productId) {
       throw new HttpsError('failed-precondition', 'PURCHASE_INVALID');
     }
+    const transactionDocumentId = validation.productType === 'monthly_premium'
+      ? verifiedOriginalTransactionId ?? verifiedTransactionId
+      : verifiedTransactionId;
+    if (!transactionDocumentId) {
+      throw new HttpsError('failed-precondition', 'PURCHASE_INVALID');
+    }
+    const transactionRef = userRef.collection('iap_transactions').doc(transactionDocumentId);
 
     let remainingCredits = 0;
     let premiumActive = false;
+    let creditedAmount = 0;
     await db.runTransaction(async (tx) => {
       const txSnap = await tx.get(transactionRef);
       if (txSnap.exists) {
@@ -3213,6 +3232,7 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
       const creditsToGrant = validation.productType === 'monthly_premium'
         ? validation.premiumBonusCredits
         : validation.creditsToGrant;
+      creditedAmount = creditsToGrant;
       remainingCredits = currentCredits + creditsToGrant;
       premiumActive = validation.productType === 'monthly_premium';
 
@@ -3224,11 +3244,14 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
       if (validation.productType === 'monthly_premium') {
         updates['entitlements.premium.active'] = true;
         updates['entitlements.premium.productId'] = productId;
-        updates['entitlements.premium.originalTransactionId'] = safeTransactionId;
+        updates['entitlements.premium.originalTransactionId'] = transactionDocumentId;
+        updates['entitlements.premium.currentTransactionId'] = verifiedTransactionId;
         updates['entitlements.premium.willRenew'] = true;
         updates['entitlements.premium.lastVerifiedAt'] = FieldValue.serverTimestamp();
-        // TODO: Store App Store Server API expiration/period values here:
-        // entitlements.premium.expiresAt, currentSubscriptionPeriodId.
+        updates['entitlements.premium.currentSubscriptionPeriodId'] = verifiedTransactionId;
+        if (validation.expiresDate) {
+          updates['entitlements.premium.expiresAt'] = Timestamp.fromMillis(validation.expiresDate);
+        }
       }
 
       tx.update(userRef, updates);
@@ -3240,32 +3263,39 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
           ? 'ios_premium_period_bonus'
           : 'ios_purchase',
         productId,
-        transactionId: safeTransactionId,
+        transactionId: transactionDocumentId,
+        verifiedTransactionId,
+        verifiedOriginalTransactionId: verifiedOriginalTransactionId ?? null,
         idempotencyKey: idemKey,
         createdAt: FieldValue.serverTimestamp()
       });
       tx.set(transactionRef, {
         productId,
-        transactionId: safeTransactionId,
+        transactionId: transactionDocumentId,
+        verifiedTransactionId,
+        verifiedOriginalTransactionId: verifiedOriginalTransactionId ?? null,
         productType: validation.productType,
         creditsGranted: creditsToGrant,
         remainingCredits,
         premiumActive,
+        expiresAt: validation.expiresDate ? Timestamp.fromMillis(validation.expiresDate) : null,
+        environment: validation.environment ?? null,
         createdAt: FieldValue.serverTimestamp()
       });
     });
 
     const result = {
       success: true,
-      creditedAmount: validation.productType === 'monthly_premium'
-        ? validation.premiumBonusCredits
-        : validation.creditsToGrant,
+      creditedAmount,
       remainingCredits,
       entitlements: {
         premium: {
           active: premiumActive,
           productId: premiumActive ? productId : null,
-          willRenew: premiumActive ? true : null
+          willRenew: premiumActive ? true : null,
+          expiresAt: premiumActive && validation.expiresDate
+            ? validation.expiresDate
+            : null
         },
         credits: {
           balance: remainingCredits
@@ -3406,54 +3436,101 @@ export const restoreIosPurchases = onCall({ enforceAppCheck: appCheckEnforced },
     let totalRestored = 0;
     let remainingCredits = 0;
     for (const item of purchases) {
-      const transactionId = String(item?.transactionId ?? '');
-      const productId = String(item?.productId ?? '');
+      const signedTransaction = String(
+        item?.signedTransaction ??
+        item?.receiptData ??
+        item?.verificationData ??
+        ''
+      );
       const receiptData = String(item?.receiptData ?? '');
-      if (!transactionId || !productId || !receiptData) {
+      if (!signedTransaction && !receiptData) {
         continue;
       }
 
       const userRef = db.collection('users').doc(uid);
-      const transactionRef = userRef.collection('iap_transactions').doc(transactionId);
+      const validation = await validateAppleReceipt({
+        signedTransaction,
+        receiptData
+      });
+      const verifiedTransactionId = validation.verifiedTransactionId;
+      const verifiedOriginalTransactionId = validation.verifiedOriginalTransactionId;
+      const productId = validation.productId;
+      if (!validation.isValid ||
+          validation.productType === 'unknown' ||
+          !verifiedTransactionId ||
+          !productId) {
+        continue;
+      }
+      const transactionDocumentId = validation.productType === 'monthly_premium'
+        ? verifiedOriginalTransactionId ?? verifiedTransactionId
+        : verifiedTransactionId;
+      if (!transactionDocumentId) {
+        continue;
+      }
+
+      const transactionRef = userRef.collection('iap_transactions').doc(transactionDocumentId);
       const existing = await transactionRef.get();
       if (existing.exists) {
         remainingCredits = Number((existing.data() as { remainingCredits?: number }).remainingCredits ?? 0);
         continue;
       }
 
-      const validation = await validateAppleReceipt({ transactionId, productId, receiptData });
-      if (!validation.isValid || validation.creditsToGrant <= 0) {
-        continue;
-      }
-
+      let restoredForItem = 0;
       await db.runTransaction(async (tx) => {
         const userSnap = await tx.get(userRef);
         if (!userSnap.exists) return;
         const user = userSnap.data() as UserDoc;
-        remainingCredits = Number(user.wallet.credits ?? 0) + validation.creditsToGrant;
+        const creditsToGrant = validation.productType === 'monthly_premium'
+          ? validation.premiumBonusCredits
+          : validation.creditsToGrant;
+        restoredForItem = creditsToGrant;
+        remainingCredits = Number(user.wallet.credits ?? 0) + creditsToGrant;
 
-        tx.update(userRef, {
+        const updates: Record<string, unknown> = {
           'wallet.credits': remainingCredits,
           updatedAt: FieldValue.serverTimestamp()
-        });
+        };
+        if (validation.productType === 'monthly_premium') {
+          updates['entitlements.premium.active'] = true;
+          updates['entitlements.premium.productId'] = productId;
+          updates['entitlements.premium.originalTransactionId'] = transactionDocumentId;
+          updates['entitlements.premium.currentTransactionId'] = verifiedTransactionId;
+          updates['entitlements.premium.willRenew'] = true;
+          updates['entitlements.premium.lastVerifiedAt'] = FieldValue.serverTimestamp();
+          updates['entitlements.premium.currentSubscriptionPeriodId'] = verifiedTransactionId;
+          if (validation.expiresDate) {
+            updates['entitlements.premium.expiresAt'] = Timestamp.fromMillis(validation.expiresDate);
+          }
+        }
+        tx.update(userRef, updates);
         tx.set(userRef.collection('credit_ledger').doc(), {
           type: 'credit',
-          amount: validation.creditsToGrant,
-          reason: 'ios_restore',
+          amount: creditsToGrant,
+          reason: validation.productType === 'monthly_premium'
+            ? 'ios_restore_premium_period_bonus'
+            : 'ios_restore',
           productId,
-          transactionId,
+          transactionId: transactionDocumentId,
+          verifiedTransactionId,
+          verifiedOriginalTransactionId: verifiedOriginalTransactionId ?? null,
           createdAt: FieldValue.serverTimestamp()
         });
         tx.set(transactionRef, {
           productId,
-          transactionId,
-          creditsGranted: validation.creditsToGrant,
+          transactionId: transactionDocumentId,
+          verifiedTransactionId,
+          verifiedOriginalTransactionId: verifiedOriginalTransactionId ?? null,
+          productType: validation.productType,
+          creditsGranted: creditsToGrant,
           remainingCredits,
+          premiumActive: validation.productType === 'monthly_premium',
+          expiresAt: validation.expiresDate ? Timestamp.fromMillis(validation.expiresDate) : null,
+          environment: validation.environment ?? null,
           createdAt: FieldValue.serverTimestamp()
         });
-      });
 
-      totalRestored += validation.creditsToGrant;
+      });
+      totalRestored += restoredForItem;
     }
 
     return {
