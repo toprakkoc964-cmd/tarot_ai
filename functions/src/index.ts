@@ -60,9 +60,11 @@ const consentVersion = process.env.CONSENT_VERSION ?? 'v1';
 const initialFreeCredits = Number(process.env.INITIAL_FREE_CREDITS ?? '1');
 const supportedLanguages = new Set(['tr', 'en', 'de', 'es', 'fr', 'it', 'pt']);
 const defaultPersonaId = process.env.DEFAULT_PERSONA_ID ?? 'bilge_aris';
+const appCheckEnforced = process.env.APP_CHECK_ENFORCE === 'true';
 const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
-const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '10');
+const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '20');
 const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
+const palmReadingCost = Number(process.env.PALM_READING_COST ?? '20');
 const arisModel = process.env.GEMINI_ARIS_MODEL ?? 'gemini-2.5-flash-lite';
 const coffeeRequiredSteps = ['cupInside', 'saucer', 'cupSide'] as const;
 const coffeeReservationTtlMs = 10 * 60 * 1000;
@@ -119,8 +121,7 @@ type AppleRevokeResult = {
 };
 
 function requireAppCheckIfEnabled(request: { app?: unknown }) {
-  const appCheckRequired = (process.env.APP_CHECK_ENFORCE ?? 'false') === 'true';
-  if (appCheckRequired && !request.app) {
+  if (appCheckEnforced && !request.app) {
     throw new Error('APP_CHECK_REQUIRED');
   }
 }
@@ -1589,7 +1590,7 @@ async function ensureUserDocumentForAuthRecord(user: UserRecord): Promise<void> 
 }
 
 export const ensureCurrentUserDocument = onCall(
-  { enforceAppCheck: false, region: 'us-central1' },
+  { enforceAppCheck: appCheckEnforced, region: 'us-central1' },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -1644,7 +1645,7 @@ export const handleUserDocumentDeleted = onDocumentDeleted(
 });
 
 export const registerFcmToken = onCall(
-  { region: 'us-central1', enforceAppCheck: false },
+  { region: 'us-central1', enforceAppCheck: appCheckEnforced },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -1662,7 +1663,7 @@ export const registerFcmToken = onCall(
 );
 
 export const unregisterFcmToken = onCall(
-  { region: 'us-central1', enforceAppCheck: false },
+  { region: 'us-central1', enforceAppCheck: appCheckEnforced },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -1680,7 +1681,7 @@ export const unregisterFcmToken = onCall(
 );
 
 export const registerAppleAuthorization = onCall(
-  { region: 'us-central1', enforceAppCheck: false, secrets: appleAuthSecretNames },
+  { region: 'us-central1', enforceAppCheck: appCheckEnforced, secrets: appleAuthSecretNames },
   async (request) => {
     try {
       if (!request.auth?.uid) {
@@ -1718,7 +1719,7 @@ export const registerAppleAuthorization = onCall(
   },
 );
 
-export const deleteUserCompletely = onCall({ enforceAppCheck: false, secrets: appleAuthSecretNames }, async (request) => {
+export const deleteUserCompletely = onCall({ enforceAppCheck: appCheckEnforced, secrets: appleAuthSecretNames }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -1786,7 +1787,7 @@ export const deleteUserCompletely = onCall({ enforceAppCheck: false, secrets: ap
   }
 });
 
-export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false, secrets: appleAuthSecretNames }, async (request) => {
+export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: appCheckEnforced, secrets: appleAuthSecretNames }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -1839,7 +1840,7 @@ export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: false, secr
   }
 });
 
-export const generateTarotReading = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+export const generateTarotReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2278,7 +2279,7 @@ async function releaseCoffeeReservation(input: {
 
 export const analyzeCoffeeReading = onCall(
   {
-    enforceAppCheck: false,
+    enforceAppCheck: appCheckEnforced,
     secrets: ['GEMINI_API_KEY'],
     maxInstances: 3,
     concurrency: 2,
@@ -2465,7 +2466,7 @@ export const analyzeCoffeeReading = onCall(
   }
 );
 
-export const deleteCoffeeReadingPhotos = onCall({ enforceAppCheck: false }, async (request) => {
+export const deleteCoffeeReadingPhotos = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2496,7 +2497,7 @@ export const deleteCoffeeReadingPhotos = onCall({ enforceAppCheck: false }, asyn
   }
 });
 
-export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+export const generateBirthFrequencyComment = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2613,7 +2614,7 @@ export const generateBirthFrequencyComment = onCall({ enforceAppCheck: false, se
   }
 });
 
-export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (request) => {
+export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2666,7 +2667,7 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: false }, async (req
   }
 });
 
-export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+export const generateArisOpeningReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2790,7 +2791,7 @@ export const generateArisOpeningReading = onCall({ enforceAppCheck: false, secre
   }
 });
 
-export const listArisSessions = onCall({ enforceAppCheck: false }, async (request) => {
+export const listArisSessions = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2835,7 +2836,7 @@ export const listArisSessions = onCall({ enforceAppCheck: false }, async (reques
   }
 });
 
-export const continueArisConversation = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -2916,6 +2917,40 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       user
     });
     const currentCredits = Number((user as UserDoc).wallet.credits ?? 0);
+    const hasPriorAssistantMessage = recentMessages.some((entry) => entry.role === 'assistant');
+    const conversationCharge = hasPriorAssistantMessage ? arisConversationCost : 0;
+
+    await db.runTransaction(async (tx) => {
+      const freshUserSnap = await tx.get(userRef);
+      if (!freshUserSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+      const freshUser = freshUserSnap.data() as UserDoc & {
+        convThrottle?: {
+          windowStartedAtMs?: number;
+          windowCount?: number;
+          dayKey?: string;
+          dayCount?: number;
+        };
+      };
+      const nowMs = Date.now();
+      const throttle = checkAndBumpThrottle({
+        throttle: freshUser.convThrottle,
+        nowMs,
+        windowMs: readingThrottleWindowMs,
+        windowLimit: readingWindowLimit,
+        dailyLimit: readingDailyLimit,
+        dayKey: coffeeDayKey(nowMs),
+      });
+      if (!throttle.allowed) {
+        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
+      }
+      tx.update(userRef, {
+        convThrottle: throttle.next,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    });
+
     const restrictedReply = restrictedArisReply({ message, lang, persona: personaKind });
     const injectionReply = !restrictedReply && isPromptInjectionAttempt(message)
       ? personaGuardReply(personaKind, lang)
@@ -2986,31 +3021,35 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       return result;
     }
 
-    let remainingCredits = 0;
-    await db.runTransaction(async (tx) => {
-      const freshUserSnap = await tx.get(userRef);
-      if (!freshUserSnap.exists) {
-        throw new HttpsError('not-found', 'USER_NOT_FOUND');
-      }
-      const freshUser = freshUserSnap.data() as UserDoc;
-      const freshCredits = Number(freshUser.wallet.credits ?? 0);
-      if (freshCredits < arisConversationCost) {
-        throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
-      }
+    let remainingCredits = currentCredits;
+    let chargedCredits = 0;
+    if (conversationCharge > 0) {
+      await db.runTransaction(async (tx) => {
+        const freshUserSnap = await tx.get(userRef);
+        if (!freshUserSnap.exists) {
+          throw new HttpsError('not-found', 'USER_NOT_FOUND');
+        }
+        const freshUser = freshUserSnap.data() as UserDoc;
+        const freshCredits = Number(freshUser.wallet.credits ?? 0);
+        if (freshCredits < conversationCharge) {
+          throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
+        }
 
-      remainingCredits = freshCredits - arisConversationCost;
-      tx.update(userRef, {
-        'wallet.credits': remainingCredits,
-        updatedAt: FieldValue.serverTimestamp()
+        chargedCredits = conversationCharge;
+        remainingCredits = freshCredits - conversationCharge;
+        tx.update(userRef, {
+          'wallet.credits': remainingCredits,
+          updatedAt: FieldValue.serverTimestamp()
+        });
+        tx.set(userRef.collection('credit_ledger').doc(), {
+          type: 'debit',
+          amount: -conversationCharge,
+          reason: 'aris_conversation',
+          idempotencyKey: idemKey,
+          createdAt: FieldValue.serverTimestamp()
+        });
       });
-      tx.set(userRef.collection('credit_ledger').doc(), {
-        type: 'debit',
-        amount: -arisConversationCost,
-        reason: 'aris_conversation',
-        idempotencyKey: idemKey,
-        createdAt: FieldValue.serverTimestamp()
-      });
-    });
+    }
 
     try {
       const profileReply = birthMonthReply({ user, message, lang });
@@ -3100,23 +3139,25 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
       ]);
       return result;
     } catch (innerError) {
-      await db.runTransaction(async (tx) => {
-        const freshUserSnap = await tx.get(userRef);
-        if (freshUserSnap.exists) {
-          const freshUser = freshUserSnap.data() as UserDoc;
-          tx.update(userRef, {
-            'wallet.credits': Number(freshUser.wallet.credits ?? 0) + arisConversationCost,
-            updatedAt: FieldValue.serverTimestamp()
+      if (chargedCredits > 0) {
+        await db.runTransaction(async (tx) => {
+          const freshUserSnap = await tx.get(userRef);
+          if (freshUserSnap.exists) {
+            const freshUser = freshUserSnap.data() as UserDoc;
+            tx.update(userRef, {
+              'wallet.credits': Number(freshUser.wallet.credits ?? 0) + chargedCredits,
+              updatedAt: FieldValue.serverTimestamp()
+            });
+          }
+          tx.set(userRef.collection('credit_ledger').doc(), {
+            type: 'refund',
+            amount: chargedCredits,
+            reason: 'aris_conversation_rollback',
+            idempotencyKey: idemKey,
+            createdAt: FieldValue.serverTimestamp()
           });
-        }
-        tx.set(userRef.collection('credit_ledger').doc(), {
-          type: 'refund',
-          amount: arisConversationCost,
-          reason: 'aris_conversation_rollback',
-          idempotencyKey: idemKey,
-          createdAt: FieldValue.serverTimestamp()
         });
-      });
+      }
       throw innerError;
     }
   } catch (err) {
@@ -3124,7 +3165,7 @@ export const continueArisConversation = onCall({ enforceAppCheck: false, secrets
   }
 });
 
-export const validateIosPurchase = onCall({ enforceAppCheck: false }, async (request) => {
+export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -3237,7 +3278,7 @@ export const validateIosPurchase = onCall({ enforceAppCheck: false }, async (req
   }
 });
 
-export const saveOnboardingProfile = onCall({ enforceAppCheck: false }, async (request) => {
+export const saveOnboardingProfile = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -3348,7 +3389,7 @@ export const synthesizeReadingAudio = onDocumentUpdated(
   }
 );
 
-export const restoreIosPurchases = onCall({ enforceAppCheck: false }, async (request) => {
+export const restoreIosPurchases = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -3502,6 +3543,9 @@ export const onUserDocWrite = onDocumentWritten(
       stableJson(before.notificationPrefs?.dailyCard) !== stableJson(after.notificationPrefs?.dailyCard) ||
       before.notificationPrefs?.enabled !== after.notificationPrefs?.enabled;
 
+    // Language-only updates are intentionally not schedule/entitlement inputs.
+    // Client language sync must only write settings.lang (+ updatedAt) and must
+    // never reset credits, daily-card sent markers, nextDailyCardAt, or throttles.
     if (dailyInputChanged) {
       const nextDailyCardAt = scheduleDailyTimestamp(after, now);
       if (!timestampsEqual(after.nextDailyCardAt, nextDailyCardAt)) {
@@ -3638,6 +3682,8 @@ export const sendDailyCardNudges = onSchedule(
           const vars = buildNotifVars(data, lang);
 
           if (data.lastDailyCardSent === localDate) {
+            // Daily eligibility is language-independent: one send per local day,
+            // even if settings.lang changes during that same day.
             await refreshDailySchedule(userDoc, data);
             skipped += 1;
             continue;
@@ -4044,7 +4090,7 @@ export const cleanupCoffeeArtifacts = onSchedule(
   }
 );
 
-export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
@@ -4119,6 +4165,30 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       );
     }
 
+    let remainingCredits = 0;
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+      const user = userSnap.data() as UserDoc;
+      const credits = Number(user.wallet?.credits ?? 0);
+      if (credits < palmReadingCost) {
+        throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
+      }
+      remainingCredits = credits - palmReadingCost;
+      tx.update(userRef, {
+        'wallet.credits': remainingCredits,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(userRef.collection('credit_ledger').doc(), {
+        type: 'debit',
+        amount: -palmReadingCost,
+        reason: 'palm_reading',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+
     const day = new Date().toISOString().slice(0, 10);
     const sessionRef = userRef.collection('aris_sessions').doc();
     const sessionId = sessionRef.id;
@@ -4190,7 +4260,9 @@ export const analyzePalmReading = onCall({ enforceAppCheck: false, secrets: ['GE
       reading: analysis.reading,
       sessionId,
       openingMessage,
-      openingSource
+      openingSource,
+      remainingCredits,
+      chargedCredits: palmReadingCost
     };
   } catch (err) {
     throw mapError(err);
