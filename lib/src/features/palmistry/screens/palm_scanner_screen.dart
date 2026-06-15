@@ -105,6 +105,12 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     return !Platform.isIOS || _livenessPhase == _PalmLivenessPhase.verified;
   }
 
+  bool get _canStartScanFromCurrentPhase {
+    if (!Platform.isIOS) return true;
+    return _livenessPhase == _PalmLivenessPhase.verified ||
+        _livenessPhase == _PalmLivenessPhase.scanning;
+  }
+
   Future<void> _initializeCamera() async {
     if (!mounted) return;
     unawaited(
@@ -329,7 +335,12 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
 
   Future<void> _startScan({bool bypassLiveness = false}) async {
     final controller = _controller;
-    if ((!bypassLiveness && !_canTapScan) || controller == null) return;
+    if (_isScanning ||
+        controller == null ||
+        !controller.value.isInitialized ||
+        (!bypassLiveness && !_canStartScanFromCurrentPhase)) {
+      return;
+    }
 
     _challengeTimer?.cancel();
     _fallbackTimer?.cancel();
@@ -603,8 +614,11 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     );
   }
 
-  void _handleDetectionResult(PalmDetectionResult result) {
+  void _handleDetectionResult(PalmDetectionResult rawResult) {
     if (!mounted || _isScanning) return;
+    final result = rawResult.handDetected
+        ? rawResult
+        : const PalmDetectionResult.noHand();
     _logPalmVisionResult(result);
 
     final phase = _livenessPhase;
@@ -616,7 +630,13 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
     var shouldStartChallengeTimer = false;
     var shouldScan = false;
 
-    if (phase == _PalmLivenessPhase.detecting) {
+    if (!result.handDetected) {
+      nextPhase = _PalmLivenessPhase.detecting;
+      nextStableCount = 0;
+      nextSawClosed = false;
+      nextVerifiedOpenCount = 0;
+      nextStableAimFrames = 0;
+    } else if (phase == _PalmLivenessPhase.detecting) {
       nextStableCount = result.handDetected ? nextStableCount + 1 : 0;
       if (nextStableCount >= 2) {
         nextPhase = _PalmLivenessPhase.challenge;
