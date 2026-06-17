@@ -4,7 +4,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth, UserRecord } from 'firebase-admin/auth';
 import { getFirestore, FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentDeleted, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as logger from 'firebase-functions/logger';
@@ -24,7 +24,14 @@ import { createReadingText } from './lib/gemini';
 import { createCoffeeReadingWithVision } from './lib/coffee-reading';
 import { renderShareImage } from './lib/share-image';
 import { buildShareDeepLink } from './lib/deep-link';
-import { validateAppleReceipt } from './lib/purchase';
+import {
+  appStoreProductKind,
+  premiumBonusCredits,
+  validateAppleReceipt,
+  verifyAppStoreNotification,
+  verifyAppStoreRenewalInfo,
+  verifyAppStoreTransaction
+} from './lib/purchase';
 import { requireIdempotencyKey } from './lib/idempotency';
 import { checkAndBumpThrottle } from './lib/rate-limit';
 import { AIPersonaDoc, UserDoc, UserProfile } from './lib/types';
@@ -61,6 +68,7 @@ const initialFreeCredits = Number(process.env.INITIAL_FREE_CREDITS ?? '1');
 const supportedLanguages = new Set(['tr', 'en', 'de', 'es', 'fr', 'it', 'pt']);
 const defaultPersonaId = process.env.DEFAULT_PERSONA_ID ?? 'bilge_aris';
 const appCheckEnforced = process.env.APP_CHECK_ENFORCE === 'true';
+const iosBundleId = process.env.IOS_BUNDLE_ID ?? 'com.tarotai';
 const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
 const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '20');
 const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
@@ -114,6 +122,25 @@ type CoffeeAnalysisState = {
   windowCount?: number;
   dayKey?: string;
   dayCount?: number;
+};
+
+type IapTransactionDoc = {
+  productId?: string;
+  transactionId?: string;
+  verifiedTransactionId?: string;
+  verifiedOriginalTransactionId?: string | null;
+  productType?: string;
+  creditsGranted?: number;
+  remainingCredits?: number;
+  premiumActive?: boolean;
+  refunded?: boolean;
+};
+
+type IapTransactionLookup = {
+  uid: string;
+  userRef: FirebaseFirestore.DocumentReference;
+  transactionRef?: FirebaseFirestore.DocumentReference;
+  transactionData?: IapTransactionDoc;
 };
 
 type AppleRevokeResult = {
@@ -1842,6 +1869,584 @@ export const deleteCurrentUserCompletely = onCall({ enforceAppCheck: appCheckEnf
   }
 });
 
+async function lookupIapTransaction(transaction: {
+  originalTransactionId?: string;
+  transactionId?: string;
+}): Promise<IapTransactionLookup | null> {
+  const originalTransactionId = transaction.originalTransactionId ?? '';
+  const transactionId = transaction.transactionId ?? '';
+  const linkId = originalTransactionId || transactionId;
+  if (linkId) {
+    const linkSnap = await db.collection('iap_links').doc(linkId).get();
+    const uid = typeof linkSnap.data()?.uid === 'string'
+      ? String(linkSnap.data()?.uid)
+      : '';
+    if (uid) {
+      const userRef = db.collection('users').doc(uid);
+      const candidateIds = Array.from(new Set(
+        [originalTransactionId, transactionId].filter((value) => value.length > 0)
+      ));
+      for (const candidateId of candidateIds) {
+        const transactionRef = userRef.collection('iap_transactions').doc(candidateId);
+        const transactionSnap = await transactionRef.get();
+        if (transactionSnap.exists) {
+          return {
+            uid,
+            userRef,
+            transactionRef,
+            transactionData: transactionSnap.data() as IapTransactionDoc
+          };
+        }
+      }
+      return { uid, userRef };
+    }
+  }
+
+  const fallbackOriginalId = originalTransactionId || transactionId;
+  if (fallbackOriginalId) {
+    const originalSnap = await db.collectionGroup('iap_transactions')
+      .where('verifiedOriginalTransactionId', '==', fallbackOriginalId)
+      .limit(1)
+      .get();
+    const doc = originalSnap.docs[0];
+    const userRef = doc?.ref.parent.parent;
+    if (doc && userRef) {
+      return {
+        uid: userRef.id,
+        userRef,
+        transactionRef: doc.ref,
+        transactionData: doc.data() as IapTransactionDoc
+      };
+    }
+  }
+
+  if (transactionId) {
+    const txSnap = await db.collectionGroup('iap_transactions')
+      .where('verifiedTransactionId', '==', transactionId)
+      .limit(1)
+      .get();
+    const doc = txSnap.docs[0];
+    const userRef = doc?.ref.parent.parent;
+    if (doc && userRef) {
+      return {
+        uid: userRef.id,
+        userRef,
+        transactionRef: doc.ref,
+        transactionData: doc.data() as IapTransactionDoc
+      };
+    }
+  }
+
+  return null;
+}
+
+function premiumEntitlementUpdates(args: {
+  active: boolean;
+  productId?: string;
+  originalTransactionId?: string;
+  currentTransactionId?: string;
+  expiresDate?: number;
+  willRenew?: boolean | null;
+}): Record<string, unknown> {
+  const updates: Record<string, unknown> = {
+    'entitlements.premium.active': args.active,
+    'entitlements.premium.lastVerifiedAt': FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  };
+  if (args.productId) updates['entitlements.premium.productId'] = args.productId;
+  if (args.originalTransactionId) {
+    updates['entitlements.premium.originalTransactionId'] = args.originalTransactionId;
+  }
+  if (args.currentTransactionId) {
+    updates['entitlements.premium.currentTransactionId'] = args.currentTransactionId;
+    updates['entitlements.premium.currentSubscriptionPeriodId'] = args.currentTransactionId;
+  }
+  if (typeof args.willRenew === 'boolean') {
+    updates['entitlements.premium.willRenew'] = args.willRenew;
+  }
+  if (args.expiresDate) {
+    updates['entitlements.premium.expiresAt'] = Timestamp.fromMillis(args.expiresDate);
+  }
+  return updates;
+}
+
+function isWillRenew(renewalInfo: { autoRenewStatus?: number | string } | null): boolean | null {
+  if (!renewalInfo || typeof renewalInfo.autoRenewStatus === 'undefined') return null;
+  return Number(renewalInfo.autoRenewStatus) === 1;
+}
+
+async function processRefundOrRevokeNotification(args: {
+  notificationRef: FirebaseFirestore.DocumentReference;
+  notificationType: string;
+  subtype?: string;
+  transaction: {
+    productId?: string;
+    transactionId?: string;
+    originalTransactionId?: string;
+  };
+  lookup: IapTransactionLookup | null;
+}): Promise<string> {
+  const productKind = appStoreProductKind(
+    args.transaction.productId ?? args.lookup?.transactionData?.productId
+  );
+  const notificationType = args.notificationType;
+
+  if (!args.lookup) {
+    await args.notificationRef.set({
+      notificationType,
+      subtype: args.subtype ?? null,
+      result: 'user_not_found',
+      productId: args.transaction.productId ?? null,
+      transactionId: args.transaction.transactionId ?? null,
+      originalTransactionId: args.transaction.originalTransactionId ?? null,
+      processedAt: FieldValue.serverTimestamp()
+    });
+    return 'user_not_found';
+  }
+  const lookup = args.lookup;
+
+  await db.runTransaction(async (tx) => {
+    const existingNotification = await tx.get(args.notificationRef);
+    if (existingNotification.exists) return;
+
+    const userSnap = await tx.get(lookup.userRef);
+    if (!userSnap.exists) {
+      tx.set(args.notificationRef, {
+        notificationType,
+        subtype: args.subtype ?? null,
+        result: 'user_not_found',
+        uid: lookup.uid,
+        productId: args.transaction.productId ?? null,
+        transactionId: args.transaction.transactionId ?? null,
+        originalTransactionId: args.transaction.originalTransactionId ?? null,
+        processedAt: FieldValue.serverTimestamp()
+      });
+      return;
+    }
+
+    const transactionSnap = lookup.transactionRef
+      ? await tx.get(lookup.transactionRef)
+      : null;
+    const transactionData = (transactionSnap?.data() ?? lookup.transactionData ?? {}) as IapTransactionDoc;
+
+    if (productKind === 'monthly_premium') {
+      tx.update(lookup.userRef, premiumEntitlementUpdates({
+        active: false,
+        productId: args.transaction.productId ?? transactionData.productId,
+        originalTransactionId: args.transaction.originalTransactionId ?? transactionData.verifiedOriginalTransactionId ?? undefined,
+        currentTransactionId: args.transaction.transactionId ?? transactionData.verifiedTransactionId
+      }));
+      if (lookup.transactionRef) {
+        const transactionUpdates: Record<string, unknown> = {
+          updatedAt: FieldValue.serverTimestamp()
+        };
+        if (notificationType === 'REFUND') {
+          transactionUpdates.refunded = true;
+          transactionUpdates.refundedAt = FieldValue.serverTimestamp();
+        }
+        if (notificationType === 'REVOKE') {
+          transactionUpdates.revoked = true;
+          transactionUpdates.revokedAt = FieldValue.serverTimestamp();
+        }
+        tx.set(lookup.transactionRef, transactionUpdates, { merge: true });
+      }
+      tx.set(args.notificationRef, {
+        notificationType,
+        subtype: args.subtype ?? null,
+        result: notificationType === 'REFUND' ? 'subscription_refunded' : 'subscription_revoked',
+        uid: lookup.uid,
+        productId: args.transaction.productId ?? transactionData.productId ?? null,
+        transactionId: args.transaction.transactionId ?? null,
+        originalTransactionId: args.transaction.originalTransactionId ?? null,
+        processedAt: FieldValue.serverTimestamp()
+      });
+      return;
+    }
+
+    const creditsGranted = Number(transactionData.creditsGranted ?? 0);
+    const alreadyRefunded = Boolean(transactionData.refunded);
+    if (creditsGranted > 0 && !alreadyRefunded) {
+      const user = userSnap.data() as UserDoc;
+      const currentCredits = Number(user.wallet?.credits ?? 0);
+      const nextCredits = Math.max(0, currentCredits - creditsGranted);
+      tx.update(lookup.userRef, {
+        'wallet.credits': nextCredits,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      tx.set(lookup.userRef.collection('credit_ledger').doc(), {
+        type: 'debit',
+        amount: -creditsGranted,
+        reason: 'ios_refund',
+        productId: args.transaction.productId ?? transactionData.productId ?? null,
+        transactionId: args.transaction.transactionId ?? transactionData.transactionId ?? null,
+        verifiedTransactionId: transactionData.verifiedTransactionId ?? args.transaction.transactionId ?? null,
+        verifiedOriginalTransactionId: transactionData.verifiedOriginalTransactionId ?? args.transaction.originalTransactionId ?? null,
+        createdAt: FieldValue.serverTimestamp()
+      });
+    }
+    if (lookup.transactionRef) {
+      tx.set(lookup.transactionRef, {
+        refunded: true,
+        refundedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    tx.set(args.notificationRef, {
+      notificationType,
+      subtype: args.subtype ?? null,
+      result: alreadyRefunded ? 'already_refunded' : 'consumable_refunded',
+      uid: lookup.uid,
+      productId: args.transaction.productId ?? transactionData.productId ?? null,
+      transactionId: args.transaction.transactionId ?? null,
+      originalTransactionId: args.transaction.originalTransactionId ?? null,
+      processedAt: FieldValue.serverTimestamp()
+    });
+  });
+
+  return productKind === 'monthly_premium' ? 'subscription_refunded_or_revoked' : 'consumable_refunded';
+}
+
+async function processSubscriptionStatusNotification(args: {
+  notificationRef: FirebaseFirestore.DocumentReference;
+  notificationType: string;
+  subtype?: string;
+  transaction: {
+    productId?: string;
+    transactionId?: string;
+    originalTransactionId?: string;
+    expiresDate?: number;
+    environment?: string;
+  };
+  renewalInfo: { autoRenewStatus?: number | string; productId?: string; autoRenewProductId?: string } | null;
+  lookup: IapTransactionLookup | null;
+}): Promise<string> {
+  const notificationType = args.notificationType;
+  if (!args.lookup) {
+    await args.notificationRef.set({
+      notificationType,
+      subtype: args.subtype ?? null,
+      result: 'user_not_found',
+      productId: args.transaction.productId ?? null,
+      transactionId: args.transaction.transactionId ?? null,
+      originalTransactionId: args.transaction.originalTransactionId ?? null,
+      processedAt: FieldValue.serverTimestamp()
+    });
+    return 'user_not_found';
+  }
+  const lookup = args.lookup;
+
+  const willRenew = isWillRenew(args.renewalInfo);
+  const productId = args.transaction.productId ??
+    args.renewalInfo?.productId ??
+    args.renewalInfo?.autoRenewProductId;
+  const originalTransactionId = args.transaction.originalTransactionId ??
+    lookup.transactionData?.verifiedOriginalTransactionId ??
+    args.transaction.transactionId;
+  const transactionId = args.transaction.transactionId ?? originalTransactionId;
+
+  await db.runTransaction(async (tx) => {
+    const existingNotification = await tx.get(args.notificationRef);
+    if (existingNotification.exists) return;
+
+    if (notificationType === 'DID_RENEW') {
+      const transactionDocumentId = transactionId || originalTransactionId;
+      if (!transactionDocumentId) {
+        tx.set(args.notificationRef, {
+          notificationType,
+          subtype: args.subtype ?? null,
+          result: 'missing_transaction_id',
+          uid: lookup.uid,
+          productId: productId ?? null,
+          transactionId: null,
+          originalTransactionId: originalTransactionId ?? null,
+          processedAt: FieldValue.serverTimestamp()
+        });
+        return;
+      }
+      const transactionRef = lookup.userRef.collection('iap_transactions').doc(transactionDocumentId);
+      const transactionSnap = await tx.get(transactionRef);
+      const userSnap = await tx.get(lookup.userRef);
+      if (!userSnap.exists) {
+        tx.set(args.notificationRef, {
+          notificationType,
+          subtype: args.subtype ?? null,
+          result: 'user_not_found',
+          uid: lookup.uid,
+          productId: productId ?? null,
+          transactionId: transactionId ?? null,
+          originalTransactionId: originalTransactionId ?? null,
+          processedAt: FieldValue.serverTimestamp()
+        });
+        return;
+      }
+
+      const user = userSnap.data() as UserDoc;
+      const bonusCredits = transactionSnap.exists ? 0 : premiumBonusCredits();
+      const nextCredits = Number(user.wallet?.credits ?? 0) + bonusCredits;
+      const updates = premiumEntitlementUpdates({
+        active: true,
+        productId,
+        originalTransactionId,
+        currentTransactionId: transactionId,
+        expiresDate: args.transaction.expiresDate,
+        willRenew
+      });
+      if (bonusCredits > 0) updates['wallet.credits'] = nextCredits;
+      tx.update(lookup.userRef, updates);
+
+      if (!transactionSnap.exists) {
+        tx.set(lookup.userRef.collection('credit_ledger').doc(), {
+          type: 'credit',
+          amount: bonusCredits,
+          reason: 'ios_premium_period_bonus',
+          productId: productId ?? null,
+          transactionId,
+          verifiedTransactionId: transactionId,
+          verifiedOriginalTransactionId: originalTransactionId ?? null,
+          createdAt: FieldValue.serverTimestamp()
+        });
+        tx.set(transactionRef, {
+          productId: productId ?? null,
+          transactionId,
+          verifiedTransactionId: transactionId,
+          verifiedOriginalTransactionId: originalTransactionId ?? null,
+          productType: 'monthly_premium',
+          creditsGranted: bonusCredits,
+          remainingCredits: nextCredits,
+          premiumActive: true,
+          expiresAt: args.transaction.expiresDate ? Timestamp.fromMillis(args.transaction.expiresDate) : null,
+          environment: args.transaction.environment ?? null,
+          createdAt: FieldValue.serverTimestamp()
+        });
+      }
+      if (originalTransactionId) {
+        tx.set(db.collection('iap_links').doc(originalTransactionId), {
+          uid: lookup.uid,
+          productId: productId ?? null,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
+      tx.set(args.notificationRef, {
+        notificationType,
+        subtype: args.subtype ?? null,
+        result: transactionSnap.exists ? 'renewal_already_recorded' : 'renewed',
+        uid: lookup.uid,
+        productId: productId ?? null,
+        transactionId: transactionId ?? null,
+        originalTransactionId: originalTransactionId ?? null,
+        bonusCredits,
+        processedAt: FieldValue.serverTimestamp()
+      });
+      return;
+    }
+
+    const userSnap = await tx.get(lookup.userRef);
+    if (!userSnap.exists) {
+      tx.set(args.notificationRef, {
+        notificationType,
+        subtype: args.subtype ?? null,
+        result: 'user_not_found',
+        uid: lookup.uid,
+        productId: productId ?? null,
+        transactionId: transactionId ?? null,
+        originalTransactionId: originalTransactionId ?? null,
+        processedAt: FieldValue.serverTimestamp()
+      });
+      return;
+    }
+
+    const active = ['SUBSCRIBED', 'DID_CHANGE_RENEWAL_PREF'].includes(notificationType);
+    const expired = ['EXPIRED', 'GRACE_PERIOD_EXPIRED'].includes(notificationType);
+    const updates = premiumEntitlementUpdates({
+      active: expired ? false : active,
+      productId,
+      originalTransactionId,
+      currentTransactionId: transactionId,
+      expiresDate: args.transaction.expiresDate,
+      willRenew: notificationType === 'DID_CHANGE_RENEWAL_STATUS'
+        ? willRenew
+        : expired
+          ? false
+          : willRenew
+    });
+    if (notificationType === 'DID_CHANGE_RENEWAL_STATUS') {
+      delete updates['entitlements.premium.active'];
+    }
+    tx.update(lookup.userRef, updates);
+    if (originalTransactionId) {
+      tx.set(db.collection('iap_links').doc(originalTransactionId), {
+        uid: lookup.uid,
+        productId: productId ?? null,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    tx.set(args.notificationRef, {
+      notificationType,
+      subtype: args.subtype ?? null,
+      result: expired
+        ? 'expired'
+        : notificationType === 'DID_CHANGE_RENEWAL_STATUS'
+          ? 'renewal_status_updated'
+          : 'subscription_updated',
+      uid: lookup.uid,
+      productId: productId ?? null,
+      transactionId: transactionId ?? null,
+      originalTransactionId: originalTransactionId ?? null,
+      processedAt: FieldValue.serverTimestamp()
+    });
+  });
+
+  return 'subscription_status_processed';
+}
+
+function requestJsonBody(body: unknown): Record<string, unknown> {
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return body && typeof body === 'object' ? body as Record<string, unknown> : {};
+}
+
+function appStoreNotificationBundleId(notification: {
+  data?: { bundleId?: string };
+}): string {
+  return String(notification.data?.bundleId ?? '');
+}
+
+export const appStoreServerNotifications = onRequest(
+  { region: 'us-central1' },
+  async (request, response) => {
+    if (request.method !== 'POST') {
+      response.status(405).send('Method Not Allowed');
+      return;
+    }
+
+    const body = requestJsonBody(request.body);
+    const signedPayload = typeof body.signedPayload === 'string'
+      ? body.signedPayload
+      : '';
+    const notification = await verifyAppStoreNotification(signedPayload);
+    if (!notification) {
+      logger.warn('app_store_notification_invalid_signature');
+      response.status(400).json({ ok: false, error: 'INVALID_SIGNED_PAYLOAD' });
+      return;
+    }
+
+    const notificationType = String(notification.notificationType ?? '');
+    const subtype = notification.subtype ? String(notification.subtype) : undefined;
+    const notificationUUID = String(notification.notificationUUID ?? '');
+    const bundleId = appStoreNotificationBundleId(notification);
+
+    if (bundleId && bundleId !== iosBundleId) {
+      logger.warn('app_store_notification_bundle_mismatch', {
+        notificationType,
+        subtype: subtype ?? null,
+        notificationUUID,
+        bundleId
+      });
+      response.status(200).json({ ok: true, result: 'bundle_mismatch' });
+      return;
+    }
+
+    if (!notificationUUID) {
+      logger.warn('app_store_notification_missing_uuid', {
+        notificationType,
+        subtype: subtype ?? null
+      });
+      response.status(200).json({ ok: true, result: 'missing_uuid' });
+      return;
+    }
+
+    const notificationRef = db.collection('appstore_notifications').doc(notificationUUID);
+    const existingNotification = await notificationRef.get();
+    if (existingNotification.exists) {
+      response.status(200).json({ ok: true, result: 'duplicate' });
+      return;
+    }
+
+    const signedTransactionInfo = String(notification.data?.signedTransactionInfo ?? '');
+    const signedRenewalInfo = String(notification.data?.signedRenewalInfo ?? '');
+    const transactionInfo = signedTransactionInfo
+      ? await verifyAppStoreTransaction(signedTransactionInfo)
+      : null;
+    const renewalInfo = signedRenewalInfo
+      ? await verifyAppStoreRenewalInfo(signedRenewalInfo)
+      : null;
+
+    const transaction = {
+      productId: transactionInfo?.productId ?? renewalInfo?.productId ?? renewalInfo?.autoRenewProductId,
+      transactionId: transactionInfo?.transactionId,
+      originalTransactionId: transactionInfo?.originalTransactionId ?? renewalInfo?.originalTransactionId,
+      expiresDate: transactionInfo?.expiresDate,
+      environment: transactionInfo?.environment
+    };
+    const lookup = await lookupIapTransaction(transaction);
+
+    try {
+      if (notificationType === 'CONSUMPTION_REQUEST') {
+        logger.info('app_store_consumption_request_received', {
+          notificationUUID,
+          productId: transaction.productId ?? null,
+          transactionId: transaction.transactionId ?? null,
+          originalTransactionId: transaction.originalTransactionId ?? null
+        });
+        response.status(200).json({ ok: true, result: 'logged' });
+        return;
+      }
+
+      if (notificationType === 'REFUND' || notificationType === 'REVOKE') {
+        const result = await processRefundOrRevokeNotification({
+          notificationRef,
+          notificationType,
+          subtype,
+          transaction,
+          lookup
+        });
+        response.status(200).json({ ok: true, result });
+        return;
+      }
+
+      if ([
+        'EXPIRED',
+        'GRACE_PERIOD_EXPIRED',
+        'DID_RENEW',
+        'DID_CHANGE_RENEWAL_STATUS',
+        'SUBSCRIBED',
+        'DID_CHANGE_RENEWAL_PREF'
+      ].includes(notificationType)) {
+        const result = await processSubscriptionStatusNotification({
+          notificationRef,
+          notificationType,
+          subtype,
+          transaction,
+          renewalInfo,
+          lookup
+        });
+        response.status(200).json({ ok: true, result });
+        return;
+      }
+
+      logger.info('app_store_notification_ignored', {
+        notificationUUID,
+        notificationType,
+        subtype: subtype ?? null
+      });
+      response.status(200).json({ ok: true, result: 'ignored' });
+    } catch (err) {
+      logger.error('app_store_notification_processing_failed', {
+        notificationUUID,
+        notificationType,
+        subtype: subtype ?? null,
+        err
+      });
+      response.status(200).json({ ok: true, result: 'processing_failed' });
+    }
+  }
+);
+
 export const generateTarotReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -3210,6 +3815,7 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
       throw new HttpsError('failed-precondition', 'PURCHASE_INVALID');
     }
     const transactionRef = userRef.collection('iap_transactions').doc(transactionDocumentId);
+    const iapLinkRef = db.collection('iap_links').doc(transactionDocumentId);
 
     let remainingCredits = 0;
     let premiumActive = false;
@@ -3219,6 +3825,11 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
       if (txSnap.exists) {
         remainingCredits = Number((txSnap.data() as { remainingCredits?: number }).remainingCredits ?? 0);
         premiumActive = Boolean((txSnap.data() as { premiumActive?: boolean }).premiumActive ?? false);
+        tx.set(iapLinkRef, {
+          uid,
+          productId,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
         return;
       }
 
@@ -3282,6 +3893,11 @@ export const validateIosPurchase = onCall({ enforceAppCheck: appCheckEnforced },
         environment: validation.environment ?? null,
         createdAt: FieldValue.serverTimestamp()
       });
+      tx.set(iapLinkRef, {
+        uid,
+        productId,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
     });
 
     const result = {
@@ -3469,9 +4085,15 @@ export const restoreIosPurchases = onCall({ enforceAppCheck: appCheckEnforced },
       }
 
       const transactionRef = userRef.collection('iap_transactions').doc(transactionDocumentId);
+      const iapLinkRef = db.collection('iap_links').doc(transactionDocumentId);
       const existing = await transactionRef.get();
       if (existing.exists) {
         remainingCredits = Number((existing.data() as { remainingCredits?: number }).remainingCredits ?? 0);
+        await iapLinkRef.set({
+          uid,
+          productId,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
         continue;
       }
 
@@ -3528,6 +4150,11 @@ export const restoreIosPurchases = onCall({ enforceAppCheck: appCheckEnforced },
           environment: validation.environment ?? null,
           createdAt: FieldValue.serverTimestamp()
         });
+        tx.set(iapLinkRef, {
+          uid,
+          productId,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
 
       });
       totalRestored += restoredForItem;

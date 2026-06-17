@@ -28,6 +28,10 @@ function callableUrl(name: string): string {
   return `${functionsEmulatorOrigin()}/${PROJECT_ID}/us-central1/${name}`;
 }
 
+function httpFunctionUrl(name: string): string {
+  return `${functionsEmulatorOrigin()}/${PROJECT_ID}/us-central1/${name}`;
+}
+
 async function deleteCollection(path: string): Promise<void> {
   const snap = await getFirestore().collection(path).get();
   await Promise.all(snap.docs.map((doc) => doc.ref.delete()));
@@ -39,6 +43,7 @@ async function resetUser(): Promise<void> {
   await deleteCollection(`users/${TEST_UID}/iap_transactions`);
   await deleteCollection(`users/${TEST_UID}/credit_ledger`);
   await deleteCollection(`users/${TEST_UID}/idempotency`);
+  await deleteCollection('appstore_notifications');
   await userRef.set(
     {
       wallet: {
@@ -90,6 +95,21 @@ async function callFunction(
   };
 }
 
+async function postHttpFunction(
+  name: string,
+  data: Record<string, unknown>
+): Promise<{ status: number; body: any }> {
+  const response = await fetch(httpFunctionUrl(name), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return {
+    status: response.status,
+    body: await response.json().catch(() => ({})),
+  };
+}
+
 async function assertNoPurchaseWrites(): Promise<void> {
   const db = getFirestore();
   const user = await db.collection('users').doc(TEST_UID).get();
@@ -106,6 +126,11 @@ async function assertNoPurchaseWrites(): Promise<void> {
     .get();
   expect(txs.empty).toBe(true);
   expect(ledger.empty).toBe(true);
+}
+
+async function assertNoAppStoreNotificationWrites(): Promise<void> {
+  const snap = await getFirestore().collection('appstore_notifications').get();
+  expect(snap.empty).toBe(true);
 }
 
 function expectPurchaseInvalid(result: { status: number; body: any }): void {
@@ -236,5 +261,23 @@ describe('iOS IAP signed transaction validation', () => {
       .collection('credit_ledger')
       .get();
     expect(ledger.empty).toBe(true);
+  });
+
+  it('rejects a forged App Store Server Notification signedPayload without writing an idempotency record', async () => {
+    const result = await postHttpFunction('appStoreServerNotifications', {
+      signedPayload: 'BUNU.SAHTE.NOTIFICATION',
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body?.error).toBe('INVALID_SIGNED_PAYLOAD');
+    await assertNoAppStoreNotificationWrites();
+  });
+
+  it('rejects a missing App Store Server Notification signedPayload without writing an idempotency record', async () => {
+    const result = await postHttpFunction('appStoreServerNotifications', {});
+
+    expect(result.status).toBe(400);
+    expect(result.body?.error).toBe('INVALID_SIGNED_PAYLOAD');
+    await assertNoAppStoreNotificationWrites();
   });
 });

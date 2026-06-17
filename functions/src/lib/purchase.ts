@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   Environment,
+  JWSRenewalInfoDecodedPayload,
+  JWSTransactionDecodedPayload,
+  ResponseBodyV2DecodedPayload,
   SignedDataVerifier
 } from '@apple/app-store-server-library';
 
@@ -58,6 +61,66 @@ function verifiers(): SignedDataVerifier[] {
     ),
     new SignedDataVerifier(roots, true, Environment.SANDBOX, iosBundleId)
   ];
+}
+
+export function appStoreProductKind(productId?: string): AppleProductType {
+  if (!productId) return 'unknown';
+  if (productId === premiumProductId) return 'monthly_premium';
+  if ((productCreditsMap[productId] ?? 0) > 0) return 'consumable_credit';
+  return 'unknown';
+}
+
+export function creditsForAppStoreProduct(productId?: string): number {
+  return productId ? productCreditsMap[productId] ?? 0 : 0;
+}
+
+export function premiumBonusCredits(): number {
+  return 200;
+}
+
+export async function verifyAppStoreNotification(
+  signedPayload: string
+): Promise<ResponseBodyV2DecodedPayload | null> {
+  const payload = signedPayload.trim();
+  if (!payload) return null;
+  for (const verifier of verifiers()) {
+    try {
+      return await verifier.verifyAndDecodeNotification(payload);
+    } catch {
+      // Try the other App Store environment before rejecting the notification.
+    }
+  }
+  return null;
+}
+
+export async function verifyAppStoreTransaction(
+  signedTransaction: string
+): Promise<JWSTransactionDecodedPayload | null> {
+  const payload = signedTransaction.trim();
+  if (!payload) return null;
+  for (const verifier of verifiers()) {
+    try {
+      return await verifier.verifyAndDecodeTransaction(payload);
+    } catch {
+      // Try the other App Store environment before rejecting the transaction.
+    }
+  }
+  return null;
+}
+
+export async function verifyAppStoreRenewalInfo(
+  signedRenewalInfo: string
+): Promise<JWSRenewalInfoDecodedPayload | null> {
+  const payload = signedRenewalInfo.trim();
+  if (!payload) return null;
+  for (const verifier of verifiers()) {
+    try {
+      return await verifier.verifyAndDecodeRenewalInfo(payload);
+    } catch {
+      // Try the other App Store environment before rejecting the renewal info.
+    }
+  }
+  return null;
 }
 
 function invalidValidation(): ApplePurchaseValidation {
