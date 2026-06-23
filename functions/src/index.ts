@@ -4802,22 +4802,26 @@ export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, se
           dayCount?: number;
         };
       };
-      const nowMs = Date.now();
-      const throttle = checkAndBumpThrottle({
-        throttle: user.palmThrottle,
-        nowMs,
-        windowMs: readingThrottleWindowMs,
-        windowLimit: readingWindowLimit,
-        dailyLimit: readingDailyLimit,
-        dayKey: coffeeDayKey(nowMs),
-      });
-      if (!throttle.allowed) {
-        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
+      const wallet = user.wallet as (UserDoc['wallet'] & Record<string, unknown>) | undefined;
+      const isFreePalm = wallet?.firstPalmFreeUsed !== true;
+      if (isFreePalm) {
+        const nowMs = Date.now();
+        const throttle = checkAndBumpThrottle({
+          throttle: user.palmThrottle,
+          nowMs,
+          windowMs: readingThrottleWindowMs,
+          windowLimit: readingWindowLimit,
+          dailyLimit: readingDailyLimit,
+          dayKey: coffeeDayKey(nowMs),
+        });
+        if (!throttle.allowed) {
+          throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
+        }
+        tx.update(userRef, {
+          palmThrottle: throttle.next,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       }
-      tx.update(userRef, {
-        palmThrottle: throttle.next,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
     });
 
     const analysis = await analyzePalmWithGemini({
@@ -4835,6 +4839,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, se
     }
 
     let remainingCredits = 0;
+    let effectivePalmCost = palmReadingCost;
     await db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
       if (!userSnap.exists) {
@@ -4842,20 +4847,29 @@ export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, se
       }
       const user = userSnap.data() as UserDoc;
       const credits = Number(user.wallet?.credits ?? 0);
-      if (credits < palmReadingCost) {
+      const wallet = user.wallet as (UserDoc['wallet'] & Record<string, unknown>) | undefined;
+      const isFreePalm = wallet?.firstPalmFreeUsed !== true;
+      effectivePalmCost = isFreePalm ? 0 : palmReadingCost;
+      if (effectivePalmCost > 0 && credits < effectivePalmCost) {
         throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
       }
-      remainingCredits = credits - palmReadingCost;
-      tx.update(userRef, {
+      remainingCredits = credits - effectivePalmCost;
+      const userUpdate: Record<string, unknown> = {
         'wallet.credits': remainingCredits,
         updatedAt: FieldValue.serverTimestamp(),
-      });
-      tx.set(userRef.collection('credit_ledger').doc(), {
-        type: 'debit',
-        amount: -palmReadingCost,
-        reason: 'palm_reading',
-        createdAt: FieldValue.serverTimestamp(),
-      });
+      };
+      if (isFreePalm) {
+        userUpdate['wallet.firstPalmFreeUsed'] = true;
+      }
+      tx.update(userRef, userUpdate);
+      if (effectivePalmCost > 0) {
+        tx.set(userRef.collection('credit_ledger').doc(), {
+          type: 'debit',
+          amount: -effectivePalmCost,
+          reason: 'palm_reading',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
     });
 
     const day = new Date().toISOString().slice(0, 10);
@@ -4931,7 +4945,7 @@ export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, se
       openingMessage,
       openingSource,
       remainingCredits,
-      chargedCredits: palmReadingCost
+      chargedCredits: effectivePalmCost
     };
   } catch (err) {
     throw mapError(err);
