@@ -25,3 +25,7 @@ firebase-debug.log
 .DS_Store
 Thumbs.db
 functions/.env
+functions/.env.*
+!functions/.env.example
+functions/.secret*
+functions/.secrets*

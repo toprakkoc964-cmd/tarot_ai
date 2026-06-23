@@ -7,7 +7,8 @@ import '../features/readings/reading_models.dart';
 
 class TarotFunctionsClient {
   TarotFunctionsClient({FirebaseFunctions? functions})
-    : _functions = functions ?? FirebaseFunctions.instance;
+    : _functions =
+          functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   final FirebaseFunctions _functions;
 
@@ -112,6 +113,17 @@ class TarotFunctionsClient {
       if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
     });
     return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<int> getArisConversationCost() async {
+    final callable = _functions.httpsCallable('getArisConversationConfig');
+    final response = await callable.call();
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final cost = (data['conversationCost'] as num?)?.toInt();
+    if (cost == null || cost < 0) {
+      throw StateError('invalid_aris_conversation_cost');
+    }
+    return cost;
   }
 
   Future<CoffeeAnalyzeResponse> analyzeCoffeeReading({

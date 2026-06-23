@@ -2,8 +2,13 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/app_navigator.dart';
+import '../../core/app_review_service.dart';
+import '../../core/notification_service.dart';
+import '../../core/widgets/cosmic_permission_dialog.dart';
+import '../../../services/notification_service.dart' as local_notifications;
 import 'auth_service.dart';
 import 'onboarding_account_page.dart';
 import 'onboarding_card_pick_page.dart';
@@ -27,6 +32,8 @@ class OnboardingFlowEntry extends StatefulWidget {
 }
 
 class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
+  static const _permissionPromptSeenKey = 'notification_decision_made';
+
   OnboardingModality? _modality;
   String _name = '';
   String _birthDate = '';
@@ -47,6 +54,35 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     } catch (error) {
       debugPrint('Anonymous onboarding sign-in skipped: $error');
     }
+  }
+
+  Future<void> _maybePromptNotificationPermission() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyPrompted = prefs.getBool(_permissionPromptSeenKey) ?? false;
+    if (alreadyPrompted || !mounted) return;
+    final status = NotificationService.instance.permissionStatus.value;
+    if (status != 'notDetermined' && status != 'unknown') return;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return CosmicPermissionDialog(
+          onDecline: () async {
+            Navigator.of(dialogContext).pop();
+            await prefs.setBool(_permissionPromptSeenKey, true);
+          },
+          onAllow: () async {
+            Navigator.of(dialogContext).pop();
+            await prefs.setBool(_permissionPromptSeenKey, true);
+            await local_notifications.NotificationService.instance
+                .requestPermissions();
+            await NotificationService.instance.requestNotificationPermissions();
+          },
+        );
+      },
+    );
   }
 
   void _openCardPick() {
@@ -195,6 +231,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
           interpretationTone: _interpretationTone ?? 'soft',
           onContinue: () async {
             await _ensureGuestSession();
+            await _maybePromptNotificationPermission();
             _openPaywall();
           },
         ),
@@ -266,6 +303,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
 
   void _finishOnboarding() {
     debugPrint('[onboarding-flow] account complete; returning to app root');
+    unawaited(AppReviewService.instance.markPendingAfterOnboarding());
     final navigator = appNavigatorKey.currentState;
     if (navigator != null) {
       navigator.popUntil((route) => route.isFirst);

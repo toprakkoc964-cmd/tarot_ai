@@ -294,7 +294,7 @@ final Map<String, dynamic> _fallbackPayload = {
         'accent': 'primary',
       },
       {
-        'icon_key': 'stars',
+        'icon_key': 'mic_external_on',
         'title': AppTexts.t('home.credit.perk.personalized.title'),
         'description': AppTexts.t('home.credit.perk.personalized.desc'),
         'accent': 'secondary',
@@ -360,10 +360,10 @@ final Map<String, dynamic> _fallbackPayload = {
         'Legal Notice: This application is for entertainment and personal exploration only. AI-generated interpretations are not definitive and do not replace professional advice (medical, legal, financial, etc.). Accuracy or realization of content is not guaranteed. Results may vary from person to person. Please evaluate this information with common sense.',
     'advantages_cards': [
       {
-        'icon_key': 'mic_external_on',
-        'title': 'Voice Guidance',
+        'icon_key': 'stars',
+        'title': 'Personal Guidance',
         'description':
-            'Do not only see the cards, feel the sage voice in your ears.',
+            'Tarot, coffee and palm readings adapt to your profile.',
         'accent': 'primary',
       },
       {
@@ -388,9 +388,9 @@ final Map<String, dynamic> _fallbackPayload = {
         'accent': 'secondary',
         'is_popular': false,
         'features': [
-          '5 Voice Readings',
-          '2 Deep Chats',
-          'Standard Analysis',
+          'Tarot spreads',
+          'Coffee or palm readings',
+          'Aris follow-up questions',
         ],
       },
       {
@@ -402,9 +402,9 @@ final Map<String, dynamic> _fallbackPayload = {
         'badge': 'Cosmic Choice',
         'is_popular': true,
         'features': [
-          '25 Voice Readings',
-          '10 Video Sessions',
-          '20 Deep Chats',
+          'Longer discovery sessions',
+          'Coffee and palm rituals',
+          'Madam Aris follow-up chats',
         ],
       },
       {
@@ -415,9 +415,9 @@ final Map<String, dynamic> _fallbackPayload = {
         'accent': 'tertiary',
         'is_popular': false,
         'features': [
-          'Unlimited Voice Readings',
-          'Unlimited Video Sessions',
-          'VIP Priority',
+          'Credits for frequent use',
+          'Tarot, coffee and palm readings',
+          'Archive and chat continuity',
         ],
       },
     ],

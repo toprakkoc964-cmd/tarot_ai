@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'aris_session_service.dart';
 import 'chat_page.dart';
@@ -17,13 +16,13 @@ import 'home_palette.dart';
 import 'profile_page.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import '../../core/app_review_service.dart';
 import '../../core/app_locale.dart';
 import '../../core/notification_service.dart';
 import '../../core/notification_router.dart';
 import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
-import '../../core/widgets/cosmic_permission_dialog.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
 import '../../../services/notification_service.dart' as local_notifications;
@@ -115,7 +114,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static const _permissionPromptSeenKey = 'notification_decision_made';
   int _navIndex = 0;
   bool _flashNotification = false;
   bool _flashMessages = false;
@@ -124,36 +122,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_maybePromptNotificationPermission());
-  }
-
-  Future<void> _maybePromptNotificationPermission() async {
-    final prefs = await SharedPreferences.getInstance();
-    final alreadyPrompted = prefs.getBool(_permissionPromptSeenKey) ?? false;
-    if (alreadyPrompted || !mounted) return;
-    final status = NotificationService.instance.permissionStatus.value;
-    if (status != 'notDetermined' && status != 'unknown') return;
-
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return CosmicPermissionDialog(
-          onDecline: () async {
-            Navigator.of(dialogContext).pop();
-            await prefs.setBool(_permissionPromptSeenKey, true);
-          },
-          onAllow: () async {
-            Navigator.of(dialogContext).pop();
-            await prefs.setBool(_permissionPromptSeenKey, true);
-            await local_notifications.NotificationService.instance
-                .requestPermissions();
-            await NotificationService.instance.requestNotificationPermissions();
-          },
-        );
-      },
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(AppReviewService.instance.requestAfterOnboardingIfNeeded());
+    });
   }
 
   Future<void> _onNotificationTap() async {
@@ -967,7 +939,6 @@ class _HeroSectionState extends State<_HeroSection>
 
     final cardIndex = available[_random.nextInt(available.length)];
     final targetPage = _loopPageForCardIndex(cardIndex);
-    final homePageState = context.findAncestorStateOfType<_HomePageState>();
     final languageCode = _resolveDeviceLanguageCode();
 
     try {
@@ -1006,7 +977,6 @@ class _HeroSectionState extends State<_HeroSection>
             languageCode,
           ),
         );
-        unawaited(homePageState?._maybePromptNotificationPermission());
       }
     } catch (error) {
       debugPrint('Tarot ritual draw failed: $error');

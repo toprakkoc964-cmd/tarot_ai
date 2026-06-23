@@ -2,11 +2,13 @@ import Flutter
 import FirebaseCore
 import FirebaseMessaging
 import OSLog
+import StoreKit
 import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let deviceInfoChannelName = "tarot_ai/device_info"
+  private let appReviewChannelName = "tarot_ai/app_review"
   private let cameraLogger = Logger(subsystem: "com.tarotai", category: "camera")
 
   private func cameraNSLog(_ message: String) {
@@ -46,6 +48,7 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     registerDeviceInfoChannel(binaryMessenger: messenger)
+    registerAppReviewChannel(binaryMessenger: messenger)
     PalmVisionPlugin.register(with: messenger)
   }
 
@@ -70,6 +73,34 @@ import UIKit
       default:
         logger.error("device_info method not implemented: \(call.method, privacy: .public)")
         NSLog("[camera] device_info method not implemented: \(call.method)")
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func registerAppReviewChannel(binaryMessenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: appReviewChannelName,
+      binaryMessenger: binaryMessenger
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "requestReview":
+        if #available(iOS 14.0, *) {
+          let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+          if let scene {
+            SKStoreReviewController.requestReview(in: scene)
+            result(true)
+          } else {
+            result(false)
+          }
+        } else {
+          SKStoreReviewController.requestReview()
+          result(true)
+        }
+      default:
         result(FlutterMethodNotImplemented)
       }
     }

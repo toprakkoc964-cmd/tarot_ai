@@ -30,7 +30,6 @@ const _kSecondary = Color(0xFFCDBDFF);
 const _kTertiary = Color(0xFFFFE792);
 const _kOnSurface = Color(0xFFFADCFF);
 const _kGlass = Color(0x66361A41);
-const _kConversationCost = 20;
 
 class KozmikBilgePage extends StatefulWidget {
   const KozmikBilgePage({
@@ -80,11 +79,15 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   bool _coffeeReadingFailed = false;
   ArisSessionCategory? _resumedSessionCategory;
   String? _openingError;
+  int? _conversationCost;
+  int? _optimisticCredits;
+  bool _nextConversationMessageIsFree = true;
 
   @override
   void initState() {
     super.initState();
     _messageFocusNode.addListener(_handleComposerFocusChanged);
+    unawaited(_loadConversationCost());
     final resumeId = widget.resumeSessionId?.trim() ?? '';
     if (resumeId.isNotEmpty) {
       _loadResumedSession(resumeId);
@@ -225,6 +228,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         return AppTexts.t('aris.opening_error_input');
       case 'APP_CHECK_REQUIRED':
         return AppTexts.t('aris.opening_error_app_check');
+      case 'AI_TEMPORARY_BUSY':
+        return AppTexts.t('chat.aiBusy');
       default:
         if (error.code == 'unavailable' || error.code == 'deadline-exceeded') {
           return AppTexts.t('aris.opening_error_network');
@@ -234,6 +239,44 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   }
 
   String _activeArisLanguage() => AppLanguage.forAi();
+
+  Future<void> _loadConversationCost() async {
+    try {
+      final cost = await _functionsClient.getArisConversationCost();
+      if (!mounted) return;
+      setState(() => _conversationCost = cost);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _conversationCost = null);
+    }
+  }
+
+  int? get _nextConversationCost {
+    if (_nextConversationMessageIsFree) return 0;
+    return _conversationCost;
+  }
+
+  String _conversationCostLabel() {
+    final key = _isCoffeeChat
+        ? 'coffeeMessageNote'
+        : _isPalmChat
+        ? 'palmMessageNote'
+        : 'arisMessageCost';
+    final cost = _conversationCost;
+    return AppTexts.t(key).replaceAll('{cost}', cost?.toString() ?? '…');
+  }
+
+  void _applyConversationResponse(Map<String, dynamic> response) {
+    final remainingCredits = (response['remainingCredits'] as num?)?.toInt();
+    final conversationCost = (response['conversationCost'] as num?)?.toInt();
+    setState(() {
+      if (remainingCredits != null) _optimisticCredits = remainingCredits;
+      if (conversationCost != null && conversationCost >= 0) {
+        _conversationCost = conversationCost;
+      }
+      _nextConversationMessageIsFree = false;
+    });
+  }
 
   Future<void> _loadResumedSession(String sessionId) async {
     if (mounted) {
@@ -269,6 +312,9 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                 : _ArisChatMessage.assistant(entry.text),
           );
         }
+        _nextConversationMessageIsFree = !record.recentMessages.any(
+          (entry) => !entry.isUser,
+        );
         _isLoadingOpening = false;
         _openingError = null;
       });
@@ -515,6 +561,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         _coffeeReadingGenerated = true;
         _isGeneratingCoffeeReading = false;
         _isSending = false;
+        _nextConversationMessageIsFree = false;
       });
       _scrollToBottom();
       unawaited(_saveCoffeeSession(readingId: result.readingId));
@@ -600,7 +647,15 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       await _sendCoffeeMessage(text, credits);
       return;
     }
-    if (credits < _kConversationCost) {
+    final nextCost = _nextConversationCost;
+    if (nextCost == null) {
+      await _loadConversationCost();
+      if (!mounted || _nextConversationCost == null) {
+        _showSnack(AppTexts.t('chat.costUnavailable'));
+        return;
+      }
+    }
+    if (credits < (_nextConversationCost ?? 0)) {
       await _showInsufficientCreditsDialog();
       return;
     }
@@ -623,6 +678,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       );
       final reply = (response['reply'] as String?)?.trim() ?? '';
       if (!mounted) return;
+      _applyConversationResponse(response);
       setState(() {
         _messages.add(
           _ArisChatMessage.assistant(
@@ -637,22 +693,34 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         await _showInsufficientCreditsDialog();
       } else if (error.message == 'RATE_LIMITED') {
         _showSnack(AppTexts.t('chat.rateLimited'));
+      } else if (error.message == 'AI_TEMPORARY_BUSY' ||
+          error.code == 'unavailable') {
+        _showSnack(AppTexts.t('chat.aiBusy'));
       } else {
-        _showSnack('Mesaj gonderilemedi. Tekrar dene.');
+        _showSnack(AppTexts.t('chat.messageFailed'));
       }
     } catch (_) {
       if (!mounted) return;
-      _showSnack('Mesaj gonderilemedi. Tekrar dene.');
+      _showSnack(AppTexts.t('chat.messageFailed'));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
   Future<void> _sendCoffeeMessage(String text, int credits) async {
-    if ((!_coffeeAwaitingMood || _coffeeReadingGenerated) &&
-        credits < _kConversationCost) {
-      await _showInsufficientCreditsDialog();
-      return;
+    if (!_coffeeAwaitingMood || _coffeeReadingGenerated) {
+      final nextCost = _nextConversationCost;
+      if (nextCost == null) {
+        await _loadConversationCost();
+        if (!mounted || _nextConversationCost == null) {
+          _showSnack(AppTexts.t('chat.costUnavailable'));
+          return;
+        }
+      }
+      if (credits < (_nextConversationCost ?? 0)) {
+        await _showInsufficientCreditsDialog();
+        return;
+      }
     }
 
     setState(() {
@@ -677,6 +745,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       );
       final reply = (response['reply'] as String?)?.trim() ?? '';
       if (!mounted) return;
+      _applyConversationResponse(response);
       setState(() {
         _messages.add(
           _ArisChatMessage.assistant(
@@ -692,6 +761,9 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         await _showInsufficientCreditsDialog();
       } else if (error.message == 'RATE_LIMITED') {
         _showSnack(AppTexts.t('chat.rateLimited'));
+      } else if (error.message == 'AI_TEMPORARY_BUSY' ||
+          error.code == 'unavailable') {
+        _showSnack(AppTexts.t('chat.aiBusy'));
       } else {
         _showSnack(AppTexts.t('coffeeChatMessageFailed'));
       }
@@ -704,30 +776,33 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   }
 
   Future<void> _showInsufficientCreditsDialog() async {
+    final cost = _conversationCost;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: const Color(0xFF26112E),
           title: Text(
-            'Jeton gerekli',
+            AppTexts.t('chat.insufficient.title'),
             style: GoogleFonts.spaceGrotesk(color: _kOnSurface),
           ),
           content: Text(
-            'Bilge Aris ile sohbete devam etmek icin en az $_kConversationCost jeton gerekli.',
+            AppTexts.t(
+              'chat.insufficient.body',
+            ).replaceAll('{cost}', cost?.toString() ?? '…'),
             style: GoogleFonts.manrope(color: _kSecondary),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Kapat'),
+              child: Text(AppTexts.t('chat.insufficient.close')),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
                 Navigator.of(context).pop('credits');
               },
-              child: const Text('Jeton Al'),
+              child: Text(AppTexts.t('chat.insufficient.buy')),
             ),
           ],
         );
@@ -774,97 +849,99 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         );
         final credits =
             (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
+        final displayCredits = _optimisticCredits ?? credits;
+        if (_optimisticCredits != null && credits == _optimisticCredits) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _optimisticCredits == credits) {
+              setState(() => _optimisticCredits = null);
+            }
+          });
+        }
 
         return Scaffold(
           backgroundColor: _kBg,
-          body: Stack(
-            children: [
-              const _ChatBackground(),
-              ListView(
-                controller: _scrollController,
-                padding: EdgeInsets.fromLTRB(24, topPadding + 92, 24, 170),
-                children: [
-                  if (_isCoffeeChat)
-                    _MadamArisHero(
-                      imageFiles: _coffeeImageFiles,
-                      subtitle: _coffeeHeaderSubtitle,
-                    )
-                  else if (_isPalmChat)
-                    _MadamArisHero(
-                      imageFiles: const [],
-                      subtitle: AppTexts.t('palmMadamArisSubtitle'),
-                    )
-                  else if (_isSpreadChat)
-                    _TarotSpreadHero(cards: widget.spreadCards)
-                  else
-                    _HeroTarotCard(
-                      cardTitle: widget.cardTitle,
-                      cardImageUrl: widget.cardImageUrl,
-                    ),
-                  const SizedBox(height: 28),
-                  if (_isCoffeeChat) ...[
-                    const _CoffeeDisclaimerBanner(),
-                    const SizedBox(height: 18),
-                  ],
-                  if (_isLoadingOpening)
-                    _ArisLoadingBubble(
-                      assistantName: _assistantName,
-                      subtitle: _loadingSubtitle,
-                    )
-                  else if (_openingError != null)
-                    _ArisErrorBubble(
-                      message: _openingError!,
-                      onRetry: _loadOpeningReading,
-                    )
-                  else
-                    for (final message in _messages) ...[
-                      _ArisMessageBubble(message: message),
-                      const SizedBox(height: 8),
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Stack(
+              children: [
+                const _ChatBackground(),
+                ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.fromLTRB(24, topPadding + 92, 24, 170),
+                  children: [
+                    if (_isCoffeeChat)
+                      _MadamArisHero(
+                        imageFiles: _coffeeImageFiles,
+                        subtitle: _coffeeHeaderSubtitle,
+                      )
+                    else if (_isPalmChat)
+                      _MadamArisHero(
+                        imageFiles: const [],
+                        subtitle: AppTexts.t('palmMadamArisSubtitle'),
+                      )
+                    else if (_isSpreadChat)
+                      _TarotSpreadHero(cards: widget.spreadCards)
+                    else
+                      _HeroTarotCard(
+                        cardTitle: widget.cardTitle,
+                        cardImageUrl: widget.cardImageUrl,
+                      ),
+                    const SizedBox(height: 28),
+                    if (_isCoffeeChat) ...[
+                      const _CoffeeDisclaimerBanner(),
+                      const SizedBox(height: 18),
                     ],
-                  if (!_isLoadingOpening && _openingError == null)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: _MessageMeta(assistantName: _assistantName),
-                    ),
-                  if (_isCoffeeChat && _coffeeReadingFailed) ...[
-                    const SizedBox(height: 10),
-                    _CoffeeReadingRetryButton(
-                      onRetry: () => _startCoffeeReadingGeneration(),
-                    ),
+                    if (_isLoadingOpening)
+                      _ArisLoadingBubble(
+                        assistantName: _assistantName,
+                        subtitle: _loadingSubtitle,
+                      )
+                    else if (_openingError != null)
+                      _ArisErrorBubble(
+                        message: _openingError!,
+                        onRetry: _loadOpeningReading,
+                      )
+                    else
+                      for (final message in _messages) ...[
+                        _ArisMessageBubble(message: message),
+                        const SizedBox(height: 8),
+                      ],
+                    if (_isCoffeeChat && _coffeeReadingFailed) ...[
+                      const SizedBox(height: 10),
+                      _CoffeeReadingRetryButton(
+                        onRetry: () => _startCoffeeReadingGeneration(),
+                      ),
+                    ],
+                    if (_isSending) ...[
+                      const SizedBox(height: 12),
+                      _ArisLoadingBubble(
+                        compact: true,
+                        assistantName: _assistantName,
+                        subtitle: _loadingSubtitle,
+                      ),
+                    ],
                   ],
-                  if (_isSending) ...[
-                    const SizedBox(height: 12),
-                    _ArisLoadingBubble(
-                      compact: true,
-                      assistantName: _assistantName,
-                      subtitle: _loadingSubtitle,
-                    ),
-                  ],
-                ],
-              ),
-              _ChatTopBar(credits: credits, title: _chatTitle),
-              _ComposerArea(
-                controller: _messageController,
-                focusNode: _messageFocusNode,
-                enabled:
-                    !_isLoadingOpening &&
-                    _openingError == null &&
-                    !_isSending &&
-                    _sessionId != null,
-                isSending: _isSending,
-                costLabel: _isCoffeeChat
-                    ? AppTexts.t('coffeeMessageNote')
-                    : _isPalmChat
-                    ? AppTexts.t('palmMessageNote')
-                    : AppTexts.t('arisMessageCost'),
-                hintText: _isCoffeeChat
-                    ? AppTexts.t('coffeeQuestionHint')
-                    : _isPalmChat
-                    ? AppTexts.t('palmQuestionHint')
-                    : AppTexts.t('arisQuestionHint'),
-                onSend: () => _sendMessage(credits),
-              ),
-            ],
+                ),
+                _ChatTopBar(credits: displayCredits, title: _chatTitle),
+                _ComposerArea(
+                  controller: _messageController,
+                  focusNode: _messageFocusNode,
+                  enabled:
+                      !_isLoadingOpening &&
+                      _openingError == null &&
+                      !_isSending &&
+                      _sessionId != null,
+                  costLabel: _conversationCostLabel(),
+                  hintText: _isCoffeeChat
+                      ? AppTexts.t('coffeeQuestionHint')
+                      : _isPalmChat
+                      ? AppTexts.t('palmQuestionHint')
+                      : AppTexts.t('arisQuestionHint'),
+                  onSend: () => _sendMessage(displayCredits),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -1720,24 +1797,6 @@ class _ArisErrorBubble extends StatelessWidget {
   }
 }
 
-class _MessageMeta extends StatelessWidget {
-  const _MessageMeta({required this.assistantName});
-
-  final String assistantName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      AppTexts.t('arisMessageMeta').replaceFirst('{name}', assistantName),
-      style: GoogleFonts.spaceGrotesk(
-        fontSize: 10,
-        letterSpacing: 1.3,
-        color: _kSecondary.withValues(alpha: 0.42),
-      ),
-    );
-  }
-}
-
 class _CoffeeReadingRetryButton extends StatelessWidget {
   const _CoffeeReadingRetryButton({required this.onRetry});
 
@@ -1768,7 +1827,6 @@ class _ComposerArea extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.enabled,
-    required this.isSending,
     required this.costLabel,
     required this.hintText,
     required this.onSend,
@@ -1777,7 +1835,6 @@ class _ComposerArea extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool enabled;
-  final bool isSending;
   final String costLabel;
   final String hintText;
   final VoidCallback onSend;
@@ -1863,19 +1920,10 @@ class _ComposerArea extends StatelessWidget {
                       ),
                       IconButton(
                         onPressed: enabled ? onSend : null,
-                        icon: isSending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: _kPrimary,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.arrow_upward_rounded,
-                                color: _kPrimary,
-                              ),
+                        icon: const Icon(
+                          Icons.arrow_upward_rounded,
+                          color: _kPrimary,
+                        ),
                       ),
                     ],
                   ),

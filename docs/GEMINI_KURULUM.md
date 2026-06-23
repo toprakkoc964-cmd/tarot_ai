@@ -7,43 +7,23 @@ Aris yorumları **Firebase Cloud Functions** üzerinden çalışır. Anahtar uyg
 1. [Google AI Studio](https://aistudio.google.com/apikey) → **Create API key**
 2. Anahtarı kopyala (`AIza...` ile başlar)
 
-## 2. Yerel geliştirme — anahtarı yapıştıracağın dosya
+## 2. Yerel geliştirme — gizli anahtar tutma
 
-Proje kökünde:
-
-```
-functions/.env
-```
-
-Bu dosya **git’e girmez** (`.gitignore` içinde). Şablon:
-
-```bash
-cd functions
-copy .env.example .env
-```
-
-`functions/.env` içinde şu satırı doldur:
-
-```env
-GEMINI_API_KEY=AIzaSy...BURAYA_YAPIŞTIR
-```
-
-İsteğe bağlı modeller (varsayılanlar genelde yeterli):
+Gemini API anahtarını yerelde `.env`, Dart, Swift, JSON veya başka bir dosyada tutma. Yerel dosyalar yalnızca gizli olmayan çalışma ayarları için kullanılabilir:
 
 ```env
 GEMINI_ARIS_MODEL=gemini-2.5-flash-lite
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
-Emülatör veya `npm run serve` ile test ederken bu `.env` dosyası okunur.
+Canlı AI çağrıları Firebase Secret üzerinden çalışır. Lokal emülatörde gerçek Gemini çağrısı gerekiyorsa geçici bir terminal ortam değişkeni kullan ve oturum bitince kapat; repo dosyasına yazma.
 
 ## 3. Canlı (production) — Firebase Secret
 
 Deploy edilen fonksiyonlar `.env` dosyasını **taşımaz**. Canlıda secret kullanılır:
 
 ```powershell
-cd functions
-firebase functions:secrets:set GEMINI_API_KEY
+firebase functions:secrets:set GEMINI_API_KEY --project tarot-ai-dev-8f9a0
 ```
 
 İstendiğinde anahtarı yapıştır. Ardından fonksiyonları yeniden deploy et:
@@ -71,9 +51,9 @@ Sırayla kontrol et:
 
 | Mesaj / durum | Çözüm |
 |---------------|--------|
-| `functions/.env` içinde `GEMINI_API_KEY` boş | Anahtarı yapıştır, `npm run build`, deploy |
+| `GEMINI_API_KEY_MISSING` | Firebase Secret tanımlı mı kontrol et: `firebase functions:secrets:access GEMINI_API_KEY --project tarot-ai-dev-8f9a0` |
 | Fonksiyon hiç deploy edilmemiş | `firebase deploy --only functions` |
 | Oturum / profil | Giriş yap, Firestore’da `users/{uid}` kaydı olsun |
-| Emülatör kullanıyorsan | `functions/.env` + emülatörün functions’ı gördüğünden emin ol |
+| Emülatör kullanıyorsan | Gerçek anahtarı repo dosyasına yazma; geçici shell env kullan |
 
-Uygulama içinde API anahtarı **tutulmaz**; sadece `functions/.env` ve Firebase Secret.
+Uygulama içinde ve yerel repo dosyalarında API anahtarı **tutulmaz**; canlı ortamda yalnızca Firebase Secret kullanılır.
