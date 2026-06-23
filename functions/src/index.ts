@@ -3526,36 +3526,38 @@ export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforc
       throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
     }
 
-    await db.runTransaction(async (tx) => {
-      const freshUserSnap = await tx.get(userRef);
-      if (!freshUserSnap.exists) {
-        throw new HttpsError('not-found', 'USER_NOT_FOUND');
-      }
-      const freshUser = freshUserSnap.data() as UserDoc & {
-        convThrottle?: {
-          windowStartedAtMs?: number;
-          windowCount?: number;
-          dayKey?: string;
-          dayCount?: number;
+    if (conversationCharge === 0) {
+      await db.runTransaction(async (tx) => {
+        const freshUserSnap = await tx.get(userRef);
+        if (!freshUserSnap.exists) {
+          throw new HttpsError('not-found', 'USER_NOT_FOUND');
+        }
+        const freshUser = freshUserSnap.data() as UserDoc & {
+          convThrottle?: {
+            windowStartedAtMs?: number;
+            windowCount?: number;
+            dayKey?: string;
+            dayCount?: number;
+          };
         };
-      };
-      const nowMs = Date.now();
-      const throttle = checkAndBumpThrottle({
-        throttle: freshUser.convThrottle,
-        nowMs,
-        windowMs: readingThrottleWindowMs,
-        windowLimit: convWindowLimit,
-        dailyLimit: convDailyLimit,
-        dayKey: coffeeDayKey(nowMs),
+        const nowMs = Date.now();
+        const throttle = checkAndBumpThrottle({
+          throttle: freshUser.convThrottle,
+          nowMs,
+          windowMs: readingThrottleWindowMs,
+          windowLimit: convWindowLimit,
+          dailyLimit: convDailyLimit,
+          dayKey: coffeeDayKey(nowMs),
+        });
+        if (!throttle.allowed) {
+          throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
+        }
+        tx.update(userRef, {
+          convThrottle: throttle.next,
+          updatedAt: FieldValue.serverTimestamp()
+        });
       });
-      if (!throttle.allowed) {
-        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
-      }
-      tx.update(userRef, {
-        convThrottle: throttle.next,
-        updatedAt: FieldValue.serverTimestamp()
-      });
-    });
+    }
 
     const persistConversationResult = async (
       reply: string,
