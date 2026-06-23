@@ -13,7 +13,8 @@ service cloud.firestore {
       return !request.resource.data.keys().hasAny([
         'wallet',
         'entitlements',
-        'coffeeAnalysis'
+        'coffeeAnalysis',
+        'lastFreeCardDrawDay'
       ]);
     }
 
@@ -21,7 +22,8 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'wallet',
         'entitlements',
-        'coffeeAnalysis'
+        'coffeeAnalysis',
+        'lastFreeCardDrawDay'
       ]);
     }
 

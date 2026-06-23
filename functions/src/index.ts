@@ -3187,7 +3187,8 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
     let chargedDrawCost = 0;
     let freeDrawUsedToday = false;
     let lastFreeCardDrawDay: string | null = null;
-    const today = new Date().toISOString().slice(0, 10);
+    let today = '';
+    const now = new Date();
     const requestedCost = Number(request.data?.cost ?? homeCardDrawCost);
     const drawCost = Number.isFinite(requestedCost) &&
       requestedCost >= homeCardDrawCost &&
@@ -3204,6 +3205,8 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
 
       const user = userSnap.data() as UserDoc;
       const currentCredits = Number(user.wallet.credits ?? 0);
+      const timezone = resolveNotificationTimezone((user as { timezone?: unknown }).timezone);
+      today = localDateKeyForTimezone(now, timezone);
       const previousFreeDay = typeof (user as { lastFreeCardDrawDay?: unknown }).lastFreeCardDrawDay === 'string'
         ? String((user as { lastFreeCardDrawDay?: unknown }).lastFreeCardDrawDay)
         : '';

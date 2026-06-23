@@ -585,13 +585,17 @@ class _HeroSectionState extends State<_HeroSection>
     return AppTexts.t('tarot.spread.cta_draw');
   }
 
-  String _todayUtcDayKey() {
-    return DateTime.now().toUtc().toIso8601String().substring(0, 10);
+  String _todayLocalDayKey() {
+    final now = DateTime.now();
+    final year = now.year.toString().padLeft(4, '0');
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 
   bool _freeSingleDrawAvailable(Map<String, dynamic>? data) {
     final lastFreeDay = data?['lastFreeCardDrawDay'];
-    return lastFreeDay is! String || lastFreeDay != _todayUtcDayKey();
+    return lastFreeDay is! String || lastFreeDay != _todayLocalDayKey();
   }
 
   @override
