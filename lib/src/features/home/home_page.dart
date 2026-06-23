@@ -52,7 +52,14 @@ enum _SpreadType {
   final int cardCount;
   final String key;
 
-  int get cost => this == _SpreadType.single ? 0 : cardCount * _kPaidDrawCost;
+  int get baseCost => cardCount * _kPaidDrawCost;
+
+  int get cost => baseCost;
+
+  int effectiveCost({required bool freeSingleAvailable}) {
+    if (this == _SpreadType.single && freeSingleAvailable) return 0;
+    return baseCost;
+  }
 
   String get shortLabel => AppTexts.t('tarot.spread.$key');
 
@@ -547,12 +554,21 @@ class _HeroSectionState extends State<_HeroSection>
   static const int _deckSpinMsPerPageNormal = 380;
   static const int _deckSpinMsPerPageFast = 115;
 
-  String _drawBadgeText({required bool isLoading, required int credits}) {
+  String _drawBadgeText({
+    required bool isLoading,
+    required int credits,
+    required bool freeSingleAvailable,
+  }) {
     if (isLoading) return AppTexts.t('common.loading');
+    if (freeSingleAvailable) return AppTexts.t('tarot.spread.free');
     return AppTexts.t('tarot.spread.cost_note');
   }
 
-  String _ctaText({required bool isLoading, required int credits}) {
+  String _ctaText({
+    required bool isLoading,
+    required int credits,
+    required bool freeSingleAvailable,
+  }) {
     if (_isChoosingSpread) {
       return AppTexts.t('tarot.spread.cta_cancel');
     }
@@ -563,7 +579,19 @@ class _HeroSectionState extends State<_HeroSection>
       return AppTexts.t('tarot.spread.revealing');
     }
     if (isLoading) return AppTexts.t('common.loading');
+    if (freeSingleAvailable) {
+      return '${AppTexts.t('tarot.spread.free')} · ${AppTexts.t('tarot.spread.cta_draw')}';
+    }
     return AppTexts.t('tarot.spread.cta_draw');
+  }
+
+  String _todayUtcDayKey() {
+    return DateTime.now().toUtc().toIso8601String().substring(0, 10);
+  }
+
+  bool _freeSingleDrawAvailable(Map<String, dynamic>? data) {
+    final lastFreeDay = data?['lastFreeCardDrawDay'];
+    return lastFreeDay is! String || lastFreeDay != _todayUtcDayKey();
   }
 
   @override
@@ -783,11 +811,18 @@ class _HeroSectionState extends State<_HeroSection>
     setState(() => _isChoosingSpread = !_isChoosingSpread);
   }
 
-  Future<void> _selectSpread(_SpreadType spread, int credits) async {
+  Future<void> _selectSpread(
+    _SpreadType spread,
+    int credits, {
+    required bool freeSingleAvailable,
+  }) async {
     if (_isDrawing || _isDrawRequestInFlight || _selectionLocked) return;
     _selectedSpreadType = spread;
+    final effectiveCost = spread.effectiveCost(
+      freeSingleAvailable: freeSingleAvailable,
+    );
     // TODO(reklam): İleride jeton yerine reklam izle alternatifi burada eklenecek.
-    if (spread.cost > 0 && credits < spread.cost) {
+    if (effectiveCost > 0 && credits < effectiveCost) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppTexts.t('tarot.gate.insufficient'))),
       );
@@ -801,7 +836,11 @@ class _HeroSectionState extends State<_HeroSection>
       );
       if (!mounted) return;
       final freshCredits = await _currentWalletCredits();
-      if (freshCredits >= spread.cost) {
+      final freshFreeSingleAvailable = await _currentFreeSingleDrawAvailable();
+      final freshEffectiveCost = spread.effectiveCost(
+        freeSingleAvailable: freshFreeSingleAvailable,
+      );
+      if (freshCredits >= freshEffectiveCost) {
         await _startRitual(spread);
       } else {
         setState(() {
@@ -822,6 +861,11 @@ class _HeroSectionState extends State<_HeroSection>
       data?[UserProfileContract.wallet] as Map? ?? const {},
     );
     return (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
+  }
+
+  Future<bool> _currentFreeSingleDrawAvailable() async {
+    final snapshot = await _userDoc.get();
+    return _freeSingleDrawAvailable(snapshot.data());
   }
 
   Future<void> _startRitual(_SpreadType spread) async {
@@ -856,8 +900,8 @@ class _HeroSectionState extends State<_HeroSection>
     });
 
     try {
-      if (spread.cost > 0) {
-        final consumed = await _consumeDrawRight(spread.cost);
+      if (spread.baseCost > 0) {
+        final consumed = await _consumeDrawRight(spread.baseCost);
         if (!consumed) {
           if (!mounted) return;
           await _resetSelection();
@@ -1043,6 +1087,7 @@ class _HeroSectionState extends State<_HeroSection>
         );
         final credits =
             (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
+        final freeSingleAvailable = _freeSingleDrawAvailable(data);
         final canDraw =
             !isLoading &&
             !_isLoadingCard &&
@@ -1052,8 +1097,13 @@ class _HeroSectionState extends State<_HeroSection>
         final drawBadgeText = _drawBadgeText(
           isLoading: isLoading,
           credits: credits,
+          freeSingleAvailable: freeSingleAvailable,
         );
-        final ctaText = _ctaText(isLoading: isLoading, credits: credits);
+        final ctaText = _ctaText(
+          isLoading: isLoading,
+          credits: credits,
+          freeSingleAvailable: freeSingleAvailable,
+        );
         final selectedIndex =
             _selectedCardIndex ?? _cardIndexForLoopPage(_currentLoopPage);
         final spread = _selectedSpreadType;
@@ -1247,8 +1297,12 @@ class _HeroSectionState extends State<_HeroSection>
                               padding: const EdgeInsets.only(bottom: 14),
                               child: _SpreadChoicePanel(
                                 selectedSpread: _selectedSpreadType,
-                                onSelected: (spread) =>
-                                    _selectSpread(spread, credits),
+                                freeSingleAvailable: freeSingleAvailable,
+                                onSelected: (spread) => _selectSpread(
+                                  spread,
+                                  credits,
+                                  freeSingleAvailable: freeSingleAvailable,
+                                ),
                               ),
                             )
                           : const SizedBox(width: double.infinity),
@@ -1281,10 +1335,12 @@ class _HeroSectionState extends State<_HeroSection>
 class _SpreadChoicePanel extends StatelessWidget {
   const _SpreadChoicePanel({
     required this.selectedSpread,
+    required this.freeSingleAvailable,
     required this.onSelected,
   });
 
   final _SpreadType? selectedSpread;
+  final bool freeSingleAvailable;
   final ValueChanged<_SpreadType> onSelected;
 
   @override
@@ -1317,6 +1373,7 @@ class _SpreadChoicePanel extends StatelessWidget {
                   child: _SpreadChoiceTile(
                     spread: spread,
                     selected: selectedSpread == spread,
+                    freeSingleAvailable: freeSingleAvailable,
                     onTap: () => onSelected(spread),
                   ),
                 ),
@@ -1334,18 +1391,21 @@ class _SpreadChoiceTile extends StatelessWidget {
   const _SpreadChoiceTile({
     required this.spread,
     required this.selected,
+    required this.freeSingleAvailable,
     required this.onTap,
   });
 
   final _SpreadType spread;
   final bool selected;
+  final bool freeSingleAvailable;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final costText = spread.cost == 0
+    final cost = spread.effectiveCost(freeSingleAvailable: freeSingleAvailable);
+    final costText = cost == 0
         ? AppTexts.t('tarot.spread.free')
-        : '${spread.cost} ${AppTexts.t('home.top.token_unit')}';
+        : '$cost ${AppTexts.t('home.top.token_unit')}';
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1390,7 +1450,7 @@ class _SpreadChoiceTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.manrope(
-                  color: spread.cost == 0 ? _kTertiary : _kSecondary,
+                  color: cost == 0 ? _kTertiary : _kSecondary,
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
                 ),

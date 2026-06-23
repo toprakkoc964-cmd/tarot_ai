@@ -2560,186 +2560,8 @@ export const generateTarotReading = onCall({ enforceAppCheck: appCheckEnforced, 
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
     }
-
-    const uid = request.auth.uid;
     requireAppCheckIfEnabled(request);
-
-    const intent = String(request.data?.intent ?? '').trim();
-    const cards = Array.isArray(request.data?.cards) ? request.data.cards.map(String) : [];
-    const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
-
-    if (!intent || cards.length === 0) {
-      throw new HttpsError('invalid-argument', 'INVALID_READING_INPUT');
-    }
-
-    const userRef = db.collection('users').doc(uid);
-    const idempotencyRef = userRef.collection('idempotency').doc(`reading_${idemKey}`);
-
-    const existingIdempotent = await idempotencyRef.get();
-    if (existingIdempotent.exists) {
-      return existingIdempotent.data();
-    }
-
-    const readingRef = userRef.collection('readings').doc();
-    let previousCredits = 0;
-    let safeIntent = intent;
-
-    await db.runTransaction(async (tx) => {
-      const userSnap = await tx.get(userRef);
-      if (!userSnap.exists) {
-        throw new HttpsError('not-found', 'USER_NOT_FOUND');
-      }
-
-      const user = userSnap.data() as UserDoc & {
-        readingThrottle?: {
-          windowStartedAtMs?: number;
-          windowCount?: number;
-          dayKey?: string;
-          dayCount?: number;
-        };
-      };
-      const profile = resolveUserProfile(user);
-      if (!user.isProfileComplete || !profile) {
-        throw new Error('PROFILE_INCOMPLETE');
-      }
-      const transactionLang = resolveLanguage(user.settings?.lang);
-      safeIntent = isPromptInjectionAttempt(intent)
-        ? neutralIntentText(transactionLang)
-        : intent;
-
-      const nowMs = Date.now();
-      const throttle = checkAndBumpThrottle({
-        throttle: user.readingThrottle,
-        nowMs,
-        windowMs: readingThrottleWindowMs,
-        windowLimit: readingWindowLimit,
-        dailyLimit: readingDailyLimit,
-        dayKey: coffeeDayKey(nowMs),
-      });
-      if (!throttle.allowed) {
-        throw new HttpsError('resource-exhausted', 'RATE_LIMITED');
-      }
-
-      if (user.wallet.credits <= 0) {
-        throw new Error('INSUFFICIENT_CREDITS');
-      }
-
-      previousCredits = user.wallet.credits;
-      tx.update(userRef, {
-        'wallet.credits': previousCredits - 1,
-        readingThrottle: throttle.next,
-        updatedAt: FieldValue.serverTimestamp()
-      });
-
-      tx.set(userRef.collection('credit_ledger').doc(), {
-        type: 'debit',
-        amount: -1,
-        reason: 'reading_generation',
-        idempotencyKey: idemKey,
-        createdAt: FieldValue.serverTimestamp()
-      });
-
-      tx.set(readingRef, {
-        uid,
-        intent: safeIntent,
-        cards,
-        status: 'pending',
-        idempotencyKey: idemKey,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      });
-    });
-
-    try {
-      const profileSnap = await userRef.get();
-      const user = profileSnap.data() as UserDoc;
-      const profile = resolveUserProfile(user);
-      if (!profile) {
-        throw new Error('PROFILE_INCOMPLETE');
-      }
-      const lang = resolveLanguage(user.settings?.lang);
-      safeIntent = isPromptInjectionAttempt(intent) ? neutralIntentText(lang) : safeIntent;
-      const persona = await getPersonaOrDefault(normalizePersonaId(user.settings?.selectedPersonaId ?? defaultPersonaId));
-      const systemPrompt = buildSystemPrompt(profile, safeIntent, lang, persona);
-
-      const aiResponse = await createReadingText({
-        systemPrompt,
-        userPrompt: [
-          `Chosen cards: ${cards.join(', ')}.`,
-          `Provide a tarot reading in ${lang}.`,
-          'Write between 180 and 260 words for a multi-card spread, or 100 and 140 words for a single card.'
-        ].join(' '),
-        maxOutputTokens: 500,
-        lang,
-        temperature: 0.8,
-        topP: 0.95
-      });
-      const personaKind: ArisPersonaKind = (persona.name ?? '').toLowerCase().includes('madam')
-        ? 'madam'
-        : 'bilge';
-      const safeReading = cleanArisPersonaText(aiResponse, { persona: personaKind, lang });
-
-      const shareDeepLink = buildShareDeepLink(readingRef.id);
-      const imageBuffer = renderShareImage({
-        title: 'Share My Destiny',
-        excerpt: safeReading.slice(0, 220),
-        footer: 'tarotai.app'
-      });
-      const filePath = `share/${uid}/${readingRef.id}.png`;
-      const file = storage.bucket().file(filePath);
-      await file.save(imageBuffer, { contentType: 'image/png', public: true });
-
-      const shareImageUrl = `https://storage.googleapis.com/${storage.bucket().name}/${filePath}`;
-
-      await readingRef.update({
-        aiResponse: safeReading,
-        shareImageUrl,
-        shareDeepLink,
-        audioStatus: 'pending',
-        status: 'succeeded_text',
-        lang,
-        updatedAt: FieldValue.serverTimestamp()
-      });
-
-      const result = {
-        readingId: readingRef.id,
-        aiResponse: safeReading,
-        shareImageUrl,
-        shareDeepLink,
-        audioStatus: 'pending',
-        remainingCredits: previousCredits - 1
-      };
-
-      await idempotencyRef.set({ ...result, createdAt: FieldValue.serverTimestamp() });
-      return result;
-    } catch (innerError) {
-      await db.runTransaction(async (tx) => {
-        const userSnap = await tx.get(userRef);
-        if (userSnap.exists) {
-          const user = userSnap.data() as UserDoc;
-          tx.update(userRef, {
-            'wallet.credits': (user.wallet.credits ?? 0) + 1,
-            updatedAt: FieldValue.serverTimestamp()
-          });
-        }
-
-        tx.set(userRef.collection('credit_ledger').doc(), {
-          type: 'refund',
-          amount: 1,
-          reason: 'reading_generation_rollback',
-          idempotencyKey: idemKey,
-          createdAt: FieldValue.serverTimestamp()
-        });
-
-        tx.update(readingRef, {
-          status: 'failed_refunded',
-          errorCode: 'AI_TEMPORARY_FAILURE',
-          updatedAt: FieldValue.serverTimestamp()
-        });
-      });
-
-      throw innerError;
-    }
+    throw new HttpsError('failed-precondition', 'DEPRECATED');
   } catch (err) {
     throw mapError(err);
   }
@@ -3362,6 +3184,10 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
     const uid = request.auth.uid;
     const userRef = db.collection('users').doc(uid);
     let remainingCredits = 0;
+    let chargedDrawCost = 0;
+    let freeDrawUsedToday = false;
+    let lastFreeCardDrawDay: string | null = null;
+    const today = new Date().toISOString().slice(0, 10);
     const requestedCost = Number(request.data?.cost ?? homeCardDrawCost);
     const drawCost = Number.isFinite(requestedCost) &&
       requestedCost >= homeCardDrawCost &&
@@ -3378,11 +3204,31 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
 
       const user = userSnap.data() as UserDoc;
       const currentCredits = Number(user.wallet.credits ?? 0);
+      const previousFreeDay = typeof (user as { lastFreeCardDrawDay?: unknown }).lastFreeCardDrawDay === 'string'
+        ? String((user as { lastFreeCardDrawDay?: unknown }).lastFreeCardDrawDay)
+        : '';
+      const canUseFreeSingleDraw = drawCost === homeCardDrawCost && previousFreeDay !== today;
+
+      if (canUseFreeSingleDraw) {
+        remainingCredits = currentCredits;
+        chargedDrawCost = 0;
+        freeDrawUsedToday = true;
+        lastFreeCardDrawDay = today;
+        tx.update(userRef, {
+          lastFreeCardDrawDay: today,
+          updatedAt: FieldValue.serverTimestamp()
+        });
+        return;
+      }
+
       if (currentCredits < drawCost) {
         throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
       }
 
       remainingCredits = currentCredits - drawCost;
+      chargedDrawCost = drawCost;
+      freeDrawUsedToday = previousFreeDay === today;
+      lastFreeCardDrawDay = previousFreeDay || null;
       tx.update(userRef, {
         'wallet.credits': remainingCredits,
         updatedAt: FieldValue.serverTimestamp()
@@ -3398,8 +3244,10 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
 
     return {
       ok: true,
-      drawCost,
-      remainingCredits
+      drawCost: chargedDrawCost,
+      remainingCredits,
+      freeDrawUsedToday,
+      lastFreeCardDrawDay
     };
   } catch (err) {
     throw mapError(err);
