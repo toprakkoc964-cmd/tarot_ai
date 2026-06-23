@@ -2696,11 +2696,14 @@ async function reserveCoffeeCredits(input: {
       coffeeAnalysis?: CoffeeAnalysisState;
     };
     const wallet = user.wallet ?? { credits: 0, isFirstFreeUsed: false };
+    const walletRecord = wallet as typeof wallet & Record<string, unknown>;
     const analysis = user.coffeeAnalysis ?? {};
     const activeReservationId = analysis.activeReservationId ?? null;
     const activeExpiresAtMs = Number(analysis.activeReservationExpiresAtMs ?? 0);
     const activeAmount = Number(analysis.activeReservationAmount ?? 0);
     let reservedCredits = Number(wallet.coffeeReservedCredits ?? 0);
+    const isFreeCoffee = walletRecord.firstCoffeeFreeUsed !== true;
+    const effectiveCost = isFreeCoffee ? 0 : coffeeReadingCost;
 
     if (activeReservationId && activeExpiresAtMs > nowMs) {
       throw new Error('COFFEE_ANALYSIS_IN_PROGRESS');
@@ -2719,41 +2722,51 @@ async function reserveCoffeeCredits(input: {
     }
 
     const dayKey = coffeeDayKey(nowMs);
-    const throttle = checkAndBumpThrottle({
-      throttle: analysis,
-      nowMs,
-      windowMs: coffeeReservationTtlMs,
-      windowLimit: coffeeTenMinuteAttemptLimit,
-      dailyLimit: coffeeDailyAttemptLimit,
-      dayKey,
-    });
-    if (!throttle.allowed) {
-      throw new Error('COFFEE_RATE_LIMITED');
+    let nextWindowStartedAtMs = analysis.windowStartedAtMs ?? null;
+    let nextWindowCount = analysis.windowCount ?? null;
+    let nextDayKey = analysis.dayKey ?? null;
+    let nextDayCount = analysis.dayCount ?? null;
+    if (isFreeCoffee) {
+      const throttle = checkAndBumpThrottle({
+        throttle: analysis,
+        nowMs,
+        windowMs: coffeeReservationTtlMs,
+        windowLimit: coffeeTenMinuteAttemptLimit,
+        dailyLimit: coffeeDailyAttemptLimit,
+        dayKey,
+      });
+      if (!throttle.allowed) {
+        throw new Error('COFFEE_RATE_LIMITED');
+      }
+      nextWindowStartedAtMs = throttle.next.windowStartedAtMs;
+      nextWindowCount = throttle.next.windowCount;
+      nextDayKey = throttle.next.dayKey;
+      nextDayCount = throttle.next.dayCount;
     }
 
     const credits = Number(wallet.credits ?? 0);
-    if (credits - reservedCredits < coffeeReadingCost) {
+    if (effectiveCost > 0 && credits - reservedCredits < effectiveCost) {
       throw new Error('INSUFFICIENT_CREDITS');
     }
 
     const expiresAtMs = nowMs + coffeeReservationTtlMs;
     tx.update(input.userRef, {
-      'wallet.coffeeReservedCredits': reservedCredits + coffeeReadingCost,
+      'wallet.coffeeReservedCredits': reservedCredits + effectiveCost,
       coffeeAnalysis: {
         activeReservationId: input.idemKey,
         activeReservationExpiresAtMs: expiresAtMs,
-        activeReservationAmount: coffeeReadingCost,
-        windowStartedAtMs: throttle.next.windowStartedAtMs,
-        windowCount: throttle.next.windowCount,
-        dayKey: throttle.next.dayKey,
-        dayCount: throttle.next.dayCount,
+        activeReservationAmount: effectiveCost,
+        windowStartedAtMs: nextWindowStartedAtMs,
+        windowCount: nextWindowCount,
+        dayKey: nextDayKey,
+        dayCount: nextDayCount,
       },
       updatedAt: FieldValue.serverTimestamp(),
     });
     tx.set(input.reservationRef, {
       uid: input.uid,
       idempotencyKey: input.idemKey,
-      amount: coffeeReadingCost,
+      amount: effectiveCost,
       status: 'processing',
       expiresAtMs,
       createdAt: FieldValue.serverTimestamp(),
@@ -2903,9 +2916,10 @@ export const analyzeCoffeeReading = onCall(
       const safeCoffeeReading = scrubCoffeeReadingFields(aiPayload.reading, languageCode);
       const retentionExpiresAtMs = Date.now() + coffeeRetentionMs;
       let remainingCredits = 0;
+      let chargeAmount = coffeeReadingCost;
       const successResult = {
         success: true,
-        chargedCredits: coffeeReadingCost,
+        chargedCredits: chargeAmount,
         remainingCredits,
         readingId: readingRef.id,
         validation: aiPayload.validation,
@@ -2931,34 +2945,42 @@ export const analyzeCoffeeReading = onCall(
         const user = userSnap.data() as UserDoc;
         const credits = Number(user.wallet?.credits ?? 0);
         const reservedCredits = Number(user.wallet?.coffeeReservedCredits ?? 0);
-        if (credits < coffeeReadingCost || reservedCredits < coffeeReadingCost) {
+        chargeAmount = Number(reservation.amount ?? 0);
+        if (chargeAmount > 0 && (credits < chargeAmount || reservedCredits < chargeAmount)) {
           throw new Error('INSUFFICIENT_CREDITS');
         }
-        remainingCredits = credits - coffeeReadingCost;
+        remainingCredits = credits - chargeAmount;
+        successResult.chargedCredits = chargeAmount;
         successResult.remainingCredits = remainingCredits;
 
-        tx.update(userRef, {
+        const userUpdate: Record<string, unknown> = {
           'wallet.credits': remainingCredits,
-          'wallet.coffeeReservedCredits': Math.max(0, reservedCredits - coffeeReadingCost),
+          'wallet.coffeeReservedCredits': Math.max(0, reservedCredits - chargeAmount),
           'coffeeAnalysis.activeReservationId': null,
           'coffeeAnalysis.activeReservationExpiresAtMs': null,
           'coffeeAnalysis.activeReservationAmount': null,
           lastCoffeeReadingAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
-        });
+        };
+        if (chargeAmount === 0) {
+          userUpdate['wallet.firstCoffeeFreeUsed'] = true;
+        }
+        tx.update(userRef, userUpdate);
         tx.update(reservationRef, {
           status: 'charged',
           expiresAtMs: null,
           chargedAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
-        tx.set(userRef.collection('credit_ledger').doc(), {
-          type: 'debit',
-          amount: -coffeeReadingCost,
-          reason: 'coffee_reading',
-          idempotencyKey: idemKey,
-          createdAt: FieldValue.serverTimestamp(),
-        });
+        if (chargeAmount > 0) {
+          tx.set(userRef.collection('credit_ledger').doc(), {
+            type: 'debit',
+            amount: -chargeAmount,
+            reason: 'coffee_reading',
+            idempotencyKey: idemKey,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
         tx.set(readingRef, {
           uid,
           languageCode,
