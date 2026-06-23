@@ -325,6 +325,8 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
           return AppTexts.t('palmErrorServerConfig');
         case FunctionErrorCodes.rateLimited:
           return AppTexts.t('readingRateLimited');
+        case FunctionErrorCodes.insufficientCredits:
+          return AppTexts.t('home.cta.insufficient_credits_message');
         default:
           return AppTexts.t('palmScanErrorDescription');
       }
@@ -409,10 +411,7 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
       await Navigator.of(context).pushReplacement(
         PageRouteBuilder<void>(
           pageBuilder: (_, animation, __) {
-            return FadeTransition(
-              opacity: animation,
-              child: destination,
-            );
+            return FadeTransition(opacity: animation, child: destination);
           },
         ),
       );

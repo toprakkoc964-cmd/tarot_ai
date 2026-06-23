@@ -642,6 +642,7 @@
   "coffeeNotEnoughCredits": "You do not have enough tokens.",
   "coffeeReadyToAnalyze": "All three photos are ready. Your reading starts only when you ask.",
   "coffeeCreditInfo": "20 tokens · deducted only after a successful reading",
+  "firstReadingFreeInfo": "First reading free · later readings cost 20 tokens",
   "coffeePhotoReady": "Photo ready",
   "coffeePhotoNeedsRetry": "Replace this photo",
   "coffeePhotoValidating": "Validating photo",

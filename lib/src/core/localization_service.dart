@@ -825,6 +825,8 @@ class LocalizationService {
     'coffeeReadyToAnalyze':
         'All three photos are ready. Your reading starts only when you ask.',
     'coffeeCreditInfo': '20 tokens · deducted only after a successful reading',
+    'firstReadingFreeInfo':
+        'First reading free · later readings cost 20 tokens',
     'coffeePhotoReady': 'Photo ready',
     'coffeePhotoNeedsRetry': 'Replace this photo',
     'coffeePhotoValidating': 'Validating photo',
@@ -1419,8 +1421,7 @@ class LocalizationService {
     'messages.thread_count': '{count} mesaj',
     'chat.rateLimited':
         'Çok hızlı mesaj gönderdiniz. Lütfen birazdan tekrar deneyin.',
-    'chat.aiBusy':
-        'Aris şu an çok yoğun. Lütfen birazdan tekrar deneyin.',
+    'chat.aiBusy': 'Aris şu an çok yoğun. Lütfen birazdan tekrar deneyin.',
     'chat.messageFailed': 'Mesaj gönderilemedi. Lütfen tekrar deneyin.',
     'chat.insufficient.title': 'Jeton gerekli',
     'chat.insufficient.body':
@@ -1766,6 +1767,7 @@ class LocalizationService {
     'coffeeReadyToAnalyze':
         'Üç fotoğraf hazır. Yorum yalnızca sen başlattığında oluşturulur.',
     'coffeeCreditInfo': '20 jeton · yalnızca başarılı yorumdan sonra düşer',
+    'firstReadingFreeInfo': 'İlk okuma ücretsiz · sonraki okumalar 20 jeton',
     'coffeePhotoReady': 'Fotoğraf hazır',
     'coffeePhotoNeedsRetry': 'Bu fotoğrafı yenile',
     'coffeePhotoValidating': 'Fotoğraf doğrulanıyor',

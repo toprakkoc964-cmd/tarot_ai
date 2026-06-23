@@ -17,6 +17,8 @@ import '../services/coffee_temp_file_cleaner.dart';
 import '../../home/ai_chat_context.dart';
 import '../../home/aris_session_service.dart';
 import '../../home/chat_page.dart';
+import '../../shop/models/user_entitlements.dart';
+import '../../shop/services/entitlement_service.dart';
 import '../widgets/coffee_capture_card.dart';
 import '../widgets/coffee_capture_progress.dart';
 import '../widgets/coffee_source_bottom_sheet.dart';
@@ -25,10 +27,7 @@ import '../widgets/coffee_validation_error_dialog.dart';
 import 'coffee_loading_screen.dart';
 
 class CoffeeCaptureFlowScreen extends StatefulWidget {
-  const CoffeeCaptureFlowScreen({
-    super.key,
-    required this.uid,
-  });
+  const CoffeeCaptureFlowScreen({super.key, required this.uid});
 
   final String uid;
 
@@ -111,7 +110,8 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
       });
     } on CoffeePipelineException catch (error) {
       if (!mounted) return;
-      shouldRetry = await CoffeeValidationErrorDialog.show(
+      shouldRetry =
+          await CoffeeValidationErrorDialog.show(
             context,
             step: step,
             validationResult: error.validationResult,
@@ -155,8 +155,9 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
       final sessionId = newArisSessionId(prefix: 'coffee');
       final idempotencyKey = createIdempotencyKey();
 
-      await Future<void>.delayed(const Duration(milliseconds: 1350))
-          .timeout(const Duration(seconds: 3), onTimeout: () {});
+      await Future<void>.delayed(
+        const Duration(milliseconds: 1350),
+      ).timeout(const Duration(seconds: 3), onTimeout: () {});
 
       if (!mounted) return;
       _transferredPhotoOwnership = true;
@@ -326,8 +327,9 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
                             AppTexts.t('coffeeValidationCameraRecommended'),
                             textAlign: TextAlign.center,
                             style: GoogleFonts.manrope(
-                              color: AppColors.tertiaryGold
-                                  .withValues(alpha: 0.88),
+                              color: AppColors.tertiaryGold.withValues(
+                                alpha: 0.88,
+                              ),
                               fontSize: 12,
                               height: 1.4,
                             ),
@@ -371,8 +373,9 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
                             step: _activeStep,
                             result: _completedSteps[_activeStep],
                             isProcessing: _isProcessing,
-                            needsRetry:
-                                _backendRetrySteps.contains(_activeStep),
+                            needsRetry: _backendRetrySteps.contains(
+                              _activeStep,
+                            ),
                             onAddPhoto: () => _chooseSourceForStep(_activeStep),
                           ),
                           const SizedBox(height: 18),
@@ -387,9 +390,21 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: CoffeeStickyCta(
-                          onPressed: _isProcessing ? null : _submitForReading,
-                          isLoading: false,
+                        child: StreamBuilder<UserEntitlements>(
+                          stream: GetIt.I<EntitlementService>()
+                              .watchUserEntitlements(widget.uid),
+                          initialData: GetIt.I<EntitlementService>()
+                              .cachedUserEntitlements(widget.uid),
+                          builder: (context, snapshot) {
+                            return CoffeeStickyCta(
+                              onPressed: _isProcessing
+                                  ? null
+                                  : _submitForReading,
+                              isLoading: false,
+                              firstCoffeeFreeUsed:
+                                  snapshot.data?.firstCoffeeFreeUsed ?? false,
+                            );
+                          },
                         ),
                       ),
                     if (_isProcessing)
@@ -429,10 +444,9 @@ class _CompletedSummary extends StatelessWidget {
             child: Text(
               isComplete
                   ? AppTexts.t('coffeeAllPhotosReady')
-                  : AppTexts.t('coffeeProgressHint').replaceFirst(
-                      '{count}',
-                      completedCount.toString(),
-                    ),
+                  : AppTexts.t(
+                      'coffeeProgressHint',
+                    ).replaceFirst('{count}', completedCount.toString()),
               style: GoogleFonts.manrope(
                 color: AppColors.secondaryLavender.withValues(alpha: 0.82),
                 height: 1.4,

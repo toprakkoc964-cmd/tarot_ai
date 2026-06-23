@@ -583,6 +583,7 @@
   "creditsConsumableInfo": "Les packs de jetons sont des achats uniques et n'incluent pas l'abonnement Premium.",
   "arisMessageCost": "Chaque message de suivi coute {cost} jetons",
   "coffeeMessageNote": "Chaque message de suivi coute {cost} jetons.",
+  "firstReadingFreeInfo": "Première lecture gratuite · les lectures suivantes coûtent 20 jetons",
   "chat.rateLimited": "Vous envoyez des messages trop vite. Reessayez dans un instant.",
   "chat.aiBusy": "Aris recoit beaucoup de signes en ce moment. Reessayez dans un instant.",
   "chat.messageFailed": "Le message n'a pas pu etre envoye. Reessayez.",

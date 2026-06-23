@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../auth/user_profile_contract.dart';
+
 class PremiumEntitlement {
   const PremiumEntitlement({
     required this.active,
@@ -33,10 +35,14 @@ class UserEntitlements {
   const UserEntitlements({
     required this.premium,
     required this.creditBalance,
+    this.firstCoffeeFreeUsed = false,
+    this.firstPalmFreeUsed = false,
   });
 
   final PremiumEntitlement premium;
   final int creditBalance;
+  final bool firstCoffeeFreeUsed;
+  final bool firstPalmFreeUsed;
 
   bool get shouldShowAds => premium.active != true;
 
@@ -49,14 +55,23 @@ class UserEntitlements {
 
   factory UserEntitlements.fromUserMap(Map<String, dynamic> map) {
     final wallet = Map<String, dynamic>.from((map['wallet'] as Map?) ?? {});
-    final entitlements =
-        Map<String, dynamic>.from((map['entitlements'] as Map?) ?? {});
-    final premium =
-        Map<String, dynamic>.from((entitlements['premium'] as Map?) ?? {});
+    final entitlements = Map<String, dynamic>.from(
+      (map['entitlements'] as Map?) ?? {},
+    );
+    final premium = Map<String, dynamic>.from(
+      (entitlements['premium'] as Map?) ?? {},
+    );
 
     return UserEntitlements(
       premium: PremiumEntitlement.fromMap(premium),
-      creditBalance: (wallet['credits'] as num?)?.toInt() ?? 0,
+      creditBalance:
+          (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0,
+      firstCoffeeFreeUsed:
+          (wallet[UserProfileContract.walletFirstCoffeeFreeUsed] as bool?) ??
+          false,
+      firstPalmFreeUsed:
+          (wallet[UserProfileContract.walletFirstPalmFreeUsed] as bool?) ??
+          false,
     );
   }
 }

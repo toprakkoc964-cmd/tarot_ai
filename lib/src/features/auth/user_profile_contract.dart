@@ -49,6 +49,8 @@ class UserProfileContract {
   static const String updatedAt = 'updatedAt';
   static const String wallet = 'wallet';
   static const String walletCredits = 'credits';
+  static const String walletFirstCoffeeFreeUsed = 'firstCoffeeFreeUsed';
+  static const String walletFirstPalmFreeUsed = 'firstPalmFreeUsed';
   static const String walletLastFreeDrawAt = 'lastFreeDrawAt';
   static const String fcmTokens = 'fcmTokens';
   static const String fcmTokenUpdatedAt = 'fcmTokenUpdatedAt';

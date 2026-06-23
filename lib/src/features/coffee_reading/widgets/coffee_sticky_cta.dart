@@ -11,10 +11,12 @@ class CoffeeStickyCta extends StatelessWidget {
     super.key,
     required this.onPressed,
     required this.isLoading,
+    this.firstCoffeeFreeUsed = false,
   });
 
   final VoidCallback? onPressed;
   final bool isLoading;
+  final bool firstCoffeeFreeUsed;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +123,11 @@ class CoffeeStickyCta extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  AppTexts.t('coffeeCreditInfo'),
+                  AppTexts.t(
+                    firstCoffeeFreeUsed
+                        ? 'coffeeCreditInfo'
+                        : 'firstReadingFreeInfo',
+                  ),
                   textAlign: TextAlign.center,
                   style: GoogleFonts.manrope(
                     color: AppColors.tertiaryGold.withValues(alpha: 0.88),

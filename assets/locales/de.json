@@ -569,6 +569,7 @@
   "coffeeNotEnoughCredits": "Du hast nicht genug Jetons.",
   "coffeeReadyToAnalyze": "Alle drei Fotos sind bereit. Deine Deutung startet erst, wenn du sie anforderst.",
   "coffeeCreditInfo": "20 Jetons · nur nach erfolgreicher Deutung abgezogen",
+  "firstReadingFreeInfo": "Erste Deutung kostenlos · weitere Deutungen kosten 20 Token",
   "coffeePhotoReady": "Foto bereit",
   "coffeePhotoNeedsRetry": "Dieses Foto ersetzen",
   "coffeePhotoValidating": "Foto wird geprueft",

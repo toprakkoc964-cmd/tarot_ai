@@ -642,6 +642,7 @@
   "coffeeNotEnoughCredits": "Yeterli jetonun yok.",
   "coffeeReadyToAnalyze": "Üç fotoğraf hazır. Yorum yalnızca sen başlattığında oluşturulur.",
   "coffeeCreditInfo": "20 jeton · yalnızca başarılı yorumdan sonra düşer",
+  "firstReadingFreeInfo": "İlk okuma ücretsiz · sonraki okumalar 20 jeton",
   "coffeePhotoReady": "Fotoğraf hazır",
   "coffeePhotoNeedsRetry": "Bu fotoğrafı yenile",
   "coffeePhotoValidating": "Fotoğraf doğrulanıyor",
