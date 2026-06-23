@@ -33,6 +33,15 @@ function normalizeLanguageCode(lang?: string): string {
   return languageNames[normalized] ? normalized : 'en';
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientGeminiError(message: string): boolean {
+  return /(?:503|429|service unavailable|high demand|temporar|unavailable|resource_exhausted|rate limit)/i
+    .test(message);
+}
+
 export function geminiLanguageName(lang?: string): string {
   return languageNames[normalizeLanguageCode(lang)];
 }
@@ -85,9 +94,28 @@ export async function createReadingText(input: {
       },
     });
 
-    const result = await model.generateContent(input.userPrompt);
-    const text = result.response.text().trim();
-    return text;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const result = await model.generateContent(input.userPrompt);
+        const text = result.response.text().trim();
+        return text;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt >= 3 || !isTransientGeminiError(message)) {
+          throw error;
+        }
+        logger.warn('gemini_text_retry', {
+          modelName,
+          attempt,
+          errorMessage: message.slice(0, 220),
+        });
+        await sleep(attempt * 650);
+      }
+    }
+
+    throw lastError;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`GEMINI_REQUEST_FAILED:${message}`);

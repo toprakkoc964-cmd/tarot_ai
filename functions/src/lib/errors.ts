@@ -8,6 +8,10 @@ export function mapError(err: unknown): HttpsError {
       return new HttpsError('failed-precondition', 'GEMINI_API_KEY_MISSING');
     }
     if (err.message.startsWith('GEMINI_REQUEST_FAILED')) {
+      if (/(?:503|429|service unavailable|high demand|temporar|unavailable|resource_exhausted|rate limit)/i
+        .test(err.message)) {
+        return new HttpsError('unavailable', 'AI_TEMPORARY_BUSY');
+      }
       return new HttpsError('unavailable', err.message);
     }
     if (err.message === 'EMPTY_BIRTH_FREQUENCY_COMMENT') {
