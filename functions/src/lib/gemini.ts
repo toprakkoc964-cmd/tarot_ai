@@ -6,6 +6,9 @@ import { logger } from 'firebase-functions';
 
 let client: GoogleGenerativeAI | null = null;
 
+const DEFAULT_MAX_OUTPUT_TOKENS =
+  Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 1024;
+
 const languageNames: Record<string, string> = {
   tr: 'Turkish (Türkçe)',
   en: 'English',
@@ -90,7 +93,7 @@ export async function createReadingText(input: {
       generationConfig: {
         temperature: input.temperature ?? 0.25,
         ...(input.topP ? { topP: input.topP } : {}),
-        ...(input.maxOutputTokens ? { maxOutputTokens: input.maxOutputTokens } : {})
+        maxOutputTokens: input.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
       },
     });
 
