@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../core/app_legal_urls.dart';
 import '../../../core/app_locale.dart';
 import '../models/shop_product_catalog.dart';
 import '../models/shop_product_config.dart';
@@ -143,16 +144,16 @@ const Map<String, dynamic> _fallbackConfig = {
   ],
   'legal': {
     'termsUrl': {
-      'default': 'https://tarotai.app/terms',
-      'tr': 'https://tarotai.app/tr/terms',
-      'en': 'https://tarotai.app/en/terms',
-      'de': 'https://tarotai.app/de/terms',
+      'default': AppLegalUrls.terms,
+      'tr': AppLegalUrls.terms,
+      'en': AppLegalUrls.terms,
+      'de': AppLegalUrls.terms,
     },
     'privacyUrl': {
-      'default': 'https://tarotai.app/privacy',
-      'tr': 'https://tarotai.app/tr/privacy',
-      'en': 'https://tarotai.app/en/privacy',
-      'de': 'https://tarotai.app/de/privacy',
+      'default': AppLegalUrls.privacy,
+      'tr': AppLegalUrls.privacy,
+      'en': AppLegalUrls.privacy,
+      'de': AppLegalUrls.privacy,
     },
   },
 };

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_legal_urls.dart';
 import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
 
@@ -97,13 +97,7 @@ class _FooterLink extends StatelessWidget {
   }
 
   Future<void> _open() async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      onError();
-      return;
-    }
-
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final launched = await AppLegalUrls.launch(url);
     if (!launched) {
       onError();
     }
