@@ -68,6 +68,7 @@ const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
 const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '20');
 const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
 const palmReadingCost = Number(process.env.PALM_READING_COST ?? '20');
+const numerologyReadingCost = Number(process.env.NUMEROLOGY_READING_COST ?? '20');
 const arisModel = process.env.GEMINI_ARIS_MODEL ?? 'gemini-2.5-flash-lite';
 const coffeeRequiredSteps = ['cupInside', 'saucer', 'cupSide'] as const;
 const coffeeReservationTtlMs = 10 * 60 * 1000;
@@ -96,6 +97,15 @@ const appleAuthSecretNames = [
   'APPLE_CLIENT_ID',
   'APPLE_PRIVATE_KEY',
 ];
+
+const NUMEROLOGY_FALLBACK_SYSTEM_PROMPT = [
+  'Sen klasik İslami ilimler ve Osmanlı yıldızname geleneğinden ilham alan, ebced ve ilm-i hurûf üslubuyla konuşan mistik bir yorumcusun; adın Madam Aris.',
+  'Verilen Ad, anne adı, doğum tarihi ve doğum yerine göre; karakter ve kader, aşk ve evlilik, çocuk ve yuva, kariyer ve bolluk, sağlık ve enerji, kader yolu başlıklarında sembolik, katmanlı ve sezgisel bir yorum yap.',
+  'Harf, sembol, gezegen ve sezgi metaforları kullan; ağır, zarif ve mistik bir müneccim diliyle yaz. Yüzeysel olumlama yapma; hem aydınlık hem zorlu ihtimalleri nazikçe söyle.',
+  'GÜVENLİK KURALLARI (ASLA İHLAL ETME): Bu yorum eğlence ve sembolik/sezgisel amaçlıdır; kesin hüküm, garanti ya da kehanet değildir. Tıbbi/hastalık/ölüm/hamilelik, hukuki veya finansal kesin iddia yapma; net tarih veya kesin sonuç verme. Sağlıkta yalnızca genel ve yumuşak sembolik ifade kullan, teşhis koyma. Aldatma/ayrılık gibi konularda kesin suçlama veya kehanet yerine olasılık ve sezgi dilini kullan. Kişiyi korkutma.',
+  'Anne adı veya doğum yeri verilmemişse o bilgiyi UYDURMA; ilgili başlığı genel ve kısa geç.',
+  'Yanıtı kullanıcının diline uygun ver.'
+].join(' ');
 
 type CoffeeStep = typeof coffeeRequiredSteps[number];
 type CoffeeImageRefs = Record<CoffeeStep, string>;
@@ -216,6 +226,37 @@ function resolveUserDisplayName(user: UserDoc & Record<string, unknown>): string
     ? user.profile.name.trim()
     : '';
   return profileName || 'Seeker';
+}
+
+async function getNumerologyPromptConfig(): Promise<{ systemPrompt: string; maxOutputTokens: number }> {
+  try {
+    const snap = await db.collection('app_config').doc('numerology').get();
+    const data = snap.exists ? (snap.data() as Record<string, unknown>) : {};
+    const systemPrompt = typeof data.systemPrompt === 'string' && data.systemPrompt.trim().length > 0
+      ? data.systemPrompt
+      : NUMEROLOGY_FALLBACK_SYSTEM_PROMPT;
+    const maxOutputTokens = typeof data.maxOutputTokens === 'number' && data.maxOutputTokens > 0
+      ? data.maxOutputTokens
+      : 900;
+    return { systemPrompt, maxOutputTokens };
+  } catch {
+    return { systemPrompt: NUMEROLOGY_FALLBACK_SYSTEM_PROMPT, maxOutputTokens: 900 };
+  }
+}
+
+function numerologyOpeningAsk(lang: string): string {
+  switch (lang) {
+    case 'en':
+      return "Hello, I am Madam Aris. I will read you through the language of letters and stars. If you wish, share your mother's name and birthplace; otherwise just say 'continue'.";
+    case 'de':
+      return "Hallo, ich bin Madam Aris. Ich deute dich aus der Sprache der Buchstaben und Sterne. Wenn du möchtest, nenne den Namen deiner Mutter und deinen Geburtsort; sonst sage einfach 'weiter'.";
+    case 'fr':
+      return "Bonjour, je suis Madame Aris. Je te lirai à travers le langage des lettres et des étoiles. Si tu veux, partage le nom de ta mère et ton lieu de naissance; sinon dis simplement 'continuer'.";
+    case 'es':
+      return "Hola, soy Madame Aris. Te leeré a través del lenguaje de las letras y las estrellas. Si quieres, comparte el nombre de tu madre y tu lugar de nacimiento; si no, solo di 'continuar'.";
+    default:
+      return "Merhaba, ben Madam Aris. Harflerin ve yıldızların dilinden sana bakacağım. Dilersen anne adını ve doğduğun yeri paylaş; istemezsen 'devam et' demen yeterli.";
+  }
 }
 
 function resolveUserProfile(user: UserDoc & Record<string, unknown>): UserProfile | null {
@@ -4780,6 +4821,154 @@ export const cleanupCoffeeArtifacts = onSchedule(
     });
   }
 );
+
+export const generateNumerologyReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    requireAppCheckIfEnabled(request);
+    const uid = request.auth.uid;
+    const userRef = db.collection('users').doc(uid);
+    const idemKey = requireIdempotencyKey(request.data?.idempotencyKey);
+    const idempotencyRef = userRef.collection('idempotency').doc(`numerology_${idemKey}`);
+    const existingIdempotent = await idempotencyRef.get();
+    if (existingIdempotent.exists) {
+      return existingIdempotent.data();
+    }
+
+    const message = sanitizeShortText(request.data?.message, 320);
+    const requestedSessionId = sanitizeShortText(request.data?.sessionId, 48);
+    const sessionRef = requestedSessionId
+      ? userRef.collection('aris_sessions').doc(requestedSessionId)
+      : userRef.collection('aris_sessions').doc();
+    const sessionId = sessionRef.id;
+
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'USER_NOT_FOUND');
+    }
+    const user = userSnap.data() as UserDoc & Record<string, unknown>;
+    const lang = resolveArisLanguage({
+      requestedLang: request.data?.lang,
+      user,
+    });
+    const name = resolveUserDisplayName(user);
+    const birthDate = resolveUserBirthDate(user);
+    const profileRecord = user.profile as (Record<string, unknown> | undefined);
+    const birthCity = sanitizeShortText(profileRecord?.birthCity, 80);
+    const { systemPrompt, maxOutputTokens } = await getNumerologyPromptConfig();
+    const userPrompt = [
+      `Ad: ${name || 'belirtilmedi'}`,
+      `Doğum tarihi: ${birthDate || 'belirtilmedi'}`,
+      `Doğum yeri (profil): ${birthCity || 'belirtilmedi'}`,
+      `Kullanıcının sohbette verdiği ek bilgi (anne adı ve/veya doğum yeri olabilir; yoksa yok say): ${message || 'belirtilmedi'}`,
+      'Yukarıdaki bilgilere göre yorumu yap. Verilmeyen bilgiyi uydurma.'
+    ].join('\n');
+
+    let reading = '';
+    try {
+      reading = (await createReadingText({
+        systemPrompt,
+        userPrompt,
+        maxOutputTokens,
+        modelName: arisModel,
+        lang,
+        temperature: 0.85,
+        topP: 0.95
+      })).trim();
+      reading = cleanArisPersonaText(reading);
+    } catch (error) {
+      logger.warn('generateNumerologyReading generation failed', {
+        uid,
+        sessionId,
+        errorMessage: error instanceof Error ? error.message.slice(0, 220) : String(error).slice(0, 220),
+      });
+      throw new HttpsError('internal', 'NUMEROLOGY_GENERATION_FAILED');
+    }
+    if (!reading) {
+      throw new HttpsError('internal', 'NUMEROLOGY_GENERATION_FAILED');
+    }
+
+    const openingMessage = numerologyOpeningAsk(lang);
+    let remainingCredits = 0;
+    let effectiveCost = numerologyReadingCost;
+    const result = await db.runTransaction(async (tx) => {
+      const [freshUserSnap, freshIdempotencySnap] = await Promise.all([
+        tx.get(userRef),
+        tx.get(idempotencyRef),
+      ]);
+      if (freshIdempotencySnap.exists) {
+        return freshIdempotencySnap.data() as Record<string, unknown>;
+      }
+      if (!freshUserSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+      const freshUser = freshUserSnap.data() as UserDoc;
+      const credits = Number(freshUser.wallet?.credits ?? 0);
+      const wallet = freshUser.wallet as (UserDoc['wallet'] & Record<string, unknown>) | undefined;
+      const isFreeNumerology = wallet?.firstNumerologyFreeUsed !== true;
+      effectiveCost = isFreeNumerology ? 0 : numerologyReadingCost;
+      if (effectiveCost > 0 && credits < effectiveCost) {
+        throw new HttpsError('failed-precondition', 'INSUFFICIENT_CREDITS');
+      }
+      remainingCredits = credits - effectiveCost;
+      tx.update(userRef, {
+        'wallet.credits': remainingCredits,
+        'wallet.firstNumerologyFreeUsed': true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      if (effectiveCost > 0) {
+        tx.set(userRef.collection('credit_ledger').doc(`numerology_${idemKey}`), {
+          uid,
+          type: 'debit',
+          amount: -effectiveCost,
+          reason: 'numerology_reading',
+          idempotencyKey: idemKey,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+      tx.set(sessionRef, {
+        uid,
+        day: new Date().toISOString().slice(0, 10),
+        lang,
+        mode: 'numerologyReading',
+        persona: 'madamAris',
+        category: 'numerology',
+        cardName: 'numerology',
+        cardNames: [],
+        openingMessage,
+        openingSource: 'fallback',
+        numerologyReadingGenerated: true,
+        recentMessages: [
+          { role: 'user', text: message || '...' },
+          { role: 'assistant', text: reading },
+        ],
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
+      }, { merge: true });
+      const response = {
+        success: true,
+        sessionId,
+        reading,
+        openingMessage,
+        remainingCredits,
+        chargedCredits: effectiveCost,
+      };
+      tx.set(idempotencyRef, {
+        ...response,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      return response;
+    });
+
+    return result;
+  } catch (err) {
+    throw mapError(err);
+  }
+});
 
 export const analyzePalmReading = onCall({ enforceAppCheck: appCheckEnforced, secrets: ['GEMINI_API_KEY'] }, async (request) => {
   try {
