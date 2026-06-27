@@ -18,7 +18,7 @@ class ArisChatHistoryEntry {
   Map<String, dynamic> toMap() => {'role': role, 'text': text};
 }
 
-enum ArisSessionCategory { tarot, coffee, palm }
+enum ArisSessionCategory { tarot, coffee, palm, numerology }
 
 class ArisSessionRecord {
   const ArisSessionRecord({
@@ -59,6 +59,11 @@ class ArisSessionRecord {
         normalizedCategory == 'palm' ||
         normalizedCardName == 'palm') {
       return ArisSessionCategory.palm;
+    }
+    if (normalizedMode == 'numerologyReading' ||
+        normalizedCategory == 'numerology' ||
+        normalizedCardName == 'numerology') {
+      return ArisSessionCategory.numerology;
     }
     if (normalizedMode == 'coffeeReading' ||
         normalizedCategory == 'coffee' ||

@@ -7,7 +7,13 @@ import '../coffee_reading/models/coffee_validation_result.dart';
 
 enum AiPersona { bilgeAris, madamAris }
 
-enum AiChatMode { general, tarotReading, palmReading, coffeeReading }
+enum AiChatMode {
+  general,
+  tarotReading,
+  palmReading,
+  coffeeReading,
+  numerologyReading,
+}
 
 class AiChatContext {
   const AiChatContext({
@@ -34,6 +40,7 @@ class AiChatContext {
 
   bool get isCoffeeReading => mode == AiChatMode.coffeeReading;
   bool get isPalmReading => mode == AiChatMode.palmReading;
+  bool get isNumerologyReading => mode == AiChatMode.numerologyReading;
 
   List<File> get contextImageFiles {
     final files = imageFiles;
@@ -114,6 +121,20 @@ Yorumu şu başlıklarla yapılandır:
       title: AppTexts.t('palmMadamArisTitle'),
       metadata: {
         'source': 'palm_reading',
+        if (sessionId != null && sessionId.trim().isNotEmpty)
+          'sessionId': sessionId.trim(),
+        'createdAt': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  factory AiChatContext.numerologyReadingMadamAris({String? sessionId}) {
+    return AiChatContext(
+      persona: AiPersona.madamAris,
+      mode: AiChatMode.numerologyReading,
+      title: AppTexts.t('numerologyMadamArisTitle'),
+      metadata: {
+        'source': 'numerology_reading',
         if (sessionId != null && sessionId.trim().isNotEmpty)
           'sessionId': sessionId.trim(),
         'createdAt': DateTime.now().toIso8601String(),
