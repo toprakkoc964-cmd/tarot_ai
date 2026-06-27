@@ -115,6 +115,23 @@ class TarotFunctionsClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> generateNumerologyReading({
+    required String message,
+    required String idempotencyKey,
+    String? sessionId,
+    String? lang,
+  }) async {
+    final callable = _functions.httpsCallable('generateNumerologyReading');
+    final response = await callable.call({
+      'message': message,
+      'idempotencyKey': idempotencyKey,
+      if (sessionId != null && sessionId.trim().isNotEmpty)
+        'sessionId': sessionId.trim(),
+      if (lang != null && lang.trim().isNotEmpty) 'lang': lang.trim(),
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<int> getArisConversationCost() async {
     final callable = _functions.httpsCallable('getArisConversationConfig');
     final response = await callable.call();
