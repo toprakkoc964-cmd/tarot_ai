@@ -9,6 +9,8 @@ import '../../core/app_texts.dart';
 import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
+import 'ai_chat_context.dart';
+import 'chat_page.dart';
 import 'credit_page.dart';
 import 'home_palette.dart';
 
@@ -53,6 +55,17 @@ class CosmicPage extends StatelessWidget {
                   icon: Icons.local_cafe_rounded,
                   accentIcon: Icons.coffee_rounded,
                   onTap: () => _openCoffeeReading(context, uid),
+                ),
+                const SizedBox(height: 24),
+                CosmicFeatureCard(
+                  title: AppTexts.t('home.cosmic.numerology.title'),
+                  description: AppTexts.t(
+                    'home.cosmic.numerology.description',
+                  ),
+                  buttonText: AppTexts.t('home.cosmic.numerology.button'),
+                  icon: Icons.auto_stories_rounded,
+                  accentIcon: Icons.auto_awesome_rounded,
+                  onTap: () => _openNumerologyReading(context, uid),
                 ),
               ],
             ),
@@ -136,6 +149,50 @@ class CosmicPage extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  static Future<void> _openNumerologyReading(
+    BuildContext context,
+    String uid,
+  ) async {
+    final chatResult = await Navigator.of(context).push<String>(
+      PageRouteBuilder<String>(
+        pageBuilder: (_, animation, __) {
+          return FadeTransition(
+            opacity: animation,
+            child: KozmikBilgePage(
+              uid: uid,
+              chatContext: AiChatContext.numerologyReadingMadamAris(),
+            ),
+          );
+        },
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+    if (!context.mounted || chatResult != 'credits') return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CreditPage(
+          bottomInset: MediaQuery.of(context).padding.bottom,
+          uid: uid,
+        ),
       ),
     );
   }
