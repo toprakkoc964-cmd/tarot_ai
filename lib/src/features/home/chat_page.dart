@@ -77,6 +77,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   bool _coffeeAwaitingMood = false;
   bool _coffeeReadingGenerated = false;
   bool _coffeeReadingFailed = false;
+  bool _numerologyAwaitingInput = false;
+  bool _numerologyReadingGenerated = false;
   ArisSessionCategory? _resumedSessionCategory;
   String? _openingError;
   int? _conversationCost;
@@ -119,7 +121,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       widget.chatContext?.isPalmReading == true ||
       _resumedSessionCategory == ArisSessionCategory.palm;
 
-  bool get _isMadamArisChat => _isCoffeeChat || _isPalmChat;
+  bool get _isNumerologyChat =>
+      widget.chatContext?.isNumerologyReading == true ||
+      _resumedSessionCategory == ArisSessionCategory.numerology;
+
+  bool get _isMadamArisChat =>
+      _isCoffeeChat || _isPalmChat || _isNumerologyChat;
 
   bool get _isSpreadChat => widget.spreadCards.isNotEmpty;
 
@@ -135,6 +142,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     }
     if (_isPalmChat) return AppTexts.t('palmMadamArisTitle');
     if (_isCoffeeChat) return AppTexts.t('coffeeMadamArisTitle');
+    if (_isNumerologyChat) return AppTexts.t('numerologyMadamArisTitle');
     if (_isSpreadChat) return AppTexts.t('tarot.spread.chat_title');
     return AppTexts.t('arisTarotTitle');
   }
@@ -145,6 +153,9 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
 
   String get _loadingSubtitle {
     if (_isPalmChat) return AppTexts.t('palmMadamArisSubtitle');
+    if (_isNumerologyChat) {
+      return AppTexts.t('numerologyMadamArisSubtitle');
+    }
     if (_isCoffeeChat) {
       return AppTexts.t(
         _isGeneratingCoffeeReading
@@ -172,6 +183,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   }
 
   Map<String, dynamic> get _coffeeMetadata {
+    return widget.chatContext?.metadata ?? const {};
+  }
+
+  Map<String, dynamic> get _numerologyMetadata {
     return widget.chatContext?.metadata ?? const {};
   }
 
@@ -261,6 +276,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         ? 'coffeeMessageNote'
         : _isPalmChat
         ? 'palmMessageNote'
+        : _isNumerologyChat
+        ? 'numerologyMessageNote'
         : 'arisMessageCost';
     final cost = _conversationCost;
     return AppTexts.t(key).replaceAll('{cost}', cost?.toString() ?? '…');
@@ -315,6 +332,12 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         _nextConversationMessageIsFree = !record.recentMessages.any(
           (entry) => !entry.isUser,
         );
+        if (record.category == ArisSessionCategory.numerology) {
+          _numerologyReadingGenerated = record.recentMessages.any(
+            (entry) => !entry.isUser,
+          );
+          _numerologyAwaitingInput = !_numerologyReadingGenerated;
+        }
         _isLoadingOpening = false;
         _openingError = null;
       });
@@ -344,6 +367,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
   Future<void> _loadOpeningReading() async {
     if (_isCoffeeChat) {
       await _loadCoffeeOpeningReading();
+      return;
+    }
+    if (_isNumerologyChat) {
+      await _loadNumerologyOpeningReading();
       return;
     }
     if (mounted) {
@@ -460,6 +487,85 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         _isLoadingOpening = false;
         _openingError = AppTexts.t('aris.opening_error_generic');
       });
+    }
+  }
+
+  Future<void> _loadNumerologyOpeningReading() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingOpening = true;
+        _openingError = null;
+      });
+    }
+    try {
+      final sessionId =
+          (_numerologyMetadata['sessionId'] as String?)?.trim().isNotEmpty ==
+              true
+          ? (_numerologyMetadata['sessionId'] as String).trim()
+          : newArisSessionId(prefix: 'numerology');
+      final ask = AppTexts.t('numerologyOpeningAsk');
+      if (!mounted) return;
+      setState(() {
+        _sessionId = sessionId;
+        _messages
+          ..clear()
+          ..add(_ArisChatMessage.assistant(ask));
+        _isLoadingOpening = false;
+        _openingError = null;
+        _numerologyAwaitingInput = true;
+        _numerologyReadingGenerated = false;
+      });
+      _scrollToBottomSoon();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingOpening = false;
+        _openingError = AppTexts.t('aris.opening_error_generic');
+      });
+    }
+  }
+
+  Future<void> _generateNumerologyReading(String message) async {
+    try {
+      final response = await _functionsClient.generateNumerologyReading(
+        message: message,
+        sessionId: _sessionId,
+        idempotencyKey: createIdempotencyKey(),
+        lang: _activeArisLanguage(),
+      );
+      final reading = (response['reading'] as String?)?.trim() ?? '';
+      final returnedSessionId = (response['sessionId'] as String?)?.trim() ?? '';
+      if (!mounted) return;
+      _applyConversationResponse(response);
+      setState(() {
+        if (returnedSessionId.isNotEmpty) _sessionId = returnedSessionId;
+        _messages.add(
+          _ArisChatMessage.assistant(
+            reading.isEmpty ? AppTexts.t('numerologyChatReplyEmpty') : reading,
+          ),
+        );
+        _numerologyReadingGenerated = true;
+        _numerologyAwaitingInput = false;
+        _nextConversationMessageIsFree = false;
+      });
+      _scrollToBottom();
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      if (error.message == 'INSUFFICIENT_CREDITS') {
+        await _showInsufficientCreditsDialog();
+      } else if (error.message == 'RATE_LIMITED') {
+        _showSnack(AppTexts.t('chat.rateLimited'));
+      } else if (error.message == 'AI_TEMPORARY_BUSY' ||
+          error.code == 'unavailable') {
+        _showSnack(AppTexts.t('chat.aiBusy'));
+      } else {
+        _showSnack(AppTexts.t('chat.messageFailed'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(AppTexts.t('chat.messageFailed'));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -647,6 +753,10 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
       await _sendCoffeeMessage(text, credits);
       return;
     }
+    if (_isNumerologyChat) {
+      await _sendNumerologyMessage(text, credits);
+      return;
+    }
     final nextCost = _nextConversationCost;
     if (nextCost == null) {
       await _loadConversationCost();
@@ -775,6 +885,72 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
     }
   }
 
+  Future<void> _sendNumerologyMessage(String text, int credits) async {
+    if (_numerologyReadingGenerated) {
+      final nextCost = _nextConversationCost;
+      if (nextCost == null) {
+        await _loadConversationCost();
+        if (!mounted || _nextConversationCost == null) {
+          _showSnack(AppTexts.t('chat.costUnavailable'));
+          return;
+        }
+      }
+      if (credits < (_nextConversationCost ?? 0)) {
+        await _showInsufficientCreditsDialog();
+        return;
+      }
+    }
+
+    setState(() {
+      _isSending = true;
+      _messageController.clear();
+      _messages.add(_ArisChatMessage.user(text));
+    });
+    _scrollToBottom();
+
+    if (_numerologyAwaitingInput || !_numerologyReadingGenerated) {
+      await _generateNumerologyReading(text);
+      return;
+    }
+
+    try {
+      final response = await _functionsClient.continueArisConversation(
+        sessionId: _sessionId!,
+        message: text,
+        idempotencyKey: createIdempotencyKey(),
+        lang: _activeArisLanguage(),
+      );
+      final reply = (response['reply'] as String?)?.trim() ?? '';
+      if (!mounted) return;
+      _applyConversationResponse(response);
+      setState(() {
+        _messages.add(
+          _ArisChatMessage.assistant(
+            reply.isEmpty ? AppTexts.t('numerologyChatReplyEmpty') : reply,
+          ),
+        );
+      });
+      _scrollToBottom();
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      if (error.message == 'INSUFFICIENT_CREDITS') {
+        await _showInsufficientCreditsDialog();
+      } else if (error.message == 'RATE_LIMITED') {
+        _showSnack(AppTexts.t('chat.rateLimited'));
+      } else if (error.message == 'AI_TEMPORARY_BUSY' ||
+          error.code == 'unavailable') {
+        _showSnack(AppTexts.t('chat.aiBusy'));
+      } else {
+        _showSnack(AppTexts.t('chat.messageFailed'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(AppTexts.t('chat.messageFailed'));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   Future<void> _showInsufficientCreditsDialog() async {
     final cost = _conversationCost;
     await showDialog<void>(
@@ -880,6 +1056,11 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                         imageFiles: const [],
                         subtitle: AppTexts.t('palmMadamArisSubtitle'),
                       )
+                    else if (_isNumerologyChat)
+                      _MadamArisHero(
+                        imageFiles: const [],
+                        subtitle: AppTexts.t('numerologyMadamArisSubtitle'),
+                      )
                     else if (_isSpreadChat)
                       _TarotSpreadHero(cards: widget.spreadCards)
                     else
@@ -937,6 +1118,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
                       ? AppTexts.t('coffeeQuestionHint')
                       : _isPalmChat
                       ? AppTexts.t('palmQuestionHint')
+                      : _isNumerologyChat
+                      ? AppTexts.t('numerologyQuestionHint')
                       : AppTexts.t('arisQuestionHint'),
                   onSend: () => _sendMessage(displayCredits),
                 ),
