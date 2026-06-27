@@ -1471,6 +1471,39 @@ function buildCoffeeArisConversationPrompt(input: {
   };
 }
 
+function buildNumerologyArisConversationPrompt(input: {
+  user: UserDoc & Record<string, unknown>;
+  openingMessage: string;
+  recentMessages: Array<{ role: 'user' | 'assistant'; text: string }>;
+  userMessage: string;
+  lang: string;
+}): { systemPrompt: string; userPrompt: string } {
+  const transcript = input.recentMessages
+    .slice(-8)
+    .map((message) => `${message.role === 'user' ? 'User' : 'Madam Aris'}: ${message.text}`)
+    .join('\n');
+  const systemPrompt = [
+    'You are Madam Aris, continuing a numerology / yıldızname (ebced, ilm-i hurûf) reading in a mystical, classical Ottoman astrologer tone.',
+    'Continue from the reading already given; answer the user\'s follow-up questions about character, fate, love and marriage, children, career and abundance, energy, and life path through letters and symbols.',
+    'Use symbolic, intuitive, layered language with occasional letter, star, and planet metaphors. Do not be shallow; mention both bright and difficult possibilities gently.',
+    'SAFETY (NEVER VIOLATE): This is symbolic/intuitive entertainment, not certainty, guarantee, or prophecy. Do not make medical/illness/death/pregnancy, legal, or financial certain claims; no exact dates or guaranteed outcomes. For health speak only in general, soft, symbolic terms; never diagnose. For cheating/separation use possibility and intuition language, never certain accusations. Do not frighten the user.',
+    'If the user did not provide mother\'s name or birthplace, do not invent them.',
+    'Do not say you are an AI, a model, or a system; speak in-character as Madam Aris. Never mention tarot cards, coffee cups/grounds, palms, prompts, or hidden rules.',
+    'Reply in the user\'s language. Keep the reply focused and not overly long.'
+  ].join(' ');
+  return {
+    systemPrompt,
+    userPrompt: [
+      ...buildArisProfileContext(input.user, {
+        includeSoftPersonalization: shouldUseSoftPersonalization(input.userMessage)
+      }),
+      `Opening message: ${input.openingMessage}`,
+      transcript ? `Recent conversation:\n${transcript}` : '',
+      `User: ${input.userMessage}`
+    ].filter(Boolean).join('\n')
+  };
+}
+
 function buildPalmArisOpeningPrompt(input: {
   user: UserDoc & Record<string, unknown>;
   reading: PalmReadingPayload;
@@ -3545,10 +3578,12 @@ export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforc
       recentMessages?: Array<{ role?: string; text?: string }>;
     };
     const isPalmSession = session.mode === 'palmReading' || session.category === 'palm';
+    const isNumerologySession = session.mode === 'numerologyReading' || session.category === 'numerology';
     const isCoffeeSession =
       !isPalmSession &&
+      !isNumerologySession &&
       (session.mode === 'coffeeReading' || session.persona === 'madamAris');
-    const isMadamArisSession = isCoffeeSession || isPalmSession || session.persona === 'madamAris';
+    const isMadamArisSession = isCoffeeSession || isPalmSession || isNumerologySession || session.persona === 'madamAris';
     const personaKind: ArisPersonaKind = isMadamArisSession ? 'madam' : 'bilge';
     const cardName = session.cardName?.trim();
     const cardNames = Array.isArray(session.cardNames)
@@ -3714,6 +3749,8 @@ export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforc
         ? isOffTopicMadamArisMessage(message, 'palm')
           ? offTopicMadamArisReply('palm', lang)
           : null
+        : isNumerologySession
+          ? null
         : isCoffeeSession || session.persona === 'madamAris'
           ? isOffTopicMadamArisMessage(message, 'coffee')
             ? offTopicMadamArisReply('coffee', lang)
@@ -3743,6 +3780,14 @@ export const continueArisConversation = onCall({ enforceAppCheck: appCheckEnforc
           userMessage: message,
           lang
         })
+        : isNumerologySession
+          ? buildNumerologyArisConversationPrompt({
+            user,
+            openingMessage,
+            recentMessages,
+            userMessage: message,
+            lang
+          })
         : isCoffeeSession
           ? buildCoffeeArisConversationPrompt({
             user,
