@@ -842,5 +842,16 @@
   "chat.insufficient.body": "You need at least {cost} tokens to continue the conversation.",
   "chat.insufficient.close": "Close",
   "chat.insufficient.buy": "Get Tokens",
-  "chat.costUnavailable": "The message cost could not be loaded. Please try again."
+  "chat.costUnavailable": "The message cost could not be loaded. Please try again.",
+  "ads.common.not_ready": "The ad is getting ready. Please try again in a moment.",
+  "ads.archive.unlock_title": "Unlock older conversations",
+  "ads.archive.unlock_body": "Watch a short ad to reopen {count} past conversations for 24 hours.",
+  "ads.archive.unlock_cta": "WATCH TO UNLOCK",
+  "ads.archive.unlock_success": "Your archive is unlocked for 24 hours.",
+  "ads.coins.watch_tooltip": "Watch ads and earn tokens",
+  "ads.coins.progress_toast": "{progress}/{total} ads completed. Watch {remaining} more to earn 20 tokens.",
+  "ads.coins.bonus_toast": "{amount} tokens added to your wallet.",
+  "ads.daily_gift.toast": "Your daily gift is here: {amount} tokens.",
+  "ads.daily_gift.notification_title": "Daily token gift",
+  "ads.daily_gift.notification_body": "{amount} tokens were added to your wallet. Which path do you want to try today?"
 }

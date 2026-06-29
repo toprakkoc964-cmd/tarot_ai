@@ -829,5 +829,16 @@
   "chat.insufficient.body": "Du brauchst mindestens {cost} Jetons, um das Gespraech fortzusetzen.",
   "chat.insufficient.close": "Schliessen",
   "chat.insufficient.buy": "Jetons holen",
-  "chat.costUnavailable": "Die Nachrichtengebuehr konnte nicht geladen werden. Bitte versuche es erneut."
+  "chat.costUnavailable": "Die Nachrichtengebuehr konnte nicht geladen werden. Bitte versuche es erneut.",
+  "ads.common.not_ready": "Die Werbung wird gerade vorbereitet. Bitte versuche es gleich noch einmal.",
+  "ads.archive.unlock_title": "Aeltere Gespraeche entsperren",
+  "ads.archive.unlock_body": "Sieh dir eine kurze Werbung an, um {count} fruehere Gespraeche fuer 24 Stunden wieder zu oeffnen.",
+  "ads.archive.unlock_cta": "MIT WERBUNG OEFFNEN",
+  "ads.archive.unlock_success": "Dein Archiv ist fuer 24 Stunden entsperrt.",
+  "ads.coins.watch_tooltip": "Werbung ansehen und Jetons verdienen",
+  "ads.coins.progress_toast": "{progress}/{total} Werbungen abgeschlossen. Sieh dir noch {remaining} an, um 20 Jetons zu erhalten.",
+  "ads.coins.bonus_toast": "{amount} Jetons wurden deinem Guthaben hinzugefuegt.",
+  "ads.daily_gift.toast": "Dein taegliches Geschenk ist da: {amount} Jetons.",
+  "ads.daily_gift.notification_title": "Taegliches Jeton-Geschenk",
+  "ads.daily_gift.notification_body": "{amount} Jetons wurden deinem Guthaben hinzugefuegt. Welchen Weg willst du heute ausprobieren?"
 }

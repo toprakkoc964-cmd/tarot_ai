@@ -143,6 +143,20 @@ class TarotFunctionsClient {
     return cost;
   }
 
+  Future<Map<String, dynamic>> claimDailyLoginReward() async {
+    final callable = _functions.httpsCallable('claimDailyLoginReward');
+    final response = await callable.call();
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> claimAdWatchReward({
+    required String rewardType,
+  }) async {
+    final callable = _functions.httpsCallable('claimAdWatchReward');
+    final response = await callable.call({'rewardType': rewardType});
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<CoffeeAnalyzeResponse> analyzeCoffeeReading({
     required String languageCode,
     required Map<String, String> imageRefs,

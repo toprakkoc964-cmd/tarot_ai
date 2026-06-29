@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'services/notification_service.dart' as local_notifications;
+import 'src/core/ads/app_ad_service.dart';
 import 'src/core/app_check.dart';
 import 'src/core/app_locale.dart';
 import 'src/core/app_navigator.dart';
@@ -74,6 +75,10 @@ Future<String?> _bootstrapApp() async {
     await _runOptionalBootstrapTask(
       'Local notifications',
       () => local_notifications.NotificationService.instance.init(),
+    );
+    await _runOptionalBootstrapTask(
+      'Mobile Ads',
+      () => AppAdService.instance.initialize(),
     );
     final localizationError = await _runRequiredBootstrapTask(
       'Localization',

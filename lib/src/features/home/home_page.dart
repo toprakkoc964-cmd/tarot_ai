@@ -16,6 +16,8 @@ import 'home_palette.dart';
 import 'profile_page.dart';
 import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
+import '../../core/ads/app_ad_reward_service.dart';
+import '../../core/ads/app_ad_service.dart';
 import '../../core/app_review_service.dart';
 import '../../core/app_locale.dart';
 import '../../core/app_language.dart';
@@ -24,6 +26,7 @@ import '../../core/notification_router.dart';
 import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
+import '../../core/widgets/inline_ad_banner.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
 import '../auth/widgets/mystic_toast.dart';
@@ -119,6 +122,7 @@ class _HomePageState extends State<HomePage> {
   int _navIndex = 0;
   bool _flashNotification = false;
   bool _flashMessages = false;
+  bool _flashReward = false;
   int? _flashNavIndex;
 
   @override
@@ -127,7 +131,33 @@ class _HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(AppReviewService.instance.requestAfterOnboardingIfNeeded());
+      unawaited(_claimDailyGiftIfAvailable());
     });
+  }
+
+  Future<void> _claimDailyGiftIfAvailable() async {
+    try {
+      final result = await AppAdRewardService.instance.claimDailyLoginReward();
+      if (!mounted || !result.granted) return;
+
+      final amount = '${result.grantedCredits}';
+      MysticToast.showSuccess(
+        context,
+        AppTexts.t('ads.daily_gift.toast').replaceAll('{amount}', amount),
+        dedupeKey: 'daily-gift-${result.claimDay ?? amount}',
+      );
+      unawaited(
+        local_notifications.NotificationService.instance
+            .showWalletRewardNotification(
+              title: AppTexts.t('ads.daily_gift.notification_title'),
+              body: AppTexts.t(
+                'ads.daily_gift.notification_body',
+              ).replaceAll('{amount}', amount),
+            ),
+      );
+    } catch (error) {
+      debugPrint('Daily login reward skipped: $error');
+    }
   }
 
   Future<void> _onNotificationTap() async {
@@ -138,6 +168,8 @@ class _HomePageState extends State<HomePage> {
         .syncDeliveredScheduledNotificationsToInbox();
     if (!mounted) return;
     await NotificationService.instance.reloadInbox();
+    if (!mounted) return;
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
     if (!mounted) return;
 
     await Navigator.of(
@@ -154,6 +186,8 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
 
     final bottomInset = MediaQuery.paddingOf(context).bottom + 16;
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => MessagesPage(
@@ -166,6 +200,65 @@ class _HomePageState extends State<HomePage> {
 
     if (!mounted) return;
     setState(() => _flashMessages = false);
+  }
+
+  Future<void> _onRewardTap() async {
+    setState(() => _flashReward = true);
+    await Future<void>.delayed(const Duration(milliseconds: 140));
+    if (!mounted) return;
+
+    try {
+      final adResult = await AppAdService.instance.showRewarded(
+        AppRewardedPlacement.coinsReward,
+      );
+      if (!mounted) return;
+
+      if (adResult.unavailable) {
+        MysticToast.showInfo(
+          context,
+          AppTexts.t('ads.common.not_ready'),
+          dedupeKey: 'coins-ad-not-ready',
+        );
+        return;
+      }
+
+      if (!adResult.earned) return;
+
+      final rewardResult = await AppAdRewardService.instance
+          .claimCoinsRewardProgress();
+      if (!mounted) return;
+
+      if (rewardResult.grantedCredits > 0) {
+        MysticToast.showSuccess(
+          context,
+          AppTexts.t(
+            'ads.coins.bonus_toast',
+          ).replaceAll('{amount}', '${rewardResult.grantedCredits}'),
+          dedupeKey: 'coins-ad-bonus-${rewardResult.remainingCredits}',
+        );
+      } else {
+        MysticToast.showInfo(
+          context,
+          AppTexts.t('ads.coins.progress_toast')
+              .replaceAll('{progress}', '${rewardResult.progress}')
+              .replaceAll('{total}', '3')
+              .replaceAll('{remaining}', '${rewardResult.stepsRemaining}'),
+          dedupeKey: 'coins-ad-progress-${rewardResult.progress}',
+        );
+      }
+    } catch (error) {
+      debugPrint('Coins rewarded flow failed: $error');
+      if (!mounted) return;
+      MysticToast.showInfo(
+        context,
+        AppTexts.t('ads.common.not_ready'),
+        dedupeKey: 'coins-ad-failed',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _flashReward = false);
+      }
+    }
   }
 
   void _onNavTap(int i) {
@@ -227,6 +320,8 @@ class _HomePageState extends State<HomePage> {
                         uid: widget.uid,
                         authService: widget.authService,
                       ),
+                      const SizedBox(height: 18),
+                      const InlineAdBanner(),
                       const SizedBox(height: 24),
 
                       // ── Identity Module ──
@@ -250,8 +345,10 @@ class _HomePageState extends State<HomePage> {
                 uid: widget.uid,
                 flashNotification: _flashNotification,
                 flashMessages: _flashMessages,
+                flashReward: _flashReward,
                 onMessagesTap: _onMessagesTap,
                 onNotificationTap: _onNotificationTap,
+                onRewardTap: _onRewardTap,
               ),
             ),
           // ── Fixed BottomNavBar ──
@@ -335,15 +432,19 @@ class _TopBar extends StatelessWidget {
     required this.uid,
     required this.flashNotification,
     required this.flashMessages,
+    required this.flashReward,
     required this.onMessagesTap,
     required this.onNotificationTap,
+    required this.onRewardTap,
   });
   final AuthService authService;
   final String uid;
   final bool flashNotification;
   final bool flashMessages;
+  final bool flashReward;
   final VoidCallback onMessagesTap;
   final VoidCallback onNotificationTap;
+  final VoidCallback onRewardTap;
 
   static double estimatedHeight(BuildContext context) {
     return MediaQuery.of(context).padding.top + 64;
@@ -363,25 +464,92 @@ class _TopBar extends StatelessWidget {
             left: 20,
             right: 20,
           ),
-          child: Row(
-            children: [
-              // Jeton bölümü (sol)
-              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection(UserProfileContract.usersCollection)
-                    .doc(uid)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  final data = snapshot.data?.data();
-                  final wallet = Map<String, dynamic>.from(
-                    data?[UserProfileContract.wallet] as Map? ?? const {},
-                  );
-                  final credits =
-                      (wallet[UserProfileContract.walletCredits] as num?)
-                          ?.toInt();
-                  final creditsText = credits?.toString() ?? '--';
+          child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection(UserProfileContract.usersCollection)
+                .doc(uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              final data = snapshot.data?.data();
+              final wallet = Map<String, dynamic>.from(
+                data?[UserProfileContract.wallet] as Map? ?? const {},
+              );
+              final adRewards = Map<String, dynamic>.from(
+                data?['adRewards'] as Map? ?? const {},
+              );
+              final credits =
+                  (wallet[UserProfileContract.walletCredits] as num?)?.toInt();
+              final creditsText = credits?.toString() ?? '--';
+              final coinsProgress =
+                  (adRewards['coinsProgress'] as num?)?.toInt() ?? 0;
 
-                  return Container(
+              Widget buildCircleButton({
+                required VoidCallback onTap,
+                required IconData icon,
+                required bool flashing,
+                String? badgeText,
+                String? tooltip,
+              }) {
+                final button = GestureDetector(
+                  onTap: onTap,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: _kSurfaceContainerHigh.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(9999),
+                      border: Border.all(
+                        color: (flashing ? _kTertiary : _kSecondary).withValues(
+                          alpha: 0.25,
+                        ),
+                      ),
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Center(
+                          child: Icon(
+                            icon,
+                            color: flashing ? _kTertiary : _kPrimary,
+                            size: 20,
+                          ),
+                        ),
+                        if (badgeText != null && badgeText.isNotEmpty)
+                          Positioned(
+                            right: -2,
+                            bottom: -4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _kTertiary,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                  color: _kBg,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+
+                if (tooltip == null || tooltip.isEmpty) return button;
+                return Tooltip(message: tooltip, child: button);
+              }
+
+              return Row(
+                children: [
+                  Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
@@ -420,60 +588,37 @@ class _TopBar extends StatelessWidget {
                         ),
                       ],
                     ),
-                  );
-                },
-              ),
-              const Spacer(),
-
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  GestureDetector(
-                    onTap: onMessagesTap,
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: _kSurfaceContainerHigh.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(9999),
-                        border: Border.all(
-                          color: (flashMessages ? _kTertiary : _kSecondary)
-                              .withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.forum_outlined,
-                        color: flashMessages ? _kTertiary : _kPrimary,
-                        size: 20,
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: onNotificationTap,
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: _kSurfaceContainerHigh.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(9999),
-                        border: Border.all(
-                          color: (flashNotification ? _kTertiary : _kSecondary)
-                              .withValues(alpha: 0.25),
-                        ),
+                  const Spacer(),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buildCircleButton(
+                        onTap: onRewardTap,
+                        icon: Icons.smart_display_rounded,
+                        flashing: flashReward,
+                        badgeText: coinsProgress > 0
+                            ? '$coinsProgress/3'
+                            : null,
+                        tooltip: AppTexts.t('ads.coins.watch_tooltip'),
                       ),
-                      child: Icon(
-                        Icons.notifications_none_rounded,
-                        color: flashNotification ? _kTertiary : _kPrimary,
-                        size: 20,
+                      const SizedBox(width: 10),
+                      buildCircleButton(
+                        onTap: onMessagesTap,
+                        icon: Icons.forum_outlined,
+                        flashing: flashMessages,
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      buildCircleButton(
+                        onTap: onNotificationTap,
+                        icon: Icons.notifications_none_rounded,
+                        flashing: flashNotification,
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),
@@ -997,6 +1142,8 @@ class _HeroSectionState extends State<_HeroSection>
         .toList(growable: false);
     final positions = spread.positions;
     final sessionId = _spreadSessionId(cardNames);
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!mounted) return;
     final chatResult = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         builder: (_) => KozmikBilgePage(

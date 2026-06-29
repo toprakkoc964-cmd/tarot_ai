@@ -612,5 +612,16 @@
   "chat.insufficient.body": "Necesitas al menos {cost} fichas para continuar la conversacion.",
   "chat.insufficient.close": "Cerrar",
   "chat.insufficient.buy": "Obtener fichas",
-  "chat.costUnavailable": "No se pudo cargar el coste del mensaje. Intentalo de nuevo."
+  "chat.costUnavailable": "No se pudo cargar el coste del mensaje. Intentalo de nuevo.",
+  "ads.common.not_ready": "El anuncio se esta preparando. Intentalo de nuevo en un momento.",
+  "ads.archive.unlock_title": "Desbloquea conversaciones anteriores",
+  "ads.archive.unlock_body": "Mira un anuncio corto para volver a abrir {count} conversaciones pasadas durante 24 horas.",
+  "ads.archive.unlock_cta": "VER PARA DESBLOQUEAR",
+  "ads.archive.unlock_success": "Tu archivo esta desbloqueado durante 24 horas.",
+  "ads.coins.watch_tooltip": "Mira anuncios y gana fichas",
+  "ads.coins.progress_toast": "{progress}/{total} anuncios completados. Mira {remaining} mas para ganar 20 fichas.",
+  "ads.coins.bonus_toast": "Se agregaron {amount} fichas a tu saldo.",
+  "ads.daily_gift.toast": "Tu regalo diario esta listo: {amount} fichas.",
+  "ads.daily_gift.notification_title": "Regalo diario de fichas",
+  "ads.daily_gift.notification_body": "Se agregaron {amount} fichas a tu saldo. Que camino quieres probar hoy?"
 }

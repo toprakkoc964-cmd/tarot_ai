@@ -842,5 +842,16 @@
   "chat.insufficient.body": "Sohbete devam etmek için en az {cost} jeton gerekli.",
   "chat.insufficient.close": "Kapat",
   "chat.insufficient.buy": "Jeton Al",
-  "chat.costUnavailable": "Mesaj ücretine ulaşılamadı. Lütfen tekrar deneyin."
+  "chat.costUnavailable": "Mesaj ücretine ulaşılamadı. Lütfen tekrar deneyin.",
+  "ads.common.not_ready": "Reklam hazırlanıyor. Lütfen birazdan tekrar dene.",
+  "ads.archive.unlock_title": "Eski sohbetleri aç",
+  "ads.archive.unlock_body": "{count} geçmiş sohbeti 24 saat boyunca yeniden açmak için kısa bir reklam izle.",
+  "ads.archive.unlock_cta": "REKLAM İZLE",
+  "ads.archive.unlock_success": "Arşivin 24 saat boyunca açıldı.",
+  "ads.coins.watch_tooltip": "Reklam izle, jeton kazan",
+  "ads.coins.progress_toast": "{progress}/{total} reklam tamamlandı. 20 jeton için {remaining} reklam daha izle.",
+  "ads.coins.bonus_toast": "{amount} jeton bakiyene eklendi.",
+  "ads.daily_gift.toast": "Günlük hediyen hazır: {amount} jeton.",
+  "ads.daily_gift.notification_title": "Günlük jeton hediyesi",
+  "ads.daily_gift.notification_body": "{amount} jeton kutuna eklendi. Bugün hangi yolu denemek istersin?"
 }

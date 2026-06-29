@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/ads/app_ad_service.dart';
 import '../../core/localization_service.dart';
 import '../../core/app_texts.dart';
+import '../../core/widgets/inline_ad_banner.dart';
 import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
@@ -58,6 +60,8 @@ class CosmicPage extends StatelessWidget {
                     onOpenCredits: onOpenCredits,
                   ),
                 ),
+                const SizedBox(height: 18),
+                const InlineAdBanner(),
                 const SizedBox(height: 24),
                 CosmicFeatureCard(
                   title: AppTexts.t('home.cosmic.coffee.title'),
@@ -74,9 +78,7 @@ class CosmicPage extends StatelessWidget {
                 const SizedBox(height: 24),
                 CosmicFeatureCard(
                   title: AppTexts.t('home.cosmic.numerology.title'),
-                  description: AppTexts.t(
-                    'home.cosmic.numerology.description',
-                  ),
+                  description: AppTexts.t('home.cosmic.numerology.description'),
                   buttonText: AppTexts.t('home.cosmic.numerology.button'),
                   icon: Icons.auto_stories_rounded,
                   accentIcon: Icons.auto_awesome_rounded,
@@ -107,6 +109,8 @@ class CosmicPage extends StatelessWidget {
     );
     if (!context.mounted || !canStart) return;
 
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!context.mounted) return;
     Navigator.of(context).push(
       PageRouteBuilder<void>(
         pageBuilder: (_, animation, __) {
@@ -148,6 +152,8 @@ class CosmicPage extends StatelessWidget {
     );
     if (!context.mounted || !canStart) return;
 
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       PageRouteBuilder<void>(
         pageBuilder: (_, animation, __) {
@@ -181,6 +187,8 @@ class CosmicPage extends StatelessWidget {
     String uid, {
     VoidCallback? onOpenCredits,
   }) async {
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!context.mounted) return;
     final chatResult = await Navigator.of(context).push<String>(
       PageRouteBuilder<String>(
         pageBuilder: (_, animation, __) {

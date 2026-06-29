@@ -8,9 +8,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/ads/app_ad_reward_service.dart';
+import '../../core/ads/app_ad_service.dart';
 import '../../core/app_texts.dart';
+import '../../core/widgets/inline_ad_banner.dart';
 import 'ai_chat_context.dart';
 import 'aris_session_service.dart';
+import '../auth/widgets/mystic_toast.dart';
 import 'chat_page.dart';
 import 'credit_page.dart';
 import 'home_palette.dart';
@@ -47,8 +51,12 @@ class _MessagesPageState extends State<MessagesPage> {
   bool _loading = true;
   String? _errorMessage;
   bool _usingServerFallback = false;
+  DateTime? _archiveUnlockUntil;
+  bool _unlockInFlight = false;
 
   String get _cacheKey => 'aris_archive_cache_${widget.uid}';
+  bool get _archiveUnlocked =>
+      AppAdRewardService.instance.isArchiveUnlocked(_archiveUnlockUntil);
 
   @override
   void initState() {
@@ -57,6 +65,7 @@ class _MessagesPageState extends State<MessagesPage> {
   }
 
   Future<void> _bootstrap() async {
+    await _loadArchiveUnlockState();
     await _loadCachedSessions();
     if (!mounted) return;
     _startListening();
@@ -100,6 +109,13 @@ class _MessagesPageState extends State<MessagesPage> {
         debugPrintStack(stackTrace: stackTrace);
       }
     }
+  }
+
+  Future<void> _loadArchiveUnlockState() async {
+    final unlockUntil = await AppAdRewardService.instance
+        .loadArchiveUnlockUntil(widget.uid);
+    if (!mounted) return;
+    setState(() => _archiveUnlockUntil = unlockUntil);
   }
 
   Future<void> _persistSessions() async {
@@ -215,7 +231,15 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
-  void _openSession(ArisSessionRecord session) {
+  Future<void> _openSession(ArisSessionRecord session) async {
+    final isFreelyAccessible =
+        _archiveUnlocked ||
+        AppAdRewardService.instance.isSameLocalDay(session.updatedAt);
+    if (!isFreelyAccessible) {
+      unawaited(_watchArchiveUnlockAd());
+      return;
+    }
+
     final isTarot = session.category == ArisSessionCategory.tarot;
     final chatContext = switch (session.category) {
       ArisSessionCategory.palm => AiChatContext.palmReadingMadamAris(
@@ -231,35 +255,70 @@ class _MessagesPageState extends State<MessagesPage> {
       ),
       ArisSessionCategory.tarot => null,
     };
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute<String>(
-            builder: (_) => KozmikBilgePage(
-              uid: widget.uid,
-              resumeSessionId: session.sessionId,
-              spreadCards: isTarot ? session.toDrawnCards() : const [],
-              spreadSessionId: isTarot ? session.sessionId : null,
-              cardTitle: isTarot && !session.isSpread ? session.cardName : '',
-              chatContext: chatContext,
-            ),
+    await AppAdService.instance.maybeShowPageTransitionInterstitial();
+    if (!mounted) return;
+
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => KozmikBilgePage(
+          uid: widget.uid,
+          resumeSessionId: session.sessionId,
+          spreadCards: isTarot ? session.toDrawnCards() : const [],
+          spreadSessionId: isTarot ? session.sessionId : null,
+          cardTitle: isTarot && !session.isSpread ? session.cardName : '',
+          chatContext: chatContext,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result == 'credits') {
+      unawaited(
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                CreditPage(bottomInset: widget.bottomInset, uid: widget.uid),
           ),
-        )
-        .then((result) {
-          if (!mounted) return;
-          if (result == 'credits') {
-            unawaited(
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => CreditPage(
-                    bottomInset: widget.bottomInset,
-                    uid: widget.uid,
-                  ),
-                ),
-              ),
-            );
-          }
-          unawaited(_refreshAll());
-        });
+        ),
+      );
+    }
+    unawaited(_refreshAll());
+  }
+
+  Future<void> _watchArchiveUnlockAd() async {
+    if (_unlockInFlight) return;
+    setState(() => _unlockInFlight = true);
+
+    try {
+      final adResult = await AppAdService.instance.showRewarded(
+        AppRewardedPlacement.archiveUnlock,
+      );
+      if (!mounted) return;
+
+      if (adResult.unavailable) {
+        MysticToast.showInfo(
+          context,
+          AppTexts.t('ads.common.not_ready'),
+          dedupeKey: 'archive-ad-not-ready',
+        );
+        return;
+      }
+
+      if (!adResult.earned) return;
+
+      final unlockUntil = await AppAdRewardService.instance
+          .unlockArchiveFor24Hours(widget.uid);
+      if (!mounted) return;
+      setState(() => _archiveUnlockUntil = unlockUntil);
+      MysticToast.showSuccess(
+        context,
+        AppTexts.t('ads.archive.unlock_success'),
+        dedupeKey: 'archive-ad-success-${unlockUntil.millisecondsSinceEpoch}',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _unlockInFlight = false);
+      }
+    }
   }
 
   @override
@@ -315,14 +374,26 @@ class _MessagesPageState extends State<MessagesPage> {
       );
     }
 
-    final sessions = _sessions
-        .where((session) => session.category == _selectedCategory)
-        .toList()
-      ..sort((a, b) {
-        final aTime = a.updatedAt?.millisecondsSinceEpoch ?? 0;
-        final bTime = b.updatedAt?.millisecondsSinceEpoch ?? 0;
-        return bTime.compareTo(aTime);
-      });
+    final sessions =
+        _sessions
+            .where((session) => session.category == _selectedCategory)
+            .toList()
+          ..sort((a, b) {
+            final aTime = a.updatedAt?.millisecondsSinceEpoch ?? 0;
+            final bTime = b.updatedAt?.millisecondsSinceEpoch ?? 0;
+            return bTime.compareTo(aTime);
+          });
+    final accessibleSessions = _archiveUnlocked
+        ? sessions
+        : sessions
+              .where(
+                (session) => AppAdRewardService.instance.isSameLocalDay(
+                  session.updatedAt,
+                ),
+              )
+              .toList(growable: false);
+    final lockedCount = sessions.length - accessibleSessions.length;
+    final showLockedArchiveCard = lockedCount > 0 && !_archiveUnlocked;
 
     return RefreshIndicator(
       color: _kPrimary,
@@ -334,16 +405,44 @@ class _MessagesPageState extends State<MessagesPage> {
           if (sessions.isEmpty) ...[
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.16),
             _MessagesEmpty(category: _selectedCategory),
-          ] else
-            for (final session in sessions)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: _MessageSessionTile(
-                  session: session,
-                  locale: Localizations.localeOf(context).toString(),
-                  onTap: () => _openSession(session),
-                ),
+          ] else ...[
+            if (accessibleSessions.isEmpty && showLockedArchiveCard) ...[
+              SizedBox(height: MediaQuery.sizeOf(context).height * 0.12),
+              _ArchiveUnlockCard(
+                lockedCount: lockedCount,
+                unlockInFlight: _unlockInFlight,
+                onUnlock: _watchArchiveUnlockAd,
               ),
+              const SizedBox(height: 18),
+              const InlineAdBanner(),
+            ] else
+              for (
+                var index = 0;
+                index < accessibleSessions.length;
+                index++
+              ) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _MessageSessionTile(
+                    session: accessibleSessions[index],
+                    locale: Localizations.localeOf(context).toString(),
+                    onTap: () => _openSession(accessibleSessions[index]),
+                  ),
+                ),
+                if (index == 0) ...[
+                  const SizedBox(height: 4),
+                  const InlineAdBanner(),
+                  const SizedBox(height: 18),
+                ],
+              ],
+            if (showLockedArchiveCard) ...[
+              _ArchiveUnlockCard(
+                lockedCount: lockedCount,
+                unlockInFlight: _unlockInFlight,
+                onUnlock: _watchArchiveUnlockAd,
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -418,19 +517,23 @@ const _archiveCategories = <ArisSessionCategory>[
   ArisSessionCategory.numerology,
 ];
 
-String _archiveCategoryLabel(ArisSessionCategory category) => switch (category) {
-  ArisSessionCategory.tarot => AppTexts.t('archive.tab.tarot'),
-  ArisSessionCategory.coffee => AppTexts.t('archive.tab.coffee'),
-  ArisSessionCategory.palm => AppTexts.t('archive.tab.palm'),
-  ArisSessionCategory.numerology => AppTexts.t('home.cosmic.numerology.title'),
-};
+String _archiveCategoryLabel(ArisSessionCategory category) =>
+    switch (category) {
+      ArisSessionCategory.tarot => AppTexts.t('archive.tab.tarot'),
+      ArisSessionCategory.coffee => AppTexts.t('archive.tab.coffee'),
+      ArisSessionCategory.palm => AppTexts.t('archive.tab.palm'),
+      ArisSessionCategory.numerology => AppTexts.t(
+        'home.cosmic.numerology.title',
+      ),
+    };
 
-IconData _archiveCategoryIcon(ArisSessionCategory category) => switch (category) {
-  ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
-  ArisSessionCategory.coffee => Icons.local_cafe_rounded,
-  ArisSessionCategory.palm => Icons.back_hand_rounded,
-  ArisSessionCategory.numerology => Icons.calculate_rounded,
-};
+IconData _archiveCategoryIcon(ArisSessionCategory category) =>
+    switch (category) {
+      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
+      ArisSessionCategory.palm => Icons.back_hand_rounded,
+      ArisSessionCategory.numerology => Icons.calculate_rounded,
+    };
 
 class _ArchiveCategoryTabs extends StatelessWidget {
   const _ArchiveCategoryTabs({
@@ -456,7 +559,8 @@ class _ArchiveCategoryTabs extends StatelessWidget {
                 selected: category == selectedCategory,
                 onTap: () => onSelected(category),
               ),
-              if (category != _archiveCategories.last) const SizedBox(width: 10),
+              if (category != _archiveCategories.last)
+                const SizedBox(width: 10),
             ],
           ],
         ),
@@ -655,6 +759,118 @@ class _MessageSessionTile extends StatelessWidget {
   static String _formatDate(DateTime? value, String locale) {
     if (value == null) return '';
     return DateFormat('d MMM · HH:mm', locale).format(value);
+  }
+}
+
+class _ArchiveUnlockCard extends StatelessWidget {
+  const _ArchiveUnlockCard({
+    required this.lockedCount,
+    required this.unlockInFlight,
+    required this.onUnlock,
+  });
+
+  final int lockedCount;
+  final bool unlockInFlight;
+  final VoidCallback onUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = AppTexts.t(
+      'ads.archive.unlock_body',
+    ).replaceAll('{count}', '$lockedCount');
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _kGlassBg,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: _kGlassBorder),
+        boxShadow: [
+          BoxShadow(
+            color: _kPrimary.withValues(alpha: 0.14),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _kPrimary.withValues(alpha: 0.16),
+                    border: Border.all(
+                      color: _kPrimary.withValues(alpha: 0.34),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.lock_outline_rounded,
+                    color: _kTertiary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    AppTexts.t('ads.archive.unlock_title'),
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _kOnSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              body,
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                height: 1.5,
+                color: _kSecondary.withValues(alpha: 0.9),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: unlockInFlight ? null : onUnlock,
+                icon: Icon(
+                  unlockInFlight
+                      ? Icons.hourglass_top_rounded
+                      : Icons.smart_display_rounded,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kPrimary.withValues(alpha: 0.18),
+                  foregroundColor: _kTertiary,
+                  disabledBackgroundColor: _kPrimary.withValues(alpha: 0.1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                label: Text(
+                  unlockInFlight
+                      ? AppTexts.t('common.loading')
+                      : AppTexts.t('ads.archive.unlock_cta'),
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

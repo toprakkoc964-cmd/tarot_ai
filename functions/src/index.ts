@@ -66,6 +66,9 @@ const appCheckEnforced = process.env.APP_CHECK_ENFORCE === 'true';
 const iosBundleId = process.env.IOS_BUNDLE_ID ?? 'com.tarotai';
 const homeCardDrawCost = Number(process.env.HOME_CARD_DRAW_COST ?? '5');
 const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '20');
+const dailyLoginRewardCredits = Number(process.env.DAILY_LOGIN_REWARD_CREDITS ?? '5');
+const coinsRewardCycleLength = Number(process.env.AD_REWARD_CYCLE_LENGTH ?? '3');
+const coinsRewardCycleCredits = Number(process.env.AD_REWARD_CYCLE_CREDITS ?? '20');
 const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
 const palmReadingCost = Number(process.env.PALM_READING_COST ?? '20');
 const numerologyReadingCost = Number(process.env.NUMEROLOGY_READING_COST ?? '20');
@@ -3348,6 +3351,149 @@ export const consumeHomeCardDraw = onCall({ enforceAppCheck: appCheckEnforced },
       remainingCredits,
       freeDrawUsedToday,
       lastFreeCardDrawDay
+    };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
+export const claimDailyLoginReward = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    requireAppCheckIfEnabled(request);
+    const uid = request.auth.uid;
+    const userRef = db.collection('users').doc(uid);
+    let granted = false;
+    let remainingCredits = 0;
+    let claimDay = '';
+
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+
+      const user = userSnap.data() as UserDoc & {
+        timezone?: unknown;
+        dailyRewards?: {
+          dailyLogin?: {
+            lastClaimDay?: unknown;
+          };
+        };
+      };
+      const timezone = resolveNotificationTimezone(user.timezone);
+      claimDay = localDateKeyForTimezone(new Date(), timezone);
+      const lastClaimDay = typeof user.dailyRewards?.dailyLogin?.lastClaimDay === 'string'
+        ? user.dailyRewards?.dailyLogin?.lastClaimDay
+        : '';
+      const currentCredits = Number(user.wallet.credits ?? 0);
+
+      if (lastClaimDay === claimDay) {
+        remainingCredits = currentCredits;
+        return;
+      }
+
+      granted = true;
+      remainingCredits = currentCredits + dailyLoginRewardCredits;
+      tx.update(userRef, {
+        'wallet.credits': remainingCredits,
+        'dailyRewards.dailyLogin.lastClaimDay': claimDay,
+        'dailyRewards.dailyLogin.lastGrantedAt': FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.set(userRef.collection('credit_ledger').doc(), {
+        type: 'credit',
+        amount: dailyLoginRewardCredits,
+        reason: 'daily_login_reward',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return {
+      ok: true,
+      granted,
+      grantedCredits: granted ? dailyLoginRewardCredits : 0,
+      remainingCredits,
+      claimDay,
+    };
+  } catch (err) {
+    throw mapError(err);
+  }
+});
+
+export const claimAdWatchReward = onCall({ enforceAppCheck: appCheckEnforced }, async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'AUTH_REQUIRED');
+    }
+
+    requireAppCheckIfEnabled(request);
+    const rewardType = sanitizeShortText(request.data?.rewardType, 40);
+    if (rewardType !== 'coins_progress') {
+      throw new HttpsError('invalid-argument', 'INVALID_AD_REWARD_TYPE');
+    }
+
+    const uid = request.auth.uid;
+    const userRef = db.collection('users').doc(uid);
+    let progress = 0;
+    let stepsRemaining = coinsRewardCycleLength;
+    let grantedCredits = 0;
+    let remainingCredits = 0;
+
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+
+      const user = userSnap.data() as UserDoc & {
+        adRewards?: {
+          coinsProgress?: unknown;
+        };
+      };
+      const currentCredits = Number(user.wallet.credits ?? 0);
+      const rawProgress = Number(user.adRewards?.coinsProgress ?? 0);
+      const normalizedProgress = Number.isFinite(rawProgress) && rawProgress >= 0
+        ? Math.trunc(rawProgress) % coinsRewardCycleLength
+        : 0;
+      const advancedProgress = normalizedProgress + 1;
+      const bonusUnlocked = advancedProgress >= coinsRewardCycleLength;
+
+      grantedCredits = bonusUnlocked ? coinsRewardCycleCredits : 0;
+      progress = bonusUnlocked ? 0 : advancedProgress;
+      stepsRemaining = bonusUnlocked ? coinsRewardCycleLength : coinsRewardCycleLength - progress;
+      remainingCredits = currentCredits + grantedCredits;
+
+      const updates: Record<string, unknown> = {
+        'adRewards.coinsProgress': progress,
+        'adRewards.lastRewardedWatchAt': FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      if (grantedCredits > 0) {
+        updates['wallet.credits'] = remainingCredits;
+      }
+      tx.update(userRef, updates);
+
+      if (grantedCredits > 0) {
+        tx.set(userRef.collection('credit_ledger').doc(), {
+          type: 'credit',
+          amount: grantedCredits,
+          reason: 'rewarded_ad_cycle_bonus',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+    });
+
+    return {
+      ok: true,
+      rewardType,
+      progress,
+      stepsRemaining,
+      grantedCredits,
+      remainingCredits,
     };
   } catch (err) {
     throw mapError(err);

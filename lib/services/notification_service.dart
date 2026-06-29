@@ -202,6 +202,48 @@ class NotificationService {
     );
   }
 
+  Future<void> showWalletRewardNotification({
+    required String title,
+    required String body,
+  }) async {
+    await _ensureInitialized();
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'high_importance_channel',
+        'Daily Readings',
+        channelDescription: 'Daily tarot and spiritual reminder notifications.',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(
+        categoryIdentifier: 'daily_readings',
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+
+    const payload = <String, String>{'type': 'wallet_offer', 'route': '/shop'};
+
+    await _plugin.show(
+      id: _backgroundNotificationId(),
+      title: title,
+      body: body,
+      notificationDetails: details,
+      payload: jsonEncode(payload),
+    );
+
+    await app_notifications.NotificationService.instance.storeNotification(
+      id: 'wallet_reward_${DateTime.now().microsecondsSinceEpoch}',
+      title: title,
+      body: body,
+      source: 'local_wallet_offer',
+      type: 'wallet_offer',
+      route: '/shop',
+    );
+  }
+
   Future<void> _scheduleNotification({
     required int id,
     required String type,

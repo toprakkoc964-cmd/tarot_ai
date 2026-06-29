@@ -612,5 +612,16 @@
   "chat.insufficient.body": "Il faut au moins {cost} jetons pour continuer la conversation.",
   "chat.insufficient.close": "Fermer",
   "chat.insufficient.buy": "Obtenir des jetons",
-  "chat.costUnavailable": "Le cout du message n'a pas pu etre charge. Reessayez."
+  "chat.costUnavailable": "Le cout du message n'a pas pu etre charge. Reessayez.",
+  "ads.common.not_ready": "La pub se prepare. Reessaie dans un instant.",
+  "ads.archive.unlock_title": "Rouvrir les anciennes conversations",
+  "ads.archive.unlock_body": "Regarde une courte pub pour rouvrir {count} anciennes conversations pendant 24 heures.",
+  "ads.archive.unlock_cta": "REGARDER POUR OUVRIR",
+  "ads.archive.unlock_success": "Tes archives sont ouvertes pendant 24 heures.",
+  "ads.coins.watch_tooltip": "Regarder des pubs et gagner des jetons",
+  "ads.coins.progress_toast": "{progress}/{total} pubs terminees. Regarde encore {remaining} pubs pour gagner 20 jetons.",
+  "ads.coins.bonus_toast": "{amount} jetons ont ete ajoutes a ton portefeuille.",
+  "ads.daily_gift.toast": "Ton cadeau du jour est pret : {amount} jetons.",
+  "ads.daily_gift.notification_title": "Cadeau quotidien de jetons",
+  "ads.daily_gift.notification_body": "{amount} jetons ont ete ajoutes a ton portefeuille. Quelle voie veux-tu essayer aujourd'hui ?"
 }
