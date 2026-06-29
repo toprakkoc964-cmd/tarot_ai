@@ -849,6 +849,7 @@
   "ads.archive.unlock_cta": "REKLAM İZLE",
   "ads.archive.unlock_success": "Arşivin 24 saat boyunca açıldı.",
   "ads.coins.watch_tooltip": "Reklam izle, jeton kazan",
+  "ads.coins.pending_toast": "Odulun dogrulaniyor, birazdan hesabina eklenecek.",
   "ads.coins.progress_toast": "{progress}/{total} reklam tamamlandı. 20 jeton için {remaining} reklam daha izle.",
   "ads.coins.bonus_toast": "{amount} jeton bakiyene eklendi.",
   "ads.daily_gift.toast": "Günlük hediyen hazır: {amount} jeton.",

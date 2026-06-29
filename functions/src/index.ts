@@ -1,4 +1,5 @@
 import { config as loadEnv } from 'dotenv';
+import { verify as verifySignature } from 'node:crypto';
 import { resolve } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth, UserRecord } from 'firebase-admin/auth';
@@ -69,6 +70,7 @@ const arisConversationCost = Number(process.env.ARIS_CONVERSATION_COST ?? '20');
 const dailyLoginRewardCredits = Number(process.env.DAILY_LOGIN_REWARD_CREDITS ?? '5');
 const coinsRewardCycleLength = Number(process.env.AD_REWARD_CYCLE_LENGTH ?? '3');
 const coinsRewardCycleCredits = Number(process.env.AD_REWARD_CYCLE_CREDITS ?? '20');
+const admobVerifierKeysTtlMs = 24 * 60 * 60 * 1000;
 const coffeeReadingCost = Number(process.env.COFFEE_READING_COST ?? '20');
 const palmReadingCost = Number(process.env.PALM_READING_COST ?? '20');
 const numerologyReadingCost = Number(process.env.NUMEROLOGY_READING_COST ?? '20');
@@ -158,6 +160,20 @@ type AppleRevokeResult = {
   errorCode?: string;
 };
 
+type AdmobVerifierKey = {
+  keyId: number;
+  pem: string;
+  base64?: string;
+};
+
+let admobVerifierKeysCache:
+  | {
+      keys: AdmobVerifierKey[];
+      expiresAtMs: number;
+    }
+  | null = null;
+let admobVerifierKeysInflight: Promise<AdmobVerifierKey[]> | null = null;
+
 function requireAppCheckIfEnabled(request: { app?: unknown }) {
   if (appCheckEnforced && !request.app) {
     throw new Error('APP_CHECK_REQUIRED');
@@ -172,6 +188,64 @@ function resolveLanguage(lang: unknown): string {
   if (typeof lang !== 'string') return 'en';
   const normalized = lang.trim().toLowerCase();
   return supportedLanguages.has(normalized) ? normalized : 'en';
+}
+
+async function loadAdmobVerifierKeys(forceRefresh = false): Promise<AdmobVerifierKey[]> {
+  const now = Date.now();
+  if (!forceRefresh && admobVerifierKeysCache && admobVerifierKeysCache.expiresAtMs > now) {
+    return admobVerifierKeysCache.keys;
+  }
+
+  if (!forceRefresh && admobVerifierKeysInflight) {
+    return admobVerifierKeysInflight;
+  }
+
+  const requestPromise = (async () => {
+    const response = await fetch('https://www.gstatic.com/admob/reward/verifier-keys.json');
+    if (!response.ok) {
+      throw new Error(`ADMOB_VERIFIER_KEYS_FETCH_FAILED:${response.status}`);
+    }
+
+    const payload = await response.json() as {
+      keys?: Array<{ keyId?: unknown; pem?: unknown; base64?: unknown }>;
+    };
+    const keys = Array.isArray(payload.keys)
+      ? payload.keys
+        .map((item) => ({
+          keyId: Number(item.keyId),
+          pem: typeof item.pem === 'string' ? item.pem.trim() : '',
+          base64: typeof item.base64 === 'string' ? item.base64.trim() : undefined,
+        }))
+        .filter((item) => Number.isInteger(item.keyId) && item.keyId >= 0 && item.pem)
+      : [];
+
+    if (keys.length === 0) {
+      throw new Error('ADMOB_VERIFIER_KEYS_EMPTY');
+    }
+
+    admobVerifierKeysCache = {
+      keys,
+      expiresAtMs: Date.now() + admobVerifierKeysTtlMs,
+    };
+    return keys;
+  })();
+
+  if (!forceRefresh) {
+    admobVerifierKeysInflight = requestPromise.finally(() => {
+      if (admobVerifierKeysInflight === requestPromise) {
+        admobVerifierKeysInflight = null;
+      }
+    });
+    return admobVerifierKeysInflight;
+  }
+
+  return requestPromise;
+}
+
+function sanitizeSsvIdentifier(value: unknown, maxLength: number): string {
+  const normalized = sanitizeShortText(value, maxLength);
+  if (!normalized || normalized.includes('/')) return '';
+  return normalized;
 }
 
 function resolveOptionalLanguage(lang: unknown): string | null {
@@ -3456,35 +3530,14 @@ export const claimAdWatchReward = onCall({ enforceAppCheck: appCheckEnforced }, 
       };
       const currentCredits = Number(user.wallet.credits ?? 0);
       const rawProgress = Number(user.adRewards?.coinsProgress ?? 0);
-      const normalizedProgress = Number.isFinite(rawProgress) && rawProgress >= 0
+      progress = Number.isFinite(rawProgress) && rawProgress >= 0
         ? Math.trunc(rawProgress) % coinsRewardCycleLength
         : 0;
-      const advancedProgress = normalizedProgress + 1;
-      const bonusUnlocked = advancedProgress >= coinsRewardCycleLength;
-
-      grantedCredits = bonusUnlocked ? coinsRewardCycleCredits : 0;
-      progress = bonusUnlocked ? 0 : advancedProgress;
-      stepsRemaining = bonusUnlocked ? coinsRewardCycleLength : coinsRewardCycleLength - progress;
-      remainingCredits = currentCredits + grantedCredits;
-
-      const updates: Record<string, unknown> = {
-        'adRewards.coinsProgress': progress,
-        'adRewards.lastRewardedWatchAt': FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      if (grantedCredits > 0) {
-        updates['wallet.credits'] = remainingCredits;
-      }
-      tx.update(userRef, updates);
-
-      if (grantedCredits > 0) {
-        tx.set(userRef.collection('credit_ledger').doc(), {
-          type: 'credit',
-          amount: grantedCredits,
-          reason: 'rewarded_ad_cycle_bonus',
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
+      stepsRemaining = progress == 0
+        ? coinsRewardCycleLength
+        : coinsRewardCycleLength - progress;
+      grantedCredits = 0;
+      remainingCredits = currentCredits;
     });
 
     return {
@@ -3497,6 +3550,153 @@ export const claimAdWatchReward = onCall({ enforceAppCheck: appCheckEnforced }, 
     };
   } catch (err) {
     throw mapError(err);
+  }
+});
+
+export const admobSsvCallback = onRequest({ region: 'us-central1' }, async (req, res) => {
+  if (req.method !== 'GET') {
+    res.status(405).send('method_not_allowed');
+    return;
+  }
+
+  try {
+    const rawUrl = typeof req.url === 'string' ? req.url : '';
+    const queryStart = rawUrl.indexOf('?');
+    const rawQuery = queryStart >= 0 ? rawUrl.slice(queryStart + 1) : '';
+    if (!rawQuery) {
+      res.status(400).send('missing_query');
+      return;
+    }
+
+    const signatureIndex = rawQuery.indexOf('&signature=');
+    if (signatureIndex < 0) {
+      res.status(400).send('missing_signature_segment');
+      return;
+    }
+
+    const content = rawQuery.slice(0, signatureIndex);
+    const params = new URLSearchParams(rawQuery);
+    const signatureParam = params.get('signature');
+    const keyIdParam = params.get('key_id');
+    const uid = sanitizeSsvIdentifier(params.get('user_id'), 128);
+    const transactionId = sanitizeSsvIdentifier(params.get('transaction_id'), 256);
+    const customData = sanitizeShortText(params.get('custom_data'), 80);
+
+    if (!signatureParam || !keyIdParam || !uid || !transactionId) {
+      res.status(400).send('missing_required_params');
+      return;
+    }
+
+    const keyId = Number(keyIdParam);
+    if (!Number.isInteger(keyId) || keyId < 0) {
+      res.status(400).send('invalid_key_id');
+      return;
+    }
+
+    let matchedKey = (await loadAdmobVerifierKeys()).find((item) => item.keyId === keyId);
+    if (!matchedKey) {
+      matchedKey = (await loadAdmobVerifierKeys(true)).find((item) => item.keyId === keyId);
+    }
+    if (!matchedKey) {
+      res.status(400).send('unknown_key_id');
+      return;
+    }
+
+    let signatureBuffer: Buffer;
+    try {
+      signatureBuffer = Buffer.from(signatureParam, 'base64url');
+    } catch {
+      res.status(400).send('invalid_signature_encoding');
+      return;
+    }
+
+    const verified = verifySignature(
+      'sha256',
+      Buffer.from(content, 'utf8'),
+      matchedKey.pem,
+      signatureBuffer
+    );
+    if (!verified) {
+      res.status(400).send('invalid_signature');
+      return;
+    }
+
+    if (customData !== 'coins_progress') {
+      res.status(200).send('ok');
+      return;
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    const rewardRef = userRef.collection('ssv_rewards').doc(transactionId);
+
+    await db.runTransaction(async (tx) => {
+      const [rewardSnap, userSnap] = await Promise.all([
+        tx.get(rewardRef),
+        tx.get(userRef),
+      ]);
+
+      if (rewardSnap.exists) {
+        return;
+      }
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'USER_NOT_FOUND');
+      }
+
+      const user = userSnap.data() as UserDoc & {
+        adRewards?: {
+          coinsProgress?: unknown;
+        };
+      };
+      const currentCredits = Number(user.wallet.credits ?? 0);
+      const rawProgress = Number(user.adRewards?.coinsProgress ?? 0);
+      const normalizedProgress = Number.isFinite(rawProgress) && rawProgress >= 0
+        ? Math.trunc(rawProgress) % coinsRewardCycleLength
+        : 0;
+      const advancedProgress = normalizedProgress + 1;
+      const bonusUnlocked = advancedProgress >= coinsRewardCycleLength;
+      const nextProgress = bonusUnlocked ? 0 : advancedProgress;
+      const nextCredits = bonusUnlocked ? currentCredits + coinsRewardCycleCredits : currentCredits;
+
+      const updates: Record<string, unknown> = {
+        'adRewards.coinsProgress': nextProgress,
+        'adRewards.lastRewardedWatchAt': FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      if (bonusUnlocked) {
+        updates['wallet.credits'] = nextCredits;
+      }
+      tx.update(userRef, updates);
+
+      if (bonusUnlocked) {
+        tx.set(userRef.collection('credit_ledger').doc(), {
+          type: 'credit',
+          amount: coinsRewardCycleCredits,
+          reason: 'rewarded_ad_cycle_bonus_ssv',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      tx.set(rewardRef, {
+        transactionId,
+        customData,
+        processedAt: FieldValue.serverTimestamp(),
+        progressBefore: normalizedProgress,
+        progressAfter: nextProgress,
+        grantedCredits: bonusUnlocked ? coinsRewardCycleCredits : 0,
+      });
+    });
+
+    res.status(200).send('ok');
+  } catch (error) {
+    logger.error('admobSsvCallback failed', {
+      errorCode: errorCode(error),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    if (error instanceof HttpsError && error.code === 'not-found') {
+      res.status(400).send(error.message || 'invalid_user');
+      return;
+    }
+    res.status(400).send('invalid_request');
   }
 });
 

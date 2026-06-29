@@ -619,6 +619,7 @@
   "ads.archive.unlock_cta": "VER PARA DESBLOQUEAR",
   "ads.archive.unlock_success": "Tu archivo esta desbloqueado durante 24 horas.",
   "ads.coins.watch_tooltip": "Mira anuncios y gana fichas",
+  "ads.coins.pending_toast": "Tu recompensa se esta verificando y se agregara en breve.",
   "ads.coins.progress_toast": "{progress}/{total} anuncios completados. Mira {remaining} mas para ganar 20 fichas.",
   "ads.coins.bonus_toast": "Se agregaron {amount} fichas a tu saldo.",
   "ads.daily_gift.toast": "Tu regalo diario esta listo: {amount} fichas.",

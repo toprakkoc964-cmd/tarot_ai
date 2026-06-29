@@ -849,6 +849,7 @@
   "ads.archive.unlock_cta": "WATCH TO UNLOCK",
   "ads.archive.unlock_success": "Your archive is unlocked for 24 hours.",
   "ads.coins.watch_tooltip": "Watch ads and earn tokens",
+  "ads.coins.pending_toast": "Your reward is being verified and will be added shortly.",
   "ads.coins.progress_toast": "{progress}/{total} ads completed. Watch {remaining} more to earn 20 tokens.",
   "ads.coins.bonus_toast": "{amount} tokens added to your wallet.",
   "ads.daily_gift.toast": "Your daily gift is here: {amount} tokens.",

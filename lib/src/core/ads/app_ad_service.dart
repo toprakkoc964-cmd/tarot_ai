@@ -26,6 +26,7 @@ class AppAdService {
   static const Duration _interstitialCooldown = Duration(seconds: 90);
 
   bool _initialized = false;
+  bool _canRequestAds = true;
   bool _loadingInterstitial = false;
   bool _loadingArchiveReward = false;
   bool _loadingCoinsReward = false;
@@ -37,9 +38,14 @@ class AppAdService {
   bool get _adsEnabled =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
-  Future<void> initialize() async {
+  Future<void> initialize({bool canRequestAds = true}) async {
     if (_initialized || !_adsEnabled) return;
     _initialized = true;
+    _canRequestAds = canRequestAds;
+    if (!_canRequestAds) {
+      debugPrint('Ads initialization skipped: consent not granted.');
+      return;
+    }
     await MobileAds.instance.initialize();
     _loadPageTransitionInterstitial();
     _loadRewardedAd(AppRewardedPlacement.archiveUnlock);
@@ -47,7 +53,7 @@ class AppAdService {
   }
 
   Future<void> maybeShowPageTransitionInterstitial() async {
-    if (!_adsEnabled) return;
+    if (!_adsEnabled || !_canRequestAds) return;
     await initialize();
 
     final now = DateTime.now();
@@ -98,8 +104,15 @@ class AppAdService {
     }
   }
 
-  Future<AppRewardAdResult> showRewarded(AppRewardedPlacement placement) async {
+  Future<AppRewardAdResult> showRewarded(
+    AppRewardedPlacement placement, {
+    required String userId,
+    String? customData,
+  }) async {
     if (!_adsEnabled) {
+      return const AppRewardAdResult(AppRewardAdOutcome.unavailable);
+    }
+    if (!_canRequestAds) {
       return const AppRewardAdResult(AppRewardAdOutcome.unavailable);
     }
     await initialize();
@@ -145,6 +158,14 @@ class AppAdService {
     );
 
     try {
+      if (placement == AppRewardedPlacement.coinsReward) {
+        await ad.setServerSideOptions(
+          ServerSideVerificationOptions(
+            userId: userId,
+            customData: customData ?? 'coins_progress',
+          ),
+        );
+      }
       ad.setImmersiveMode(true);
       await ad.show(
         onUserEarnedReward: (_, __) {
@@ -167,7 +188,7 @@ class AppAdService {
 
   void _loadPageTransitionInterstitial() {
     final adUnitId = AppAdIds.pageTransition;
-    if (_loadingInterstitial || adUnitId == null) return;
+    if (!_canRequestAds || _loadingInterstitial || adUnitId == null) return;
     _loadingInterstitial = true;
     InterstitialAd.load(
       adUnitId: adUnitId,
@@ -191,7 +212,11 @@ class AppAdService {
       AppRewardedPlacement.archiveUnlock => AppAdIds.archiveUnlock,
       AppRewardedPlacement.coinsReward => AppAdIds.coinsReward,
     };
-    if (adUnitId == null || _isRewardLoadInFlight(placement)) return;
+    if (!_canRequestAds ||
+        adUnitId == null ||
+        _isRewardLoadInFlight(placement)) {
+      return;
+    }
     _setRewardLoadInFlight(placement, true);
 
     RewardedAd.load(

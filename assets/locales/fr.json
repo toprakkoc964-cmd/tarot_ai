@@ -619,6 +619,7 @@
   "ads.archive.unlock_cta": "REGARDER POUR OUVRIR",
   "ads.archive.unlock_success": "Tes archives sont ouvertes pendant 24 heures.",
   "ads.coins.watch_tooltip": "Regarder des pubs et gagner des jetons",
+  "ads.coins.pending_toast": "Ta recompense est en cours de verification et sera ajoutee sous peu.",
   "ads.coins.progress_toast": "{progress}/{total} pubs terminees. Regarde encore {remaining} pubs pour gagner 20 jetons.",
   "ads.coins.bonus_toast": "{amount} jetons ont ete ajoutes a ton portefeuille.",
   "ads.daily_gift.toast": "Ton cadeau du jour est pret : {amount} jetons.",

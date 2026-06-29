@@ -836,6 +836,7 @@
   "ads.archive.unlock_cta": "MIT WERBUNG OEFFNEN",
   "ads.archive.unlock_success": "Dein Archiv ist fuer 24 Stunden entsperrt.",
   "ads.coins.watch_tooltip": "Werbung ansehen und Jetons verdienen",
+  "ads.coins.pending_toast": "Deine Belohnung wird geprueft und in Kuerze gutgeschrieben.",
   "ads.coins.progress_toast": "{progress}/{total} Werbungen abgeschlossen. Sieh dir noch {remaining} an, um 20 Jetons zu erhalten.",
   "ads.coins.bonus_toast": "{amount} Jetons wurden deinem Guthaben hinzugefuegt.",
   "ads.daily_gift.toast": "Dein taegliches Geschenk ist da: {amount} Jetons.",

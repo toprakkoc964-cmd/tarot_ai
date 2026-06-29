@@ -43,6 +43,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Avucunun çizgilerini okuyabilmemiz ve kahve falı fotoğraflarını çekebilmen için kameranı kullanırız. Onboarding fotoğrafın saklanmaz.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>We use your device identifier to show you more relevant ads and support the free features of the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We let you choose cup photos from your library for the coffee reading experience.</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -74,6 +76,13 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

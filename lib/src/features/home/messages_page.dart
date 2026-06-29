@@ -291,6 +291,7 @@ class _MessagesPageState extends State<MessagesPage> {
     try {
       final adResult = await AppAdService.instance.showRewarded(
         AppRewardedPlacement.archiveUnlock,
+        userId: widget.uid,
       );
       if (!mounted) return;
 

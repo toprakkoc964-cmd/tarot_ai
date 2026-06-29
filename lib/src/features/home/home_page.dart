@@ -210,6 +210,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final adResult = await AppAdService.instance.showRewarded(
         AppRewardedPlacement.coinsReward,
+        userId: widget.uid,
       );
       if (!mounted) return;
 
@@ -223,29 +224,11 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (!adResult.earned) return;
-
-      final rewardResult = await AppAdRewardService.instance
-          .claimCoinsRewardProgress();
-      if (!mounted) return;
-
-      if (rewardResult.grantedCredits > 0) {
-        MysticToast.showSuccess(
-          context,
-          AppTexts.t(
-            'ads.coins.bonus_toast',
-          ).replaceAll('{amount}', '${rewardResult.grantedCredits}'),
-          dedupeKey: 'coins-ad-bonus-${rewardResult.remainingCredits}',
-        );
-      } else {
-        MysticToast.showInfo(
-          context,
-          AppTexts.t('ads.coins.progress_toast')
-              .replaceAll('{progress}', '${rewardResult.progress}')
-              .replaceAll('{total}', '3')
-              .replaceAll('{remaining}', '${rewardResult.stepsRemaining}'),
-          dedupeKey: 'coins-ad-progress-${rewardResult.progress}',
-        );
-      }
+      MysticToast.showInfo(
+        context,
+        AppTexts.t('ads.coins.pending_toast'),
+        dedupeKey: 'coins-ad-pending',
+      );
     } catch (error) {
       debugPrint('Coins rewarded flow failed: $error');
       if (!mounted) return;
