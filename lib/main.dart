@@ -9,6 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'services/notification_service.dart' as local_notifications;
 import 'src/core/app_check.dart';
@@ -177,6 +178,18 @@ class TarotAiApp extends StatelessWidget {
               navigatorKey: appNavigatorKey,
               debugShowCheckedModeBanner: false,
               locale: Locale(localeCode),
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [
+                Locale('tr'),
+                Locale('en'),
+                Locale('de'),
+                Locale('fr'),
+                Locale('es'),
+              ],
               title: AppTexts.t('app.title'),
               theme: ThemeData.dark(useMaterial3: true).copyWith(
                 scaffoldBackgroundColor: const Color(0xFF17081C),

@@ -9,6 +9,7 @@ import '../../core/app_texts.dart';
 import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
+import '../auth/widgets/mystic_toast.dart';
 import 'ai_chat_context.dart';
 import 'chat_page.dart';
 import 'credit_page.dart';
@@ -18,10 +19,16 @@ const _kCoffeeReadingCost = 20;
 const _kPalmReadingCost = 20;
 
 class CosmicPage extends StatelessWidget {
-  const CosmicPage({super.key, required this.bottomInset, required this.uid});
+  const CosmicPage({
+    super.key,
+    required this.bottomInset,
+    required this.uid,
+    this.onOpenCredits,
+  });
 
   final double bottomInset;
   final String uid;
+  final VoidCallback? onOpenCredits;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +52,11 @@ class CosmicPage extends StatelessWidget {
                   buttonText: AppTexts.t('home.cosmic.palm.button'),
                   icon: Icons.front_hand_rounded,
                   accentIcon: Icons.pan_tool_alt_rounded,
-                  onTap: () => _openPalmScanner(context, uid),
+                  onTap: () => _openPalmScanner(
+                    context,
+                    uid,
+                    onOpenCredits: onOpenCredits,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 CosmicFeatureCard(
@@ -54,7 +65,11 @@ class CosmicPage extends StatelessWidget {
                   buttonText: AppTexts.t('home.cosmic.coffee.button'),
                   icon: Icons.local_cafe_rounded,
                   accentIcon: Icons.coffee_rounded,
-                  onTap: () => _openCoffeeReading(context, uid),
+                  onTap: () => _openCoffeeReading(
+                    context,
+                    uid,
+                    onOpenCredits: onOpenCredits,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 CosmicFeatureCard(
@@ -65,7 +80,11 @@ class CosmicPage extends StatelessWidget {
                   buttonText: AppTexts.t('home.cosmic.numerology.button'),
                   icon: Icons.auto_stories_rounded,
                   accentIcon: Icons.auto_awesome_rounded,
-                  onTap: () => _openNumerologyReading(context, uid),
+                  onTap: () => _openNumerologyReading(
+                    context,
+                    uid,
+                    onOpenCredits: onOpenCredits,
+                  ),
                 ),
               ],
             ),
@@ -77,12 +96,14 @@ class CosmicPage extends StatelessWidget {
 
   static Future<void> _openPalmScanner(
     BuildContext context,
-    String uid,
-  ) async {
+    String uid, {
+    VoidCallback? onOpenCredits,
+  }) async {
     final canStart = await _ensureCredits(
       context,
       uid: uid,
       requiredCredits: _kPalmReadingCost,
+      onOpenCredits: onOpenCredits,
     );
     if (!context.mounted || !canStart) return;
 
@@ -116,12 +137,14 @@ class CosmicPage extends StatelessWidget {
 
   static Future<void> _openCoffeeReading(
     BuildContext context,
-    String uid,
-  ) async {
+    String uid, {
+    VoidCallback? onOpenCredits,
+  }) async {
     final canStart = await _ensureCredits(
       context,
       uid: uid,
       requiredCredits: _kCoffeeReadingCost,
+      onOpenCredits: onOpenCredits,
     );
     if (!context.mounted || !canStart) return;
 
@@ -155,8 +178,9 @@ class CosmicPage extends StatelessWidget {
 
   static Future<void> _openNumerologyReading(
     BuildContext context,
-    String uid,
-  ) async {
+    String uid, {
+    VoidCallback? onOpenCredits,
+  }) async {
     final chatResult = await Navigator.of(context).push<String>(
       PageRouteBuilder<String>(
         pageBuilder: (_, animation, __) {
@@ -187,30 +211,38 @@ class CosmicPage extends StatelessWidget {
       ),
     );
     if (!context.mounted || chatResult != 'credits') return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => CreditPage(
-          bottomInset: MediaQuery.of(context).padding.bottom,
-          uid: uid,
-        ),
-      ),
-    );
+    await _openCredits(context, uid: uid, onOpenCredits: onOpenCredits);
   }
 
   static Future<bool> _ensureCredits(
     BuildContext context, {
     required String uid,
     required int requiredCredits,
+    VoidCallback? onOpenCredits,
   }) async {
     final credits = await _currentWalletCredits(uid);
     if (credits >= requiredCredits) return true;
     if (!context.mounted) return false;
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(AppTexts.t('reading.gate.insufficient'))),
-      );
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    MysticToast.showWarning(
+      context,
+      AppTexts.t('reading.gate.insufficient'),
+      dedupeKey: 'cosmic-insufficient-credits',
+    );
+    await _openCredits(context, uid: uid, onOpenCredits: onOpenCredits);
+    return await _currentWalletCredits(uid) >= requiredCredits;
+  }
+
+  static Future<void> _openCredits(
+    BuildContext context, {
+    required String uid,
+    VoidCallback? onOpenCredits,
+  }) async {
+    if (onOpenCredits != null) {
+      onOpenCredits();
+      return;
+    }
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => CreditPage(
@@ -219,7 +251,6 @@ class CosmicPage extends StatelessWidget {
         ),
       ),
     );
-    return await _currentWalletCredits(uid) >= requiredCredits;
   }
 
   static Future<int> _currentWalletCredits(String uid) async {

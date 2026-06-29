@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_navigator.dart';
 import '../../core/app_review_service.dart';
 import '../../core/notification_service.dart';
-import '../../core/widgets/cosmic_permission_dialog.dart';
 import '../../../services/notification_service.dart' as local_notifications;
 import 'auth_service.dart';
 import 'onboarding_account_page.dart';
@@ -63,26 +62,9 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     final status = NotificationService.instance.permissionStatus.value;
     if (status != 'notDetermined' && status != 'unknown') return;
 
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return CosmicPermissionDialog(
-          onDecline: () async {
-            Navigator.of(dialogContext).pop();
-            await prefs.setBool(_permissionPromptSeenKey, true);
-          },
-          onAllow: () async {
-            Navigator.of(dialogContext).pop();
-            await prefs.setBool(_permissionPromptSeenKey, true);
-            await local_notifications.NotificationService.instance
-                .requestPermissions();
-            await NotificationService.instance.requestNotificationPermissions();
-          },
-        );
-      },
-    );
+    await prefs.setBool(_permissionPromptSeenKey, true);
+    await local_notifications.NotificationService.instance.requestPermissions();
+    await NotificationService.instance.requestNotificationPermissions();
   }
 
   void _openCardPick() {

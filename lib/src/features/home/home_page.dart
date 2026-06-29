@@ -18,6 +18,7 @@ import '../auth/auth_service.dart';
 import '../auth/user_profile_contract.dart';
 import '../../core/app_review_service.dart';
 import '../../core/app_locale.dart';
+import '../../core/app_language.dart';
 import '../../core/notification_service.dart';
 import '../../core/notification_router.dart';
 import '../../core/app_texts.dart';
@@ -25,6 +26,7 @@ import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
+import '../auth/widgets/mystic_toast.dart';
 import '../../../services/notification_service.dart' as local_notifications;
 
 // ─── Design Tokens ───────────────────────────────────────────────
@@ -195,7 +197,11 @@ class _HomePageState extends State<HomePage> {
           if (!isCosmicPage && !isCreditPage && !isProfilePage)
             const _NebulaBackground(),
           if (isCosmicPage)
-            CosmicPage(bottomInset: bottomBarHeight, uid: widget.uid),
+            CosmicPage(
+              bottomInset: bottomBarHeight,
+              uid: widget.uid,
+              onOpenCredits: () => _onNavTap(2),
+            ),
           if (isCreditPage)
             CreditPage(bottomInset: bottomBarHeight, uid: widget.uid),
           if (isProfilePage)
@@ -799,49 +805,22 @@ class _HeroSectionState extends State<_HeroSection>
     );
     // TODO(reklam): İleride jeton yerine reklam izle alternatifi burada eklenecek.
     if (effectiveCost > 0 && credits < effectiveCost) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppTexts.t('tarot.gate.insufficient'))),
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      MysticToast.showWarning(
+        context,
+        AppTexts.t('tarot.gate.insufficient'),
+        dedupeKey: 'tarot-insufficient-credits',
       );
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => CreditPage(
-            bottomInset: _BottomNavBar.estimatedHeight(context),
-            uid: widget.uid,
-          ),
-        ),
-      );
+      HomePage.openTab(2);
       if (!mounted) return;
-      final freshCredits = await _currentWalletCredits();
-      final freshFreeSingleAvailable = await _currentFreeSingleDrawAvailable();
-      final freshEffectiveCost = spread.effectiveCost(
-        freeSingleAvailable: freshFreeSingleAvailable,
-      );
-      if (freshCredits >= freshEffectiveCost) {
-        await _startRitual(spread);
-      } else {
-        setState(() {
-          _isChoosingSpread = true;
-          _selectedSpreadType = spread;
-        });
-      }
+      setState(() {
+        _isChoosingSpread = true;
+        _selectedSpreadType = spread;
+      });
       return;
     }
 
     await _startRitual(spread);
-  }
-
-  Future<int> _currentWalletCredits() async {
-    final snapshot = await _userDoc.get();
-    final data = snapshot.data();
-    final wallet = Map<String, dynamic>.from(
-      data?[UserProfileContract.wallet] as Map? ?? const {},
-    );
-    return (wallet[UserProfileContract.walletCredits] as num?)?.toInt() ?? 0;
-  }
-
-  Future<bool> _currentFreeSingleDrawAvailable() async {
-    final snapshot = await _userDoc.get();
-    return _freeSingleDrawAvailable(snapshot.data());
   }
 
   Future<void> _startRitual(_SpreadType spread) async {
@@ -882,9 +861,13 @@ class _HeroSectionState extends State<_HeroSection>
           if (!mounted) return;
           await _resetSelection();
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppTexts.t('tarot.gate.insufficient'))),
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          MysticToast.showWarning(
+            context,
+            AppTexts.t('tarot.gate.insufficient'),
+            dedupeKey: 'tarot-insufficient-credits',
           );
+          HomePage.openTab(2);
           return;
         }
       }
@@ -1040,14 +1023,7 @@ class _HeroSectionState extends State<_HeroSection>
     super.dispose();
   }
 
-  String _resolveDeviceLanguageCode() {
-    final current = AppLocale.current.trim().toLowerCase();
-    if (current == 'tr' || current == 'en') return current;
-    final localeCode = Localizations.localeOf(
-      context,
-    ).languageCode.trim().toLowerCase();
-    return localeCode == 'tr' ? 'tr' : 'en';
-  }
+  String _resolveDeviceLanguageCode() => AppLanguage.forAi();
 
   @override
   Widget build(BuildContext context) {
@@ -2030,44 +2006,29 @@ class _IdentityModuleState extends State<_IdentityModule>
     return '${date.day.toString().padLeft(2, '0')} • ${date.month.toString().padLeft(2, '0')} • ${date.year}';
   }
 
-  String _zodiacTr(DateTime date) {
+  String _zodiacKey(DateTime date) {
     final m = date.month;
     final d = date.day;
-    if ((m == 3 && d >= 21) || (m == 4 && d <= 19)) return 'Koc Burcu';
-    if ((m == 4 && d >= 20) || (m == 5 && d <= 20)) return 'Boga Burcu';
-    if ((m == 5 && d >= 21) || (m == 6 && d <= 20)) return 'Ikizler Burcu';
-    if ((m == 6 && d >= 21) || (m == 7 && d <= 22)) return 'Yengec Burcu';
-    if ((m == 7 && d >= 23) || (m == 8 && d <= 22)) return 'Aslan Burcu';
-    if ((m == 8 && d >= 23) || (m == 9 && d <= 22)) return 'Basak Burcu';
-    if ((m == 9 && d >= 23) || (m == 10 && d <= 22)) return 'Terazi Burcu';
-    if ((m == 10 && d >= 23) || (m == 11 && d <= 21)) return 'Akrep Burcu';
-    if ((m == 11 && d >= 22) || (m == 12 && d <= 21)) return 'Yay Burcu';
-    if ((m == 12 && d >= 22) || (m == 1 && d <= 19)) return 'Oglak Burcu';
-    if ((m == 1 && d >= 20) || (m == 2 && d <= 18)) return 'Kova Burcu';
-    return 'Balik Burcu';
-  }
-
-  String _zodiacEn(DateTime date) {
-    final m = date.month;
-    final d = date.day;
-    if ((m == 3 && d >= 21) || (m == 4 && d <= 19)) return 'Aries';
-    if ((m == 4 && d >= 20) || (m == 5 && d <= 20)) return 'Taurus';
-    if ((m == 5 && d >= 21) || (m == 6 && d <= 20)) return 'Gemini';
-    if ((m == 6 && d >= 21) || (m == 7 && d <= 22)) return 'Cancer';
-    if ((m == 7 && d >= 23) || (m == 8 && d <= 22)) return 'Leo';
-    if ((m == 8 && d >= 23) || (m == 9 && d <= 22)) return 'Virgo';
-    if ((m == 9 && d >= 23) || (m == 10 && d <= 22)) return 'Libra';
-    if ((m == 10 && d >= 23) || (m == 11 && d <= 21)) return 'Scorpio';
-    if ((m == 11 && d >= 22) || (m == 12 && d <= 21)) return 'Sagittarius';
-    if ((m == 12 && d >= 22) || (m == 1 && d <= 19)) return 'Capricorn';
-    if ((m == 1 && d >= 20) || (m == 2 && d <= 18)) return 'Aquarius';
-    return 'Pisces';
+    if ((m == 3 && d >= 21) || (m == 4 && d <= 19)) return 'aries';
+    if ((m == 4 && d >= 20) || (m == 5 && d <= 20)) return 'taurus';
+    if ((m == 5 && d >= 21) || (m == 6 && d <= 20)) return 'gemini';
+    if ((m == 6 && d >= 21) || (m == 7 && d <= 22)) return 'cancer';
+    if ((m == 7 && d >= 23) || (m == 8 && d <= 22)) return 'leo';
+    if ((m == 8 && d >= 23) || (m == 9 && d <= 22)) return 'virgo';
+    if ((m == 9 && d >= 23) || (m == 10 && d <= 22)) return 'libra';
+    if ((m == 10 && d >= 23) || (m == 11 && d <= 21)) return 'scorpio';
+    if ((m == 11 && d >= 22) || (m == 12 && d <= 21)) {
+      return 'sagittarius';
+    }
+    if ((m == 12 && d >= 22) || (m == 1 && d <= 19)) return 'capricorn';
+    if ((m == 1 && d >= 20) || (m == 2 && d <= 18)) return 'aquarius';
+    return 'pisces';
   }
 
   Future<String> _dailyCommentFuture(String? storedBirthDate) {
     final key = (storedBirthDate ?? '').trim();
     final today = _localDayKey();
-    final localeAwareKey = '$key|${AppLocale.current}|$today';
+    final localeAwareKey = '$key|$today';
     if (_commentFuture == null || localeAwareKey != _commentKey) {
       _activeCommentDay = today;
       _commentKey = localeAwareKey;
@@ -2093,11 +2054,8 @@ class _IdentityModuleState extends State<_IdentityModule>
         final birthDateText = birthDate != null
             ? _formatBirthDate(birthDate)
             : '—';
-        final currentLang = AppLocale.current == 'en' ? 'en' : 'tr';
         final zodiacText = birthDate != null
-            ? (currentLang == 'en'
-                  ? _zodiacEn(birthDate)
-                  : _zodiacTr(birthDate))
+            ? AppTexts.t('zodiac.${_zodiacKey(birthDate)}')
             : AppTexts.t('home.birth_frequency.sign');
 
         return _GlassCard(

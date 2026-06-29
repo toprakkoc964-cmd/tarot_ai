@@ -43,6 +43,7 @@ class _MessagesPageState extends State<MessagesPage> {
   final _service = ArisSessionService();
   StreamSubscription<List<ArisSessionRecord>>? _subscription;
   List<ArisSessionRecord> _sessions = const [];
+  ArisSessionCategory _selectedCategory = ArisSessionCategory.tarot;
   bool _loading = true;
   String? _errorMessage;
   bool _usingServerFallback = false;
@@ -218,17 +219,16 @@ class _MessagesPageState extends State<MessagesPage> {
     final isTarot = session.category == ArisSessionCategory.tarot;
     final chatContext = switch (session.category) {
       ArisSessionCategory.palm => AiChatContext.palmReadingMadamAris(
-          sessionId: session.sessionId,
-        ),
+        sessionId: session.sessionId,
+      ),
+      ArisSessionCategory.numerology =>
+        AiChatContext.numerologyReadingMadamAris(sessionId: session.sessionId),
       ArisSessionCategory.coffee => AiChatContext(
-          persona: AiPersona.madamAris,
-          mode: AiChatMode.coffeeReading,
-          title: AppTexts.t('coffeeMadamArisTitle'),
-          metadata: {
-            'source': 'coffee_reading',
-            'sessionId': session.sessionId,
-          },
-        ),
+        persona: AiPersona.madamAris,
+        mode: AiChatMode.coffeeReading,
+        title: AppTexts.t('coffeeMadamArisTitle'),
+        metadata: {'source': 'coffee_reading', 'sessionId': session.sessionId},
+      ),
       ArisSessionCategory.tarot => null,
     };
     Navigator.of(context)
@@ -275,6 +275,13 @@ class _MessagesPageState extends State<MessagesPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _MessagesTopBar(showBackButton: widget.showBackButton),
+                _ArchiveCategoryTabs(
+                  selectedCategory: _selectedCategory,
+                  onSelected: (category) {
+                    if (_selectedCategory == category) return;
+                    setState(() => _selectedCategory = category);
+                  },
+                ),
                 Expanded(child: _buildBody(context)),
               ],
             ),
@@ -302,13 +309,20 @@ class _MessagesPageState extends State<MessagesPage> {
           padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
           children: [
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.16),
-            const _MessagesEmpty(category: ArisSessionCategory.tarot),
+            _MessagesEmpty(category: _selectedCategory),
           ],
         ),
       );
     }
 
-    final sections = _buildSections();
+    final sessions = _sessions
+        .where((session) => session.category == _selectedCategory)
+        .toList()
+      ..sort((a, b) {
+        final aTime = a.updatedAt?.millisecondsSinceEpoch ?? 0;
+        final bTime = b.updatedAt?.millisecondsSinceEpoch ?? 0;
+        return bTime.compareTo(aTime);
+      });
 
     return RefreshIndicator(
       color: _kPrimary,
@@ -317,56 +331,23 @@ class _MessagesPageState extends State<MessagesPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomInset + 24),
         children: [
-          for (final section in sections) ...[
-            _ArchiveSessionSection(
-              category: section.category,
-              sessions: section.sessions,
-              locale: Localizations.localeOf(context).toString(),
-              onOpenSession: _openSession,
-            ),
-            const SizedBox(height: 22),
-          ],
+          if (sessions.isEmpty) ...[
+            SizedBox(height: MediaQuery.sizeOf(context).height * 0.16),
+            _MessagesEmpty(category: _selectedCategory),
+          ] else
+            for (final session in sessions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: _MessageSessionTile(
+                  session: session,
+                  locale: Localizations.localeOf(context).toString(),
+                  onTap: () => _openSession(session),
+                ),
+              ),
         ],
       ),
     );
   }
-
-  List<_ArchiveSectionData> _buildSections() {
-    final grouped = <ArisSessionCategory, List<ArisSessionRecord>>{
-      ArisSessionCategory.tarot: <ArisSessionRecord>[],
-      ArisSessionCategory.coffee: <ArisSessionRecord>[],
-      ArisSessionCategory.palm: <ArisSessionRecord>[],
-    };
-
-    for (final session in _sessions) {
-      grouped[session.category]?.add(session);
-    }
-
-    for (final sessions in grouped.values) {
-      sessions.sort((a, b) {
-        final aTime = a.updatedAt?.millisecondsSinceEpoch ?? 0;
-        final bTime = b.updatedAt?.millisecondsSinceEpoch ?? 0;
-        return bTime.compareTo(aTime);
-      });
-    }
-
-    return [
-      for (final category in const [
-        ArisSessionCategory.tarot,
-        ArisSessionCategory.coffee,
-        ArisSessionCategory.palm,
-      ])
-        if (grouped[category]!.isNotEmpty)
-          _ArchiveSectionData(category: category, sessions: grouped[category]!),
-    ];
-  }
-}
-
-class _ArchiveSectionData {
-  const _ArchiveSectionData({required this.category, required this.sessions});
-
-  final ArisSessionCategory category;
-  final List<ArisSessionRecord> sessions;
 }
 
 class _MessagesTopBar extends StatelessWidget {
@@ -430,64 +411,121 @@ class _MessagesTopBar extends StatelessWidget {
   }
 }
 
-class _ArchiveSessionSection extends StatelessWidget {
-  const _ArchiveSessionSection({
-    required this.category,
-    required this.sessions,
-    required this.locale,
-    required this.onOpenSession,
+const _archiveCategories = <ArisSessionCategory>[
+  ArisSessionCategory.tarot,
+  ArisSessionCategory.coffee,
+  ArisSessionCategory.palm,
+  ArisSessionCategory.numerology,
+];
+
+String _archiveCategoryLabel(ArisSessionCategory category) => switch (category) {
+  ArisSessionCategory.tarot => AppTexts.t('archive.tab.tarot'),
+  ArisSessionCategory.coffee => AppTexts.t('archive.tab.coffee'),
+  ArisSessionCategory.palm => AppTexts.t('archive.tab.palm'),
+  ArisSessionCategory.numerology => AppTexts.t('home.cosmic.numerology.title'),
+};
+
+IconData _archiveCategoryIcon(ArisSessionCategory category) => switch (category) {
+  ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+  ArisSessionCategory.coffee => Icons.local_cafe_rounded,
+  ArisSessionCategory.palm => Icons.back_hand_rounded,
+  ArisSessionCategory.numerology => Icons.calculate_rounded,
+};
+
+class _ArchiveCategoryTabs extends StatelessWidget {
+  const _ArchiveCategoryTabs({
+    required this.selectedCategory,
+    required this.onSelected,
   });
 
-  final ArisSessionCategory category;
-  final List<ArisSessionRecord> sessions;
-  final String locale;
-  final ValueChanged<ArisSessionRecord> onOpenSession;
+  final ArisSessionCategory selectedCategory;
+  final ValueChanged<ArisSessionCategory> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final title = switch (category) {
-      ArisSessionCategory.tarot => AppTexts.t('archive.tab.tarot'),
-      ArisSessionCategory.coffee => AppTexts.t('archive.tab.coffee'),
-      ArisSessionCategory.palm => AppTexts.t('archive.tab.palm'),
-    };
-    final icon = switch (category) {
-      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
-      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
-      ArisSessionCategory.palm => Icons.back_hand_rounded,
-    };
+    return ColoredBox(
+      color: _kBg.withValues(alpha: 0.82),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(20, 2, 20, 14),
+        child: Row(
+          children: [
+            for (final category in _archiveCategories) ...[
+              _ArchiveCategoryTab(
+                category: category,
+                selected: category == selectedCategory,
+                onTap: () => onSelected(category),
+              ),
+              if (category != _archiveCategories.last) const SizedBox(width: 10),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, bottom: 12),
+class _ArchiveCategoryTab extends StatelessWidget {
+  const _ArchiveCategoryTab({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ArisSessionCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? _kTertiary : _kSecondary.withValues(alpha: 0.78);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected
+                ? _kPrimary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected
+                  ? _kPrimary.withValues(alpha: 0.48)
+                  : _kGlassBorder,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: _kPrimary.withValues(alpha: 0.18),
+                      blurRadius: 18,
+                    ),
+                  ]
+                : null,
+          ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: _kTertiary, size: 18),
-              const SizedBox(width: 8),
+              Icon(_archiveCategoryIcon(category), size: 17, color: color),
+              const SizedBox(width: 7),
               Text(
-                title,
+                _archiveCategoryLabel(category),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.spaceGrotesk(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 1.6,
-                  color: _kTertiary,
+                  letterSpacing: 1.1,
+                  color: color,
+                  decoration: TextDecoration.none,
                 ),
               ),
             ],
           ),
         ),
-        ...sessions.map(
-          (session) => Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: _MessageSessionTile(
-              session: session,
-              locale: locale,
-              onTap: () => onOpenSession(session),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -511,13 +549,12 @@ class _MessageSessionTile extends StatelessWidget {
         'archive.coffee_title',
       ),
       ArisSessionCategory.palm => AppTexts.t('archive.palm_title'),
+      ArisSessionCategory.numerology => AppTexts.t('numerologyMadamArisTitle'),
       _ => session.titleLabel,
     };
     final icon = switch (session.category) {
-      ArisSessionCategory.palm => Icons.back_hand_rounded,
-      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
       ArisSessionCategory.tarot when session.isSpread => Icons.style_rounded,
-      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
+      _ => _archiveCategoryIcon(session.category),
     };
     return Material(
       color: Colors.transparent,
@@ -632,11 +669,7 @@ class _MessagesEmpty extends StatelessWidget {
       ArisSessionCategory.tarot => 'archive.empty.tarot',
       ArisSessionCategory.coffee => 'archive.empty.coffee',
       ArisSessionCategory.palm => 'archive.empty.palm',
-    };
-    final icon = switch (category) {
-      ArisSessionCategory.tarot => Icons.auto_awesome_rounded,
-      ArisSessionCategory.coffee => Icons.local_cafe_rounded,
-      ArisSessionCategory.palm => Icons.back_hand_rounded,
+      ArisSessionCategory.numerology => 'home.cosmic.numerology.description',
     };
     return Center(
       child: Padding(
@@ -644,7 +677,11 @@ class _MessagesEmpty extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: _kSecondary.withValues(alpha: 0.45)),
+            Icon(
+              _archiveCategoryIcon(category),
+              size: 56,
+              color: _kSecondary.withValues(alpha: 0.45),
+            ),
             const SizedBox(height: 16),
             Text(
               AppTexts.t(bodyKey),
