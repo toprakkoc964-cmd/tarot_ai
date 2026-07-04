@@ -19,6 +19,7 @@ import 'home_palette.dart';
 
 const _kCoffeeReadingCost = 20;
 const _kPalmReadingCost = 20;
+const _kNumerologyReadingCost = 20;
 
 class CosmicPage extends StatelessWidget {
   const CosmicPage({
@@ -187,6 +188,13 @@ class CosmicPage extends StatelessWidget {
     String uid, {
     VoidCallback? onOpenCredits,
   }) async {
+    final canStart = await _ensureCredits(
+      context,
+      uid: uid,
+      requiredCredits: _kNumerologyReadingCost,
+      onOpenCredits: onOpenCredits,
+    );
+    if (!context.mounted || !canStart) return;
     await AppAdService.instance.maybeShowPageTransitionInterstitial();
     if (!context.mounted) return;
     final chatResult = await Navigator.of(context).push<String>(

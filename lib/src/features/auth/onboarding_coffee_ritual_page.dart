@@ -29,7 +29,6 @@ enum _CoffeeRitualPhase { drink, flipping, bridge }
 class _OnboardingCoffeeRitualPageState extends State<OnboardingCoffeeRitualPage>
     with TickerProviderStateMixin {
   static const _bg = Color(0xFF17081C);
-  static const _surface = Color(0xFF1E0C25);
   static const _primary = Color(0xFFFF5ED6);
   static const _primaryDeep = Color(0xFFFF00D4);
   static const _secondary = Color(0xFFCDBDFF);
@@ -419,6 +418,13 @@ class _CoffeeRitualScene extends StatelessWidget {
     required this.glow,
   });
 
+  static const double _cupWidth = 230;
+  static const double _saucerWidth = 242;
+  static const double _coffeeWidth = 116;
+  static const double _coffeeRimOffsetY = -43;
+  static const double _saucerRestOffsetY = 63;
+  static const double _saucerCapOffsetY = -49;
+
   final Animation<double> hold;
   final Animation<double> cap;
   final Animation<double> flip;
@@ -433,6 +439,13 @@ class _CoffeeRitualScene extends StatelessWidget {
         final flipT = Curves.easeInOutCubic.transform(flip.value);
         final pulse = Curves.easeInOut.transform(glow.value);
         final coffeeLevel = lerpDouble(0.82, 0.0, hold.value)!;
+        final coffeeProgress = (coffeeLevel / 0.82).clamp(0.0, 1.0);
+        final saucerOffsetY = lerpDouble(
+          _saucerRestOffsetY,
+          _saucerCapOffsetY,
+          capT,
+        )!;
+        final flipScale = 1.0 - math.sin(math.pi * flipT) * 0.06;
         return RepaintBoundary(
           child: SizedBox(
             width: 310,
@@ -455,15 +468,73 @@ class _CoffeeRitualScene extends StatelessWidget {
                     ),
                   ),
                 ),
-                Transform.rotate(
-                  angle: math.pi * flipT,
-                  alignment: Alignment.center,
-                  child: CustomPaint(
-                    size: const Size(260, 260),
-                    painter: _CoffeeCupPainter(
-                      coffeeLevel: coffeeLevel,
-                      capProgress: capT,
-                      flipProgress: flipT,
+                Transform.scale(
+                  scale: flipScale,
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.0015)
+                      ..rotateX(math.pi * flipT),
+                    child: SizedBox(
+                      width: 260,
+                      height: 260,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Opacity(
+                            opacity: 1 - capT,
+                            child: Transform.translate(
+                              offset: Offset(0, saucerOffsetY),
+                              child: Image.asset(
+                                'assets/onboarding/coffee_saucer.png',
+                                width: _saucerWidth,
+                                filterQuality: FilterQuality.high,
+                              ),
+                            ),
+                          ),
+                          Image.asset(
+                            'assets/onboarding/coffee_cup.png',
+                            width: _cupWidth,
+                            filterQuality: FilterQuality.high,
+                          ),
+                          Transform.translate(
+                            offset: const Offset(0, _coffeeRimOffsetY),
+                            child: Opacity(
+                              opacity: coffeeProgress,
+                              child: ClipOval(
+                                child: SizedBox(
+                                  width: _coffeeWidth,
+                                  height: _coffeeWidth * 0.31,
+                                  child: Transform(
+                                    alignment: Alignment.center,
+                                    transform: Matrix4.diagonal3Values(
+                                      1,
+                                      coffeeProgress,
+                                      1,
+                                    ),
+                                    child: Image.asset(
+                                      'assets/onboarding/coffee_fill.png',
+                                      fit: BoxFit.cover,
+                                      filterQuality: FilterQuality.high,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Opacity(
+                            opacity: capT,
+                            child: Transform.translate(
+                              offset: Offset(0, saucerOffsetY),
+                              child: Image.asset(
+                                'assets/onboarding/coffee_saucer.png',
+                                width: _saucerWidth,
+                                filterQuality: FilterQuality.high,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -473,215 +544,6 @@ class _CoffeeRitualScene extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-class _CoffeeCupPainter extends CustomPainter {
-  const _CoffeeCupPainter({
-    required this.coffeeLevel,
-    required this.capProgress,
-    required this.flipProgress,
-  });
-
-  final double coffeeLevel;
-  final double capProgress;
-  final double flipProgress;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // TODO(onboarding): Replace this painter with coffee_cup/coffee_fill/
-    // coffee_saucer assets when final transparent PNGs are added.
-    final center = Offset(size.width / 2, size.height / 2);
-    final saucerY = lerpDouble(186, 102, capProgress)!;
-    final cupY = center.dy - 16;
-
-    final shadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.24)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(center.dx, 216), width: 170, height: 30),
-      shadow,
-    );
-
-    final saucerRect = Rect.fromCenter(
-      center: Offset(center.dx, saucerY),
-      width: 178,
-      height: 40,
-    );
-    final saucerPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFBEEFF), Color(0xFFD8CAFF), Color(0xFFF6E4FF)],
-      ).createShader(saucerRect);
-    canvas.drawOval(saucerRect, saucerPaint);
-    canvas.drawOval(
-      saucerRect.deflate(8),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = const Color(0xFF8E77AC).withValues(alpha: 0.54),
-    );
-
-    final bodyPath = Path()
-      ..moveTo(center.dx - 62, cupY - 22)
-      ..cubicTo(
-        center.dx - 54,
-        cupY + 70,
-        center.dx - 42,
-        cupY + 104,
-        center.dx,
-        cupY + 110,
-      )
-      ..cubicTo(
-        center.dx + 42,
-        cupY + 104,
-        center.dx + 54,
-        cupY + 70,
-        center.dx + 62,
-        cupY - 22,
-      )
-      ..close();
-    final bodyRect = bodyPath.getBounds();
-    canvas.drawPath(
-      bodyPath,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5E6FF), Color(0xFFB29AFF), Color(0xFFFFB7E9)],
-        ).createShader(bodyRect),
-    );
-
-    if (coffeeLevel > 0.01) {
-      canvas.save();
-      canvas.clipPath(bodyPath);
-      final fillHeight = bodyRect.height * coffeeLevel.clamp(0.0, 1.0);
-      final liquidTop = bodyRect.bottom - fillHeight;
-      final liquidRect = Rect.fromLTRB(
-        bodyRect.left + 8,
-        liquidTop,
-        bodyRect.right - 8,
-        bodyRect.bottom,
-      );
-      canvas.drawRect(
-        liquidRect,
-        Paint()
-          ..shader = const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF4A2410), Color(0xFF1F0D04)],
-          ).createShader(liquidRect),
-      );
-      final surfaceRect = Rect.fromCenter(
-        center: Offset(center.dx, liquidTop + 3),
-        width: 106,
-        height: 18,
-      );
-      canvas.drawOval(
-        surfaceRect,
-        Paint()
-          ..shader = const RadialGradient(
-            colors: [Color(0xFF7C4A22), Color(0xFF2D1307)],
-          ).createShader(surfaceRect),
-      );
-      canvas.restore();
-    }
-
-    canvas.drawPath(
-      bodyPath,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..color = const Color(0xFFEAD9F6).withValues(alpha: 0.78),
-    );
-
-    final rimRect = Rect.fromCenter(
-      center: Offset(center.dx, cupY - 24),
-      width: 136,
-      height: 46,
-    );
-    canvas.drawOval(
-      rimRect,
-      Paint()
-        ..shader = const LinearGradient(
-          colors: [Color(0xFFFFFFFF), Color(0xFFCDBDFF)],
-        ).createShader(rimRect),
-    );
-    canvas.drawOval(
-      rimRect.deflate(8),
-      Paint()..color = _OnboardingCoffeeRitualPageState._surface,
-    );
-
-    if (coffeeLevel > 0.01) {
-      final fillRect = Rect.fromCenter(
-        center: Offset(center.dx, cupY - 24),
-        width: 104,
-        height: 28,
-      );
-      canvas.drawOval(
-        fillRect,
-        Paint()
-          ..shader = const RadialGradient(
-            colors: [Color(0xFF7C4A22), Color(0xFF1F0D04)],
-          ).createShader(fillRect),
-      );
-      for (var i = 0; i < 9; i++) {
-        final angle = i * math.pi * 0.41 + coffeeLevel * 1.4;
-        final radius = 18 + (i % 3) * 7;
-        canvas.drawCircle(
-          Offset(
-            center.dx + math.cos(angle) * radius,
-            cupY - 24 + math.sin(angle) * 6,
-          ),
-          1.6,
-          Paint()
-            ..color = _OnboardingCoffeeRitualPageState._gold.withValues(
-              alpha: 0.28 * coffeeLevel,
-            ),
-        );
-      }
-    }
-
-    final handlePath = Path()
-      ..moveTo(center.dx + 58, cupY + 16)
-      ..cubicTo(
-        center.dx + 96,
-        cupY + 14,
-        center.dx + 98,
-        cupY + 66,
-        center.dx + 63,
-        cupY + 68,
-      )
-      ..cubicTo(
-        center.dx + 84,
-        cupY + 58,
-        center.dx + 82,
-        cupY + 28,
-        center.dx + 58,
-        cupY + 30,
-      );
-    canvas.drawPath(
-      handlePath,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 9
-        ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFF7DEFF).withValues(alpha: 0.78),
-    );
-    canvas.drawPath(
-      handlePath,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFBDAFDB).withValues(alpha: 0.56),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _CoffeeCupPainter oldDelegate) {
-    return coffeeLevel != oldDelegate.coffeeLevel ||
-        capProgress != oldDelegate.capProgress ||
-        flipProgress != oldDelegate.flipProgress;
   }
 }
 

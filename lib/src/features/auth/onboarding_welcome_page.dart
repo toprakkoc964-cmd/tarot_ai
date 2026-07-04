@@ -152,7 +152,7 @@ class _OnboardingWelcomePageState extends State<OnboardingWelcomePage>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   return SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(
                       20,
                       20,

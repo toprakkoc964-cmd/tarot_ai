@@ -132,7 +132,15 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       unawaited(AppReviewService.instance.requestAfterOnboardingIfNeeded());
       unawaited(_claimDailyGiftIfAvailable());
+      unawaited(_ensureNotificationPermissionIfNeeded());
     });
+  }
+
+  Future<void> _ensureNotificationPermissionIfNeeded() async {
+    final status = NotificationService.instance.permissionStatus.value;
+    if (status != 'notDetermined' && status != 'unknown') return;
+    await local_notifications.NotificationService.instance.requestPermissions();
+    await NotificationService.instance.requestNotificationPermissions();
   }
 
   Future<void> _claimDailyGiftIfAvailable() async {
