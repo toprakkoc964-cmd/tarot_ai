@@ -15,8 +15,8 @@ import '../../core/widgets/inline_ad_banner.dart';
 import 'ai_chat_context.dart';
 import 'aris_session_service.dart';
 import '../auth/widgets/mystic_toast.dart';
+import '../shop/screens/credit_purchase_sheet.dart';
 import 'chat_page.dart';
-import 'credit_page.dart';
 import 'home_palette.dart';
 
 const _kBg = HomePalette.background;
@@ -272,14 +272,7 @@ class _MessagesPageState extends State<MessagesPage> {
     );
     if (!mounted) return;
     if (result == 'credits') {
-      unawaited(
-        Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) =>
-                CreditPage(bottomInset: widget.bottomInset, uid: widget.uid),
-          ),
-        ),
-      );
+      unawaited(showCreditPurchaseSheet(context, uid: widget.uid));
     }
     unawaited(_refreshAll());
   }
@@ -324,29 +317,32 @@ class _MessagesPageState extends State<MessagesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: _kBg,
-      child: Stack(
-        children: [
-          const _MessagesBackground(),
-          SafeArea(
-            bottom: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _MessagesTopBar(showBackButton: widget.showBackButton),
-                _ArchiveCategoryTabs(
-                  selectedCategory: _selectedCategory,
-                  onSelected: (category) {
-                    if (_selectedCategory == category) return;
-                    setState(() => _selectedCategory = category);
-                  },
-                ),
-                Expanded(child: _buildBody(context)),
-              ],
+    return Material(
+      type: MaterialType.transparency,
+      child: ColoredBox(
+        color: _kBg,
+        child: Stack(
+          children: [
+            const _MessagesBackground(),
+            SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _MessagesTopBar(showBackButton: widget.showBackButton),
+                  _ArchiveCategoryTabs(
+                    selectedCategory: _selectedCategory,
+                    onSelected: (category) {
+                      if (_selectedCategory == category) return;
+                      setState(() => _selectedCategory = category);
+                    },
+                  ),
+                  Expanded(child: _buildBody(context)),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -436,7 +432,7 @@ class _MessagesPageState extends State<MessagesPage> {
                   const SizedBox(height: 18),
                 ],
               ],
-            if (showLockedArchiveCard) ...[
+            if (showLockedArchiveCard && accessibleSessions.isNotEmpty) ...[
               _ArchiveUnlockCard(
                 lockedCount: lockedCount,
                 unlockInFlight: _unlockInFlight,

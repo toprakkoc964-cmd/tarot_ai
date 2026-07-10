@@ -41,6 +41,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   String? _lifeSpace;
   String? _interpretationTone;
   List<String> _focusAreas = const [];
+  bool _navBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +68,17 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     await NotificationService.instance.requestNotificationPermissions();
   }
 
+  bool _beginNav() {
+    if (_navBusy) return false;
+    _navBusy = true;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _navBusy = false;
+    });
+    return true;
+  }
+
   void _openCardPick() {
+    if (!_beginNav()) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingCardPickPage(
@@ -94,6 +105,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openTarotDraw({bool replace = false}) {
+    if (!_beginNav()) return;
     final route = MaterialPageRoute<void>(
       builder: (_) => tarot_draw.OnboardingTarotDrawPage(
         name: _name,
@@ -110,6 +122,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openPalmScan() {
+    if (!_beginNav()) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingPalmScanPage(
@@ -132,6 +145,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openCoffeeRitual(OnboardingModality modality, {bool replace = false}) {
+    if (!_beginNav()) return;
     final route = MaterialPageRoute<void>(
       builder: (_) => OnboardingCoffeeRitualPage(
         name: _name,
@@ -148,6 +162,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openNameBirth() {
+    if (!_beginNav()) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -166,6 +181,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openPersonalization() {
+    if (!_beginNav()) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingPersonalizationPage(
@@ -189,6 +205,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openFocusAreas() {
+    if (!_beginNav()) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingFocusAreasPage(
@@ -203,6 +220,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openReveal() {
+    if (!_beginNav()) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingRevealPage(
@@ -222,6 +240,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openPaywall() {
+    if (!_beginNav()) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
     final navigator = _navigator();
     if (navigator == null) {
@@ -242,6 +261,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   }
 
   void _openAccount({bool replace = false}) {
+    if (!_beginNav()) return;
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
     debugPrint(
       '[onboarding-flow] opening account uid=$uid replace=$replace '
@@ -280,6 +300,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
       focusAreas: _focusAreas,
       onComplete: _finishOnboarding,
       autoCompleteAuthenticatedUser: true,
+      preventBack: true,
     );
   }
 

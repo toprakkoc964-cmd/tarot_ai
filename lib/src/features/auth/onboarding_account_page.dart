@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_language.dart';
 import '../../core/app_texts.dart';
+import 'auth_profile_bootstrap.dart';
 import 'auth_service.dart';
 import 'legal_pages.dart';
 import 'login_page.dart';
@@ -30,6 +31,7 @@ class OnboardingAccountPage extends StatefulWidget {
     required this.onComplete,
     this.finalizeProfileOnAuth = true,
     this.autoCompleteAuthenticatedUser = false,
+    this.preventBack = false,
     this.onBack,
   });
 
@@ -45,6 +47,7 @@ class OnboardingAccountPage extends StatefulWidget {
   final VoidCallback onComplete;
   final bool finalizeProfileOnAuth;
   final bool autoCompleteAuthenticatedUser;
+  final bool preventBack;
   final VoidCallback? onBack;
 
   @override
@@ -321,6 +324,7 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
 
     await userDocRef.set(map, SetOptions(merge: true));
     debugPrint('[onboarding-account] user profile write ok uid=${user.uid}');
+    await const OnboardingCompletionCache().markComplete(user.uid);
     await _syncGuestRegistry(
       currentUid: user.uid,
       sourceGuestUid: normalizedSourceGuestUid,
@@ -519,44 +523,47 @@ class _OnboardingAccountPageState extends State<OnboardingAccountPage>
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: _AccountBackground()),
-          SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                22,
-                10,
-                22,
-                math.max(18, bottom + 8),
-              ),
-              child: Column(
-                children: [
-                  _topBar(),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 22),
-                          _hero(),
-                          const SizedBox(height: 22),
-                          _consentBox(),
-                          const SizedBox(height: 18),
-                          _actions(),
-                          const SizedBox(height: 18),
-                          _emailLinks(),
-                        ],
+    return PopScope(
+      canPop: !widget.preventBack,
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: Stack(
+          children: [
+            const Positioned.fill(child: _AccountBackground()),
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  22,
+                  10,
+                  22,
+                  math.max(18, bottom + 8),
+                ),
+                child: Column(
+                  children: [
+                    _topBar(),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 22),
+                            _hero(),
+                            const SizedBox(height: 22),
+                            _consentBox(),
+                            const SizedBox(height: 18),
+                            _actions(),
+                            const SizedBox(height: 18),
+                            _emailLinks(),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

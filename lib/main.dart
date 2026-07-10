@@ -10,6 +10,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'services/notification_service.dart' as local_notifications;
 import 'src/core/ads/ad_consent_service.dart';
@@ -33,6 +34,7 @@ import 'src/features/auth/onboarding_personalization_page.dart';
 import 'src/features/auth/onboarding_reveal_page.dart';
 import 'src/features/auth/onboarding_tarot_draw_page.dart' as tarot_draw;
 import 'src/features/readings/tarot_service.dart';
+import 'src/features/splash/cosmic_splash_screen.dart';
 import 'src/features/shop/services/purchase_service.dart';
 
 const bool _showOnboardingWelcomePreview = bool.fromEnvironment(
@@ -41,8 +43,13 @@ const bool _showOnboardingWelcomePreview = bool.fromEnvironment(
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   await setupServiceLocator();
+  await GoogleFonts.pendingFonts([
+    GoogleFonts.cinzel(),
+    GoogleFonts.cinzelDecorative(fontWeight: FontWeight.w700),
+  ]);
   runApp(const TarotAiApp());
 }
 
@@ -57,46 +64,236 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       .showNotificationFromRemoteMessage(message);
 }
 
-Future<String?> _bootstrapApp() async {
-  try {
-    final firebaseError = await _runRequiredBootstrapTask(
-      'Firebase',
-      () => Firebase.initializeApp(),
-    );
-    if (firebaseError != null) return firebaseError;
-    await _runOptionalBootstrapTask(
-      'App Check',
-      () => activateAppCheck(isDebug: kDebugMode),
-      timeout: const Duration(seconds: 12),
-    );
-    await _runOptionalBootstrapTask(
-      'FCM notifications',
-      () => fcm_notifications.NotificationService.instance.initialize(),
-    );
-    await _runOptionalBootstrapTask(
-      'Local notifications',
-      () => local_notifications.NotificationService.instance.init(),
-    );
-    await _runOptionalBootstrapTask('Ad consent', () async {
-      final canRequestAds = await AdConsentService().gatherConsentAndTracking();
-      await AppAdService.instance.initialize(canRequestAds: canRequestAds);
-    });
-    final localizationError = await _runRequiredBootstrapTask(
-      'Localization',
-      () => LocalizationService.instance.initialize(),
-    );
-    if (localizationError != null) return localizationError;
-    _startTarotImagePreloadInBackground();
-    await _runOptionalBootstrapTask(
-      'Purchase service',
-      () => getIt<PurchaseService>().initialize(),
-    );
-    return null;
-  } catch (e, st) {
-    debugPrint('Bootstrap failed: $e');
-    debugPrintStack(stackTrace: st);
-    return e.toString();
+enum AppInitializationStatus {
+  initializing,
+  authenticated,
+  unauthenticated,
+  onboardingRequired,
+  ready,
+  offline,
+  recoverableError,
+  criticalError,
+}
+
+class AppInitializationState {
+  const AppInitializationState({
+    required this.status,
+    this.message,
+    this.error,
+  });
+
+  const AppInitializationState.initializing()
+    : status = AppInitializationStatus.initializing,
+      message = null,
+      error = null;
+
+  final AppInitializationStatus status;
+  final String? message;
+  final Object? error;
+
+  bool get canRetry {
+    return status == AppInitializationStatus.offline ||
+        status == AppInitializationStatus.recoverableError ||
+        status == AppInitializationStatus.criticalError;
   }
+}
+
+class AppInitializationController
+    extends ValueNotifier<AppInitializationState> {
+  AppInitializationController()
+    : super(const AppInitializationState.initializing());
+
+  Future<void>? _inFlight;
+  bool _optionalStarted = false;
+
+  Future<void> initialize({bool force = false}) {
+    if (_inFlight != null && !force) {
+      debugPrint('[bootstrap] initialize skipped: already in flight');
+      return _inFlight!;
+    }
+    debugPrint('[bootstrap] start force=$force');
+    value = const AppInitializationState.initializing();
+    _inFlight = _run().whenComplete(() => _inFlight = null);
+    return _inFlight!;
+  }
+
+  Future<void> _run() async {
+    try {
+      final firebaseError = await _runRequiredBootstrapTask(
+        'Firebase',
+        () => Firebase.initializeApp(),
+      );
+      if (firebaseError != null) {
+        debugPrint('[bootstrap] Firebase failed: $firebaseError');
+        value = AppInitializationState(
+          status: AppInitializationStatus.criticalError,
+          message: firebaseError,
+        );
+        return;
+      }
+
+      final localizationError = await _runRequiredBootstrapTask(
+        'Localization',
+        () => LocalizationService.instance.initialize(),
+      );
+      if (localizationError != null) {
+        debugPrint('[bootstrap] Localization failed: $localizationError');
+        value = AppInitializationState(
+          status: AppInitializationStatus.recoverableError,
+          message: localizationError,
+        );
+        return;
+      }
+
+      final fontError = await _runRequiredBootstrapTask(
+        'Bundled fonts',
+        _preloadBundledFonts,
+      );
+      if (fontError != null) {
+        debugPrint('[bootstrap] Bundled fonts failed: $fontError');
+        value = AppInitializationState(
+          status: AppInitializationStatus.recoverableError,
+          message: fontError,
+        );
+        return;
+      }
+
+      value = const AppInitializationState(
+        status: AppInitializationStatus.ready,
+      );
+      debugPrint('[bootstrap] state=ready');
+      _startOptionalBootstrapInBackground();
+    } catch (e, st) {
+      debugPrint('[bootstrap] unexpected failure: $e');
+      debugPrintStack(stackTrace: st);
+      value = AppInitializationState(
+        status: AppInitializationStatus.recoverableError,
+        message: e.toString(),
+        error: e,
+      );
+      debugPrint('[bootstrap] state=recoverableError');
+    }
+  }
+
+  void _startOptionalBootstrapInBackground() {
+    if (_optionalStarted) return;
+    _optionalStarted = true;
+    debugPrint('[bootstrap] optional tasks start');
+    unawaited(() async {
+      await _runOptionalBootstrapTask(
+        'App Check',
+        () => activateAppCheck(isDebug: kDebugMode),
+        timeout: const Duration(seconds: 12),
+      );
+      await _runOptionalBootstrapTask(
+        'FCM notifications',
+        () => fcm_notifications.NotificationService.instance.initialize(),
+      );
+      await _runOptionalBootstrapTask(
+        'Local notifications',
+        () => local_notifications.NotificationService.instance.init(),
+      );
+      await _runOptionalBootstrapTask('Ad consent', () async {
+        final canRequestAds = await AdConsentService()
+            .gatherConsentAndTracking();
+        await AppAdService.instance.initialize(canRequestAds: canRequestAds);
+      });
+      _startTarotImagePreloadInBackground();
+      await _runOptionalBootstrapTask(
+        'Purchase service',
+        () => getIt<PurchaseService>().initialize(),
+      );
+    }());
+  }
+}
+
+Future<void> _preloadBundledFonts() async {
+  const manropeWeights = <FontWeight>[
+    FontWeight.w200,
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+    FontWeight.w800,
+  ];
+  const spaceGroteskWeights = <FontWeight>[
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+  ];
+  const newsreaderWeights = manropeWeights;
+  const interWeights = <FontWeight>[
+    FontWeight.w100,
+    FontWeight.w200,
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+    FontWeight.w800,
+    FontWeight.w900,
+  ];
+  const cormorantWeights = <FontWeight>[
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+  ];
+  const playfairWeights = <FontWeight>[
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+    FontWeight.w800,
+    FontWeight.w900,
+  ];
+  const robotoMonoWeights = <FontWeight>[
+    FontWeight.w100,
+    FontWeight.w200,
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+  ];
+
+  await GoogleFonts.pendingFonts([
+    for (final weight in manropeWeights)
+      GoogleFonts.manrope(fontWeight: weight),
+    for (final weight in spaceGroteskWeights)
+      GoogleFonts.spaceGrotesk(fontWeight: weight),
+    for (final weight in newsreaderWeights) ...[
+      GoogleFonts.newsreader(fontWeight: weight),
+      GoogleFonts.newsreader(fontWeight: weight, fontStyle: FontStyle.italic),
+    ],
+    for (final weight in interWeights) ...[
+      GoogleFonts.inter(fontWeight: weight),
+      GoogleFonts.inter(fontWeight: weight, fontStyle: FontStyle.italic),
+    ],
+    for (final weight in cormorantWeights) ...[
+      GoogleFonts.cormorantGaramond(fontWeight: weight),
+      GoogleFonts.cormorantGaramond(
+        fontWeight: weight,
+        fontStyle: FontStyle.italic,
+      ),
+    ],
+    for (final weight in playfairWeights) ...[
+      GoogleFonts.playfairDisplay(fontWeight: weight),
+      GoogleFonts.playfairDisplay(
+        fontWeight: weight,
+        fontStyle: FontStyle.italic,
+      ),
+    ],
+    for (final weight in robotoMonoWeights) ...[
+      GoogleFonts.robotoMono(fontWeight: weight),
+      GoogleFonts.robotoMono(fontWeight: weight, fontStyle: FontStyle.italic),
+    ],
+  ]);
+  debugPrint('[bootstrap] bundled fonts ready');
 }
 
 Future<String?> _runRequiredBootstrapTask(
@@ -230,26 +427,35 @@ class AppBootstrapPage extends StatefulWidget {
 }
 
 class _AppBootstrapPageState extends State<AppBootstrapPage> {
-  late final Future<String?> _bootstrapFuture;
+  late final AppInitializationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _bootstrapFuture = _bootstrapApp();
+    _controller = AppInitializationController();
+    unawaited(_controller.initialize());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _bootstrapFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+    return ValueListenableBuilder<AppInitializationState>(
+      valueListenable: _controller,
+      builder: (context, state, _) {
+        if (state.status == AppInitializationStatus.initializing) {
           return const AppStartupLoadingPage();
         }
 
-        final bootstrapError = snapshot.data;
-        if (bootstrapError != null) {
-          return FirebaseSetupRequiredPage(error: bootstrapError);
+        if (state.status != AppInitializationStatus.ready) {
+          return FirebaseSetupRequiredPage(
+            error: state.message ?? state.error?.toString() ?? 'Unknown error',
+            onRetry: () => _controller.initialize(force: true),
+          );
         }
 
         if (kDebugMode && _showOnboardingWelcomePreview) {
@@ -291,7 +497,6 @@ class _LifecyclePrivacyOverlayState extends State<_LifecyclePrivacyOverlay>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final shouldCover =
-        state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden;
@@ -766,21 +971,24 @@ class AppStartupLoadingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF17081C),
-      body: Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37))),
-    );
+    return const CosmicSplashScreen();
   }
 }
 
 class FirebaseSetupRequiredPage extends StatelessWidget {
-  const FirebaseSetupRequiredPage({super.key, required this.error});
+  const FirebaseSetupRequiredPage({
+    super.key,
+    required this.error,
+    this.onRetry,
+  });
 
   final String error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF17081C),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -798,6 +1006,13 @@ class FirebaseSetupRequiredPage extends StatelessWidget {
               error,
               style: const TextStyle(fontSize: 12, color: Colors.redAccent),
             ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: onRetry,
+                child: Text(AppTexts.t('common.retry')),
+              ),
+            ],
           ],
         ),
       ),

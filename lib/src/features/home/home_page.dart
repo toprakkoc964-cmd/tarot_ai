@@ -26,9 +26,11 @@ import '../../core/notification_router.dart';
 import '../../core/app_texts.dart';
 import '../../core/frequency_service.dart';
 import '../../core/tarot_functions_client.dart';
+import '../../core/user_profile_store.dart';
 import '../../core/widgets/inline_ad_banner.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
+import '../shop/screens/credit_purchase_sheet.dart';
 import '../auth/widgets/mystic_toast.dart';
 import '../../../services/notification_service.dart' as local_notifications;
 
@@ -120,7 +122,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _navIndex = 0;
-  bool _flashNotification = false;
   bool _flashMessages = false;
   bool _flashReward = false;
   int? _flashNavIndex;
@@ -166,26 +167,6 @@ class _HomePageState extends State<HomePage> {
     } catch (error) {
       debugPrint('Daily login reward skipped: $error');
     }
-  }
-
-  Future<void> _onNotificationTap() async {
-    setState(() => _flashNotification = true);
-    await Future<void>.delayed(const Duration(milliseconds: 140));
-    if (!mounted) return;
-    await local_notifications.NotificationService.instance
-        .syncDeliveredScheduledNotificationsToInbox();
-    if (!mounted) return;
-    await NotificationService.instance.reloadInbox();
-    if (!mounted) return;
-    await AppAdService.instance.maybeShowPageTransitionInterstitial();
-    if (!mounted) return;
-
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const _NotificationsPage()));
-
-    if (!mounted) return;
-    setState(() => _flashNotification = false);
   }
 
   Future<void> _onMessagesTap() async {
@@ -334,11 +315,9 @@ class _HomePageState extends State<HomePage> {
               child: _TopBar(
                 authService: widget.authService,
                 uid: widget.uid,
-                flashNotification: _flashNotification,
                 flashMessages: _flashMessages,
                 flashReward: _flashReward,
                 onMessagesTap: _onMessagesTap,
-                onNotificationTap: _onNotificationTap,
                 onRewardTap: _onRewardTap,
               ),
             ),
@@ -421,20 +400,16 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.authService,
     required this.uid,
-    required this.flashNotification,
     required this.flashMessages,
     required this.flashReward,
     required this.onMessagesTap,
-    required this.onNotificationTap,
     required this.onRewardTap,
   });
   final AuthService authService;
   final String uid;
-  final bool flashNotification;
   final bool flashMessages;
   final bool flashReward;
   final VoidCallback onMessagesTap;
-  final VoidCallback onNotificationTap;
   final VoidCallback onRewardTap;
 
   static double estimatedHeight(BuildContext context) {
@@ -456,10 +431,7 @@ class _TopBar extends StatelessWidget {
             right: 20,
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection(UserProfileContract.usersCollection)
-                .doc(uid)
-                .snapshots(),
+            stream: UserProfileStore.instance.watch(uid),
             builder: (context, snapshot) {
               final data = snapshot.data?.data();
               final wallet = Map<String, dynamic>.from(
@@ -599,12 +571,6 @@ class _TopBar extends StatelessWidget {
                         icon: Icons.forum_outlined,
                         flashing: flashMessages,
                       ),
-                      const SizedBox(width: 10),
-                      buildCircleButton(
-                        onTap: onNotificationTap,
-                        icon: Icons.notifications_none_rounded,
-                        flashing: flashNotification,
-                      ),
                     ],
                   ),
                 ],
@@ -653,10 +619,6 @@ class _HeroSectionState extends State<_HeroSection>
   bool _isDrawRequestInFlight = false;
   final _functionsClient = TarotFunctionsClient();
   final Map<int, String> _cardImageUrlByIndex = {};
-  late final DocumentReference<Map<String, dynamic>> _userDoc =
-      FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(widget.uid);
   DrawnTarotCard? _drawnCard;
   DrawnTarotCard? _revealedPreviewCard;
   final List<DrawnTarotCard> _selectedCards = [];
@@ -699,17 +661,8 @@ class _HeroSectionState extends State<_HeroSection>
     return AppTexts.t('tarot.spread.cta_draw');
   }
 
-  String _todayLocalDayKey() {
-    final now = DateTime.now();
-    final year = now.year.toString().padLeft(4, '0');
-    final month = now.month.toString().padLeft(2, '0');
-    final day = now.day.toString().padLeft(2, '0');
-    return '$year-$month-$day';
-  }
-
   bool _freeSingleDrawAvailable(Map<String, dynamic>? data) {
-    final lastFreeDay = data?['lastFreeCardDrawDay'];
-    return lastFreeDay is! String || lastFreeDay != _todayLocalDayKey();
+    return false;
   }
 
   @override
@@ -947,7 +900,7 @@ class _HeroSectionState extends State<_HeroSection>
         AppTexts.t('tarot.gate.insufficient'),
         dedupeKey: 'tarot-insufficient-credits',
       );
-      HomePage.openTab(2);
+      unawaited(showCreditPurchaseSheet(context, uid: widget.uid));
       if (!mounted) return;
       setState(() {
         _isChoosingSpread = true;
@@ -1003,7 +956,7 @@ class _HeroSectionState extends State<_HeroSection>
             AppTexts.t('tarot.gate.insufficient'),
             dedupeKey: 'tarot-insufficient-credits',
           );
-          HomePage.openTab(2);
+          unawaited(showCreditPurchaseSheet(context, uid: widget.uid));
           return;
         }
       }
@@ -1166,7 +1119,7 @@ class _HeroSectionState extends State<_HeroSection>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _userDoc.snapshots(),
+      stream: UserProfileStore.instance.watch(widget.uid),
       builder: (context, snapshot) {
         final isLoading = !snapshot.hasData;
         final data = snapshot.data?.data();
@@ -2181,10 +2134,7 @@ class _IdentityModuleState extends State<_IdentityModule>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(UserProfileContract.usersCollection)
-          .doc(widget.uid)
-          .snapshots(),
+      stream: UserProfileStore.instance.watch(widget.uid),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
         final storedBirthDate = data?[UserProfileContract.birthDate] as String?;
@@ -2402,6 +2352,8 @@ class _BottomNavBar extends StatelessWidget {
   }
 }
 
+// Bildirim geçmişi ekranı korunuyor; üst bardaki doğrudan giriş kaldırıldı.
+// ignore: unused_element
 class _NotificationsPage extends StatelessWidget {
   const _NotificationsPage();
 

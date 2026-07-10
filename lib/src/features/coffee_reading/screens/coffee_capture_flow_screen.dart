@@ -18,6 +18,7 @@ import '../../home/ai_chat_context.dart';
 import '../../home/aris_session_service.dart';
 import '../../home/chat_page.dart';
 import '../../shop/models/user_entitlements.dart';
+import '../../shop/screens/credit_purchase_sheet.dart';
 import '../../shop/services/entitlement_service.dart';
 import '../widgets/coffee_capture_card.dart';
 import '../widgets/coffee_capture_progress.dart';
@@ -208,6 +209,7 @@ class _CoffeeCaptureFlowScreenState extends State<CoffeeCaptureFlowScreen> {
       });
       if (error.message == FunctionErrorCodes.insufficientCredits) {
         _showSnack(AppTexts.t('home.cta.insufficient_credits_message'));
+        unawaited(showCreditPurchaseSheet(context, uid: widget.uid));
         return;
       }
       if (error.message == FunctionErrorCodes.coffeeAnalysisInProgress) {

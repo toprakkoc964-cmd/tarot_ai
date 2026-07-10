@@ -59,6 +59,8 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
+    - assets/Tarot_logo.png
+    - assets/fonts/
     - assets/locales/
     - assets/onboarding/
     - assets/translations/

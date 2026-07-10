@@ -12,9 +12,9 @@ import '../coffee_reading/screens/coffee_capture_flow_screen.dart';
 import '../palmistry/screens/palm_scanner_screen.dart';
 import '../auth/user_profile_contract.dart';
 import '../auth/widgets/mystic_toast.dart';
+import '../shop/screens/credit_purchase_sheet.dart';
 import 'ai_chat_context.dart';
 import 'chat_page.dart';
-import 'credit_page.dart';
 import 'home_palette.dart';
 
 const _kCoffeeReadingCost = 20;
@@ -255,18 +255,7 @@ class CosmicPage extends StatelessWidget {
     required String uid,
     VoidCallback? onOpenCredits,
   }) async {
-    if (onOpenCredits != null) {
-      onOpenCredits();
-      return;
-    }
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => CreditPage(
-          bottomInset: MediaQuery.of(context).padding.bottom,
-          uid: uid,
-        ),
-      ),
-    );
+    await showCreditPurchaseSheet(context, uid: uid);
   }
 
   static Future<int> _currentWalletCredits(String uid) async {

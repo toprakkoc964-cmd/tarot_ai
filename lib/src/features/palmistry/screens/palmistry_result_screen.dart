@@ -6,7 +6,7 @@ import '../../../core/app_texts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../home/ai_chat_context.dart';
 import '../../home/chat_page.dart';
-import '../../home/credit_page.dart';
+import '../../shop/screens/credit_purchase_sheet.dart';
 import '../models/palmistry_result.dart';
 import '../widgets/cosmic_scan_button.dart';
 import '../widgets/glass_panel.dart';
@@ -180,14 +180,7 @@ class PalmistryResultScreen extends StatelessWidget {
       ),
     );
     if (!context.mounted || chatResult != 'credits') return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => CreditPage(
-          bottomInset: MediaQuery.of(context).padding.bottom,
-          uid: uid,
-        ),
-      ),
-    );
+    await showCreditPurchaseSheet(context, uid: uid);
   }
 }
 

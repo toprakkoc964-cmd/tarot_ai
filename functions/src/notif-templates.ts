@@ -6,6 +6,10 @@ export type NotifLang = "tr" | "en" | "de" | "es" | "fr";
 export type NotifCategory =
   | "daily_card"
   | "birth_chart_fallback"
+  | "daily_token"
+  | "midday_coffee"
+  | "midday_palm"
+  | "evening_reflect"
   | "coffee_followup"
   | "palm_followup"
   | "wallet_low"
@@ -56,6 +60,28 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Evrenin {zodiac} için planı 🔭", body: "{name}, bugün seni neler bekliyor? Doğum haritası yorumuna göz at." },
       { title: "Yıldız haritan güncellendi ⭐", body: "{name}, {zodiac} enerjisi bugün güçlü. Yorumunu kaçırma." },
     ],
+    daily_token: [
+      {
+        withName: { title: "Günlük jetonların hazır 🎁", body: "{name}, bugünkü {credits} ücretsiz jeton hesabına eklendi ✨ Falına bakmak için hazırsın 🔮" },
+        noName: { title: "Günlük jetonların hazır 🎁", body: "Bugünkü {credits} ücretsiz jeton hesabına eklendi ✨ Falına bakmak için hazırsın 🔮" },
+      },
+      {
+        withName: { title: "Bugünün hediyesi geldi 🪙", body: "Günaydın {name}! {credits} ücretsiz jeton hesabında, kartların seni bekliyor 🌙" },
+        noName: { title: "Bugünün hediyesi geldi 🪙", body: "{credits} ücretsiz jeton hesabında, kartların seni bekliyor 🌙" },
+      },
+    ],
+    midday_coffee: [
+      { title: "Bir fincan kahveye ne dersin? ☕", body: "{name}, öğle arasında küçük bir mola… Fincanındaki sembolleri birlikte okuyalım mı? 🔮" },
+      { title: "Öğle molasında fal vakti ☕", body: "{name}, günün ortasında kendine kısa bir alan aç — kahve falın seni bekliyor ✨" },
+    ],
+    midday_palm: [
+      { title: "Avucunu açmaya ne dersin? ✋", body: "{name}, öğle arasında el çizgilerinin sana anlatacakları olabilir 🌙" },
+      { title: "Çizgilerin bugün ne söylüyor? 🤚", body: "{name}, kısa bir mola verip avucunun hikâyesine bakalım mı? ✨" },
+    ],
+    evening_reflect: [
+      { title: "Gün biterken küçük bir işaret 🌙", body: "{name}, günü kapatmadan önce kartlarının bu akşamki mesajına bakmak ister misin? ✨" },
+      { title: "Akşamın sessiz rehberi ✨", body: "{name}, bugün içinden geçenleri bir de kartların dilinden dinle 🔮" },
+    ],
     coffee_followup: [
       { title: "Bir fincan daha? ☕", body: "{name}, telve yeni bir hikâye anlatmaya hazır. Canın isterse tekrar bakalım ✨" },
       { title: "Fincan seni özledi ☕", body: "{name}, yeni bir kahve falına ne dersin? Acelesi yok, sen hazır olunca 🔮" },
@@ -99,6 +125,28 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "The sky is speaking for you today 🌌", body: "{name}, your daily {zodiac} reading is ready." },
       { title: "The universe's plan for {zodiac} 🔭", body: "{name}, what awaits you today? Check your birth chart reading." },
       { title: "Your star chart is updated ⭐", body: "{name}, {zodiac} energy is strong today. Don't miss your reading." },
+    ],
+    daily_token: [
+      {
+        withName: { title: "Your daily tokens are ready 🎁", body: "{name}, today’s {credits} free tokens have been added to your account ✨ Your reading is waiting 🔮" },
+        noName: { title: "Your daily tokens are ready 🎁", body: "Today’s {credits} free tokens have been added to your account ✨ Your reading is waiting 🔮" },
+      },
+      {
+        withName: { title: "Today’s gift has arrived 🪙", body: "Good morning {name}! {credits} free tokens are in your account, and your cards are waiting 🌙" },
+        noName: { title: "Today’s gift has arrived 🪙", body: "{credits} free tokens are in your account, and your cards are waiting 🌙" },
+      },
+    ],
+    midday_coffee: [
+      { title: "How about a cup of coffee? ☕", body: "{name}, a small midday pause… Shall we read the symbols in your cup together? 🔮" },
+      { title: "A little coffee reading break ☕", body: "{name}, make a small space for yourself in the middle of the day — your coffee reading is waiting ✨" },
+    ],
+    midday_palm: [
+      { title: "Will you open your palm? ✋", body: "{name}, your palm lines may have something to whisper this midday 🌙" },
+      { title: "What do your lines say today? 🤚", body: "{name}, shall we take a short pause and read the story in your palm? ✨" },
+    ],
+    evening_reflect: [
+      { title: "A small sign before the day ends 🌙", body: "{name}, before closing the day, would you like to see your cards’ evening message? ✨" },
+      { title: "Your quiet evening guide ✨", body: "{name}, listen to what moved through you today in the language of the cards 🔮" },
     ],
     coffee_followup: [
       { title: "One more cup? ☕", body: "{name}, the grounds have a new story. Shall we look again whenever you feel like it? ✨" },
@@ -144,6 +192,28 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Der Plan des Universums für {zodiac} 🔭", body: "{name}, was erwartet dich heute? Sieh dir deine Geburtshoroskop-Deutung an." },
       { title: "Deine Sternenkarte ist aktualisiert ⭐", body: "{name}, die {zodiac}-Energie ist heute stark. Verpasse deine Deutung nicht." },
     ],
+    daily_token: [
+      {
+        withName: { title: "Deine täglichen Token sind bereit 🎁", body: "{name}, deine heutigen {credits} kostenlosen Token wurden deinem Konto gutgeschrieben ✨ Deine Deutung wartet 🔮" },
+        noName: { title: "Deine täglichen Token sind bereit 🎁", body: "Deine heutigen {credits} kostenlosen Token wurden deinem Konto gutgeschrieben ✨ Deine Deutung wartet 🔮" },
+      },
+      {
+        withName: { title: "Das heutige Geschenk ist da 🪙", body: "Guten Morgen {name}! {credits} kostenlose Token sind auf deinem Konto, und deine Karten warten 🌙" },
+        noName: { title: "Das heutige Geschenk ist da 🪙", body: "{credits} kostenlose Token sind auf deinem Konto, und deine Karten warten 🌙" },
+      },
+    ],
+    midday_coffee: [
+      { title: "Eine Tasse Kaffee? ☕", body: "{name}, eine kleine Mittagspause… Wollen wir die Symbole in deiner Tasse gemeinsam lesen? 🔮" },
+      { title: "Eine kleine Kaffeelesungspause ☕", body: "{name}, schenk dir mitten am Tag einen kleinen Raum — deine Kaffeesatzdeutung wartet ✨" },
+    ],
+    midday_palm: [
+      { title: "Öffnest du deine Hand? ✋", body: "{name}, deine Handlinien könnten dir heute Mittag etwas zuflüstern 🌙" },
+      { title: "Was sagen deine Linien heute? 🤚", body: "{name}, wollen wir kurz innehalten und die Geschichte in deiner Hand lesen? ✨" },
+    ],
+    evening_reflect: [
+      { title: "Ein kleines Zeichen, bevor der Tag endet 🌙", body: "{name}, bevor du den Tag schließt, möchtest du die Abendbotschaft deiner Karten sehen? ✨" },
+      { title: "Dein stiller Abendführer ✨", body: "{name}, lausche dem, was dich heute bewegt hat, in der Sprache der Karten 🔮" },
+    ],
     coffee_followup: [
       { title: "Noch eine Tasse? ☕", body: "{name}, der Satz hat eine neue Geschichte. Schauen wir wieder, wann immer dir danach ist ✨" },
       { title: "Deine Tasse vermisst dich ☕", body: "{name}, Lust auf eine neue Kaffeesatzdeutung? Kein Stress — wann du bereit bist 🔮" },
@@ -188,6 +258,28 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "El plan del universo para {zodiac} 🔭", body: "{name}, ¿qué te espera hoy? Mira la lectura de tu carta natal." },
       { title: "Tu carta astral se ha actualizado ⭐", body: "{name}, la energía de {zodiac} es fuerte hoy. No te pierdas tu lectura." },
     ],
+    daily_token: [
+      {
+        withName: { title: "Tus fichas diarias están listas 🎁", body: "{name}, las {credits} fichas gratis de hoy se han añadido a tu cuenta ✨ Tu lectura te espera 🔮" },
+        noName: { title: "Tus fichas diarias están listas 🎁", body: "Las {credits} fichas gratis de hoy se han añadido a tu cuenta ✨ Tu lectura te espera 🔮" },
+      },
+      {
+        withName: { title: "El regalo de hoy ha llegado 🪙", body: "¡Buenos días, {name}! Tienes {credits} fichas gratis en tu cuenta, y tus cartas te esperan 🌙" },
+        noName: { title: "El regalo de hoy ha llegado 🪙", body: "Tienes {credits} fichas gratis en tu cuenta, y tus cartas te esperan 🌙" },
+      },
+    ],
+    midday_coffee: [
+      { title: "¿Qué tal una taza de café? ☕", body: "{name}, una pequeña pausa al mediodía… ¿Leemos juntos los símbolos de tu taza? 🔮" },
+      { title: "Una pausa para el café y la lectura ☕", body: "{name}, abre un pequeño espacio para ti en medio del día — tu lectura de café te espera ✨" },
+    ],
+    midday_palm: [
+      { title: "¿Abrimos tu palma? ✋", body: "{name}, las líneas de tu mano pueden susurrarte algo este mediodía 🌙" },
+      { title: "¿Qué dicen hoy tus líneas? 🤚", body: "{name}, ¿hacemos una breve pausa y leemos la historia en tu palma? ✨" },
+    ],
+    evening_reflect: [
+      { title: "Una pequeña señal antes de que termine el día 🌙", body: "{name}, antes de cerrar el día, ¿quieres ver el mensaje vespertino de tus cartas? ✨" },
+      { title: "Tu guía tranquila de la noche ✨", body: "{name}, escucha lo que hoy se movió dentro de ti en el lenguaje de las cartas 🔮" },
+    ],
     coffee_followup: [
       { title: "¿Otra taza? ☕", body: "{name}, los posos tienen una nueva historia. Miremos otra vez cuando te apetezca ✨" },
       { title: "Tu taza te extraña ☕", body: "{name}, ¿te apetece una nueva lectura del café? Sin prisa, cuando quieras 🔮" },
@@ -231,6 +323,28 @@ export const NOTIF_TEMPLATES: NotifData = {
       { title: "Le ciel parle pour toi aujourd'hui 🌌", body: "{name}, ta lecture quotidienne {zodiac} est prête." },
       { title: "Le plan de l'univers pour {zodiac} 🔭", body: "{name}, qu'est-ce qui t'attend aujourd'hui ? Consulte ta lecture du thème natal." },
       { title: "Ta carte du ciel est mise à jour ⭐", body: "{name}, l'énergie {zodiac} est forte aujourd'hui. Ne manque pas ta lecture." },
+    ],
+    daily_token: [
+      {
+        withName: { title: "Tes jetons quotidiens sont prêts 🎁", body: "{name}, les {credits} jetons gratuits du jour ont été ajoutés à ton compte ✨ Ta lecture t’attend 🔮" },
+        noName: { title: "Tes jetons quotidiens sont prêts 🎁", body: "Les {credits} jetons gratuits du jour ont été ajoutés à ton compte ✨ Ta lecture t’attend 🔮" },
+      },
+      {
+        withName: { title: "Le cadeau du jour est arrivé 🪙", body: "Bonjour {name} ! {credits} jetons gratuits sont sur ton compte, et tes cartes t’attendent 🌙" },
+        noName: { title: "Le cadeau du jour est arrivé 🪙", body: "{credits} jetons gratuits sont sur ton compte, et tes cartes t’attendent 🌙" },
+      },
+    ],
+    midday_coffee: [
+      { title: "Une tasse de café ? ☕", body: "{name}, une petite pause de midi… Et si nous lisions ensemble les symboles dans ta tasse ? 🔮" },
+      { title: "Une pause lecture café ☕", body: "{name}, offre-toi un petit espace au milieu de la journée — ta lecture de café t’attend ✨" },
+    ],
+    midday_palm: [
+      { title: "Tu ouvres ta paume ? ✋", body: "{name}, les lignes de ta main ont peut-être quelque chose à murmurer ce midi 🌙" },
+      { title: "Que disent tes lignes aujourd’hui ? 🤚", body: "{name}, faisons une courte pause pour lire l’histoire dans ta paume ? ✨" },
+    ],
+    evening_reflect: [
+      { title: "Un petit signe avant la fin du jour 🌙", body: "{name}, avant de refermer la journée, veux-tu découvrir le message du soir de tes cartes ? ✨" },
+      { title: "Ton guide discret du soir ✨", body: "{name}, écoute ce qui t’a traversé aujourd’hui dans la langue des cartes 🔮" },
     ],
     coffee_followup: [
       { title: "Encore une tasse ? ☕", body: "{name}, le marc a une nouvelle histoire. On regarde à nouveau quand tu veux ✨" },

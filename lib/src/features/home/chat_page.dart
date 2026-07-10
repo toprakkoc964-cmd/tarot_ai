@@ -21,6 +21,7 @@ import '../coffee_reading/services/backend_coffee_reading_service.dart';
 import '../coffee_reading/services/coffee_reading_service.dart';
 import '../readings/tarot_card_view.dart';
 import '../readings/tarot_service.dart';
+import '../shop/screens/credit_purchase_sheet.dart';
 import 'ai_chat_context.dart';
 import 'aris_session_service.dart';
 
@@ -534,7 +535,8 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
         lang: _activeArisLanguage(),
       );
       final reading = (response['reading'] as String?)?.trim() ?? '';
-      final returnedSessionId = (response['sessionId'] as String?)?.trim() ?? '';
+      final returnedSessionId =
+          (response['sessionId'] as String?)?.trim() ?? '';
       if (!mounted) return;
       _applyConversationResponse(response);
       setState(() {
@@ -976,7 +978,7 @@ class _KozmikBilgePageState extends State<KozmikBilgePage> {
             TextButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                Navigator.of(context).pop('credits');
+                showCreditPurchaseSheet(context, uid: widget.uid);
               },
               child: Text(AppTexts.t('chat.insufficient.buy')),
             ),

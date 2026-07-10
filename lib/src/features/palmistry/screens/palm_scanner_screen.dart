@@ -20,6 +20,7 @@ import '../../../core/utils/image_compression_helper.dart';
 import '../../../core/utils/palm_detection_result.dart';
 import '../../home/ai_chat_context.dart';
 import '../../home/chat_page.dart';
+import '../../shop/screens/credit_purchase_sheet.dart';
 import '../services/i_palmistry_service.dart';
 import '../services/palmistry_analysis_exception.dart';
 import '../services/palm_vision_channel.dart';
@@ -437,10 +438,24 @@ class _PalmScannerScreenState extends State<PalmScannerScreen>
         _errorTitle = AppTexts.t('palmScanErrorTitle');
         _errorMessage = _mapScanError(error);
       });
+      if (_isInsufficientCreditsError(error)) {
+        unawaited(showCreditPurchaseSheet(context));
+      }
       if (Platform.isIOS) {
         unawaited(_beginPalmDetection());
       }
     }
+  }
+
+  bool _isInsufficientCreditsError(Object error) {
+    if (error is PalmistryAnalysisException) {
+      return error.code == FunctionErrorCodes.insufficientCredits;
+    }
+    if (error is FirebaseFunctionsException) {
+      return (error.message ?? error.code).trim() ==
+          FunctionErrorCodes.insufficientCredits;
+    }
+    return false;
   }
 
   Future<void> _startImageStreamIfNeeded(CameraController controller) async {
