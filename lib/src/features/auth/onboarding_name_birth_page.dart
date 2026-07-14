@@ -815,27 +815,31 @@ class _OnboardingNameBirthPageState extends State<OnboardingNameBirthPage> {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: LocalizationService.instance.revision,
-      builder: (context, _, __) => Scaffold(
-        backgroundColor: _bg,
-        resizeToAvoidBottomInset: true,
-        body: Stack(
-          children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.topRight,
-                  radius: 1.2,
-                  colors: [
-                    Color(0xFF2E1537),
-                    Color(0xFF17081C),
-                    Color(0xFF17081C),
-                  ],
-                  stops: [0, 0.64, 1],
+      builder: (context, _, __) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Scaffold(
+          backgroundColor: _bg,
+          resizeToAvoidBottomInset: true,
+          body: Stack(
+            children: [
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topRight,
+                    radius: 1.2,
+                    colors: [
+                      Color(0xFF2E1537),
+                      Color(0xFF17081C),
+                      Color(0xFF17081C),
+                    ],
+                    stops: [0, 0.64, 1],
+                  ),
                 ),
               ),
-            ),
-            _buildContent(),
-          ],
+              _buildContent(),
+            ],
+          ),
         ),
       ),
     );

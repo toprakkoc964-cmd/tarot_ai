@@ -422,8 +422,11 @@ class _CoffeeRitualScene extends StatelessWidget {
   static const double _saucerWidth = 242;
   static const double _coffeeWidth = 116;
   static const double _coffeeRimOffsetY = -43;
-  static const double _saucerRestOffsetY = 63;
-  static const double _saucerCapOffsetY = -49;
+  // Altlık artık statik düz tabak; fincan dönüp bunun üstüne yaslanır.
+  static const double _saucerPlateOffsetY = 74;
+  static const double _cupRestOffsetY = -6;
+  static const double _cupLiftY = -20;
+  static const double _cupSettleDropY = 30;
 
   final Animation<double> hold;
   final Animation<double> cap;
@@ -437,15 +440,28 @@ class _CoffeeRitualScene extends StatelessWidget {
       builder: (context, _) {
         final capT = Curves.easeInOutCubic.transform(cap.value);
         final flipT = Curves.easeInOutCubic.transform(flip.value);
+        final landT = Curves.easeOutCubic.transform(flip.value);
         final pulse = Curves.easeInOut.transform(glow.value);
-        final coffeeLevel = lerpDouble(0.82, 0.0, hold.value)!;
-        final coffeeProgress = (coffeeLevel / 0.82).clamp(0.0, 1.0);
-        final saucerOffsetY = lerpDouble(
-          _saucerRestOffsetY,
-          _saucerCapOffsetY,
-          capT,
+
+        // Kahve seviyesi: 1 = dolu, 0 = boş.
+        final coffeeProgress = (1.0 - hold.value).clamp(0.0, 1.0);
+
+        // Buhar fincan doluyken güçlü, boşaldıkça / dönerken kaybolur.
+        final steamStrength =
+            (coffeeProgress * (1 - cap.value)).clamp(0.0, 1.0);
+
+        // Fincan: cap'te hafif yükselir, flip'te tabağa iner.
+        final liftedY = _cupRestOffsetY + _cupLiftY * capT;
+        final settledY = lerpDouble(
+          _cupRestOffsetY + _cupLiftY,
+          _cupRestOffsetY + _cupSettleDropY,
+          landT,
         )!;
-        final flipScale = 1.0 - math.sin(math.pi * flipT) * 0.06;
+        final cupY = flip.value > 0 ? settledY : liftedY;
+
+        final flipScale = 1.0 - math.sin(math.pi * flipT) * 0.05;
+        final shadowStrength = math.max(capT * 0.35, flipT).clamp(0.0, 1.0);
+
         return RepaintBoundary(
           child: SizedBox(
             width: 310,
@@ -453,6 +469,7 @@ class _CoffeeRitualScene extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
+                // Ortam ışıması (fal mühürlenince altına döner).
                 Container(
                   width: 230 + pulse * 18,
                   height: 230 + pulse * 18,
@@ -460,80 +477,113 @@ class _CoffeeRitualScene extends StatelessWidget {
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        _OnboardingCoffeeRitualPageState._primary.withValues(
-                          alpha: 0.22 + pulse * 0.08,
-                        ),
+                        Color.lerp(
+                          _OnboardingCoffeeRitualPageState._primary,
+                          _OnboardingCoffeeRitualPageState._gold,
+                          flipT,
+                        )!
+                            .withValues(
+                              alpha: 0.20 + pulse * 0.10 + flipT * 0.06,
+                            ),
                         Colors.transparent,
                       ],
                     ),
                   ),
                 ),
-                Transform.scale(
-                  scale: flipScale,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.0015)
-                      ..rotateX(math.pi * flipT),
+                // Statik altlık — her zaman düz tabak, dönmez.
+                Transform.translate(
+                  offset: const Offset(0, _saucerPlateOffsetY),
+                  child: Image.asset(
+                    'assets/onboarding/coffee_saucer.png',
+                    width: _saucerWidth,
+                    filterQuality: FilterQuality.high,
+                  ),
+                ),
+                // Fincan tabağa inerken yumuşayan temas gölgesi.
+                Transform.translate(
+                  offset: const Offset(0, _saucerPlateOffsetY - 6),
+                  child: Opacity(
+                    opacity: 0.30 * shadowStrength,
+                    child: Container(
+                      width: _cupWidth * 0.52,
+                      height: 26,
+                      decoration: const BoxDecoration(
+                        borderRadius:
+                            BorderRadius.all(Radius.elliptical(120, 13)),
+                        gradient: RadialGradient(
+                          colors: [Colors.black, Colors.transparent],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Fincan doluyken yükselen hafif buhar.
+                if (steamStrength > 0.02)
+                  Transform.translate(
+                    offset: Offset(0, cupY - 96),
                     child: SizedBox(
-                      width: 260,
-                      height: 260,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Opacity(
-                            opacity: 1 - capT,
-                            child: Transform.translate(
-                              offset: Offset(0, saucerOffsetY),
-                              child: Image.asset(
-                                'assets/onboarding/coffee_saucer.png',
-                                width: _saucerWidth,
-                                filterQuality: FilterQuality.high,
-                              ),
+                      width: 120,
+                      height: 110,
+                      child: CustomPaint(
+                        painter: _CoffeeSteamPainter(
+                          phase: glow.value,
+                          strength: steamStrength,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Fincan + kahve: dönen tek grup.
+                Transform.translate(
+                  offset: Offset(0, cupY),
+                  child: Transform.scale(
+                    scale: flipScale,
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()
+                        ..setEntry(3, 2, 0.0015)
+                        ..rotateX(math.pi * flipT),
+                      child: SizedBox(
+                        width: 260,
+                        height: 260,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/onboarding/coffee_cup.png',
+                              width: _cupWidth,
+                              filterQuality: FilterQuality.high,
                             ),
-                          ),
-                          Image.asset(
-                            'assets/onboarding/coffee_cup.png',
-                            width: _cupWidth,
-                            filterQuality: FilterQuality.high,
-                          ),
-                          Transform.translate(
-                            offset: const Offset(0, _coffeeRimOffsetY),
-                            child: Opacity(
-                              opacity: coffeeProgress,
-                              child: ClipOval(
-                                child: SizedBox(
-                                  width: _coffeeWidth,
-                                  height: _coffeeWidth * 0.31,
-                                  child: Transform(
-                                    alignment: Alignment.center,
-                                    transform: Matrix4.diagonal3Values(
-                                      1,
-                                      coffeeProgress,
-                                      1,
-                                    ),
-                                    child: Image.asset(
-                                      'assets/onboarding/coffee_fill.png',
-                                      fit: BoxFit.cover,
-                                      filterQuality: FilterQuality.high,
+                            // Kahve yüzeyi: seviye aşağı doğru düşer (alta sabit).
+                            Transform.translate(
+                              offset: Offset(
+                                0,
+                                _coffeeRimOffsetY + (1 - coffeeProgress) * 6,
+                              ),
+                              child: Opacity(
+                                opacity: coffeeProgress,
+                                child: ClipOval(
+                                  child: SizedBox(
+                                    width: _coffeeWidth,
+                                    height: _coffeeWidth * 0.31,
+                                    child: Transform(
+                                      alignment: Alignment.bottomCenter,
+                                      transform: Matrix4.diagonal3Values(
+                                        1,
+                                        coffeeProgress,
+                                        1,
+                                      ),
+                                      child: Image.asset(
+                                        'assets/onboarding/coffee_fill.png',
+                                        fit: BoxFit.cover,
+                                        filterQuality: FilterQuality.high,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          Opacity(
-                            opacity: capT,
-                            child: Transform.translate(
-                              offset: Offset(0, saucerOffsetY),
-                              child: Image.asset(
-                                'assets/onboarding/coffee_saucer.png',
-                                width: _saucerWidth,
-                                filterQuality: FilterQuality.high,
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -544,6 +594,48 @@ class _CoffeeRitualScene extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _CoffeeSteamPainter extends CustomPainter {
+  const _CoffeeSteamPainter({required this.phase, required this.strength});
+
+  final double phase;
+  final double strength;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _OnboardingCoffeeRitualPageState._onSurface
+          .withValues(alpha: 0.16 * strength)
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    final columns = [size.width * 0.34, size.width * 0.5, size.width * 0.66];
+    for (var i = 0; i < columns.length; i++) {
+      final x = columns[i];
+      final t = (phase + i * 0.33) % 1.0;
+      final bottom = size.height;
+      final top = size.height * (0.15 + 0.1 * i);
+      final path = Path()..moveTo(x, bottom);
+      final amp = 9.0 * strength;
+      for (double y = bottom; y >= top; y -= 6) {
+        final progress = (bottom - y) / (bottom - top);
+        final wobble =
+            math.sin((progress * math.pi * 2) + t * math.pi * 2) *
+            amp *
+            progress;
+        path.lineTo(x + wobble, y);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CoffeeSteamPainter oldDelegate) {
+    return phase != oldDelegate.phase || strength != oldDelegate.strength;
   }
 }
 

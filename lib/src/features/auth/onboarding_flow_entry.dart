@@ -42,11 +42,18 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   String? _interpretationTone;
   List<String> _focusAreas = const [];
   bool _navBusy = false;
+  Timer? _navRetryTimer;
   Future<void>? _guestSessionFuture;
 
   @override
   Widget build(BuildContext context) {
     return OnboardingWelcomePage(onStart: _openCardPick);
+  }
+
+  @override
+  void dispose() {
+    _navRetryTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _ensureGuestSession() {
@@ -76,8 +83,16 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     await NotificationService.instance.requestNotificationPermissions();
   }
 
-  bool _beginNav() {
-    if (_navBusy) return false;
+  bool _beginNav({VoidCallback? retry}) {
+    if (_navBusy) {
+      if (retry != null && _navRetryTimer == null) {
+        _navRetryTimer = Timer(const Duration(milliseconds: 520), () {
+          _navRetryTimer = null;
+          if (mounted) retry();
+        });
+      }
+      return false;
+    }
     _navBusy = true;
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _navBusy = false;
@@ -87,9 +102,6 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
 
   void _openCardPick() {
     if (!_beginNav()) return;
-    // Misafir (anonim) oturumu arka planda erkenden başlat; böylece kullanıcı
-    // reveal adımındaki "devam et"e bastığında hiçbir ağ beklemesi olmaz.
-    unawaited(_ensureGuestSession());
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingCardPickPage(
@@ -115,8 +127,14 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     _openCoffeeRitual(modality);
   }
 
-  void _openTarotDraw({bool replace = false}) {
-    if (!_beginNav()) return;
+  void _openTarotDraw({bool replace = false, bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy
+          ? () => _openTarotDraw(replace: replace, retryIfBusy: false)
+          : null,
+    )) {
+      return;
+    }
     final route = MaterialPageRoute<void>(
       builder: (_) => tarot_draw.OnboardingTarotDrawPage(
         name: _name,
@@ -132,8 +150,12 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     }
   }
 
-  void _openPalmScan() {
-    if (!_beginNav()) return;
+  void _openPalmScan({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy ? () => _openPalmScan(retryIfBusy: false) : null,
+    )) {
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingPalmScanPage(
@@ -155,8 +177,22 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openCoffeeRitual(OnboardingModality modality, {bool replace = false}) {
-    if (!_beginNav()) return;
+  void _openCoffeeRitual(
+    OnboardingModality modality, {
+    bool replace = false,
+    bool retryIfBusy = true,
+  }) {
+    if (!_beginNav(
+      retry: retryIfBusy
+          ? () => _openCoffeeRitual(
+              modality,
+              replace: replace,
+              retryIfBusy: false,
+            )
+          : null,
+    )) {
+      return;
+    }
     final route = MaterialPageRoute<void>(
       builder: (_) => OnboardingCoffeeRitualPage(
         name: _name,
@@ -172,10 +208,21 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     }
   }
 
-  void _openNameBirth() {
-    if (!_beginNav()) return;
+  void _openNameBirth({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy ? () => _openNameBirth(retryIfBusy: false) : null,
+    )) {
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
-    Navigator.of(context).push(
+    final navigator = _navigator();
+    if (navigator == null) {
+      debugPrint(
+        '[onboarding-flow] name/birth navigation skipped: no navigator',
+      );
+      return;
+    }
+    navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingNameBirthPage(
           authService: widget.authService,
@@ -191,9 +238,22 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openPersonalization() {
-    if (!_beginNav()) return;
-    Navigator.of(context).push(
+  void _openPersonalization({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy
+          ? () => _openPersonalization(retryIfBusy: false)
+          : null,
+    )) {
+      return;
+    }
+    final navigator = _navigator();
+    if (navigator == null) {
+      debugPrint(
+        '[onboarding-flow] personalization navigation skipped: no navigator',
+      );
+      return;
+    }
+    navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingPersonalizationPage(
           initialRelationshipStatus: _relationshipStatus,
@@ -215,9 +275,18 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openFocusAreas() {
-    if (!_beginNav()) return;
-    Navigator.of(context).push(
+  void _openFocusAreas({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy ? () => _openFocusAreas(retryIfBusy: false) : null,
+    )) {
+      return;
+    }
+    final navigator = _navigator();
+    if (navigator == null) {
+      debugPrint('[onboarding-flow] focus navigation skipped: no navigator');
+      return;
+    }
+    navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingFocusAreasPage(
           initialFocusAreas: _focusAreas,
@@ -230,9 +299,18 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openReveal() {
-    if (!_beginNav()) return;
-    Navigator.of(context).push(
+  void _openReveal({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy ? () => _openReveal(retryIfBusy: false) : null,
+    )) {
+      return;
+    }
+    final navigator = _navigator();
+    if (navigator == null) {
+      debugPrint('[onboarding-flow] reveal navigation skipped: no navigator');
+      return;
+    }
+    navigator.push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingRevealPage(
           modality: _modality ?? OnboardingModality.tarot,
@@ -250,8 +328,12 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openPaywall() {
-    if (!_beginNav()) return;
+  void _openPaywall({bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy ? () => _openPaywall(retryIfBusy: false) : null,
+    )) {
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
     final navigator = _navigator();
     if (navigator == null) {
@@ -271,8 +353,14 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     );
   }
 
-  void _openAccount({bool replace = false}) {
-    if (!_beginNav()) return;
+  void _openAccount({bool replace = false, bool retryIfBusy = true}) {
+    if (!_beginNav(
+      retry: retryIfBusy
+          ? () => _openAccount(replace: replace, retryIfBusy: false)
+          : null,
+    )) {
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'onboarding';
     debugPrint(
       '[onboarding-flow] opening account uid=$uid replace=$replace '
