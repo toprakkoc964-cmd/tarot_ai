@@ -874,28 +874,20 @@ class _RevealScript {
       (previous, value) => previous + value,
     );
     final tarotPool = [
-      _RevealArtifact('XVII · Yıldız', 'Umut kapısı aralanıyor', '✦'),
-      _RevealArtifact('II · Başrahibe', 'Sezginin sesi yükseliyor', '☾'),
-      _RevealArtifact('VI · Aşıklar', 'Kalbin iki yolu tartıyor', '♡'),
-      _RevealArtifact('XIX · Güneş', 'Netlik ve sıcaklık yaklaşıyor', '☀'),
+      _localizedArtifact('tarot.star', '✦'),
+      _localizedArtifact('tarot.high_priestess', '☾'),
+      _localizedArtifact('tarot.lovers', '♡'),
+      _localizedArtifact('tarot.sun', '☀'),
     ];
     final coffeePool = [
-      _RevealArtifact(
-        'Kuş — iyi haber',
-        'Fincanda hareketli bir haber izi var',
-        '☕',
-      ),
-      _RevealArtifact(
-        'Yol — kısa geçiş',
-        'Bir karar seni yeni kapıya götürüyor',
-        '☕',
-      ),
-      _RevealArtifact('Anahtar — çözüm', 'Kilitli kalan konu yumuşuyor', '☕'),
+      _localizedArtifact('coffee.bird', '☕'),
+      _localizedArtifact('coffee.path', '☕'),
+      _localizedArtifact('coffee.key', '☕'),
     ];
     final palmPool = [
-      _RevealArtifact('Kalp çizgisi', 'Duyguların ritmi belirginleşiyor', '✋'),
-      _RevealArtifact('Kader çizgisi', 'Yön duygun güçleniyor', '✋'),
-      _RevealArtifact('Yaşam çizgisi', 'Enerjini toplama zamanı', '✋'),
+      _localizedArtifact('palm.heart_line', '✋'),
+      _localizedArtifact('palm.fate_line', '✋'),
+      _localizedArtifact('palm.life_line', '✋'),
     ];
     final pool = switch (modality) {
       OnboardingModality.tarot => tarotPool,
@@ -903,6 +895,14 @@ class _RevealScript {
       OnboardingModality.palm => palmPool,
     };
     return pool[seed % pool.length];
+  }
+
+  static _RevealArtifact _localizedArtifact(String key, String icon) {
+    return _RevealArtifact(
+      AppTexts.t('onboarding.reveal.artifact.$key.title'),
+      AppTexts.t('onboarding.reveal.artifact.$key.subtitle'),
+      icon,
+    );
   }
 
   static List<String> _chipsFor(String focus) {

@@ -106,6 +106,8 @@ class HomePage extends StatefulWidget {
   final String uid;
 
   static final GlobalKey<_HomePageState> _homeKey = GlobalKey<_HomePageState>();
+  static String? _lastNavUid;
+  static int _lastNavIndex = 0;
 
   static Key get rootKey => _homeKey;
 
@@ -121,7 +123,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _navIndex = 0;
+  late int _navIndex;
   bool _flashMessages = false;
   bool _flashReward = false;
   int? _flashNavIndex;
@@ -129,6 +131,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _navIndex = HomePage._lastNavUid == widget.uid
+        ? HomePage._lastNavIndex
+        : 0;
+    HomePage._lastNavUid = widget.uid;
+    HomePage._lastNavIndex = _navIndex;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(AppReviewService.instance.requestAfterOnboardingIfNeeded());
@@ -237,6 +244,8 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       if (i >= 0 && i <= 3) {
         _navIndex = i;
+        HomePage._lastNavUid = widget.uid;
+        HomePage._lastNavIndex = i;
       }
       _flashNavIndex = i;
     });
@@ -244,6 +253,17 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() => _flashNavIndex = null);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid == widget.uid) return;
+    _navIndex = HomePage._lastNavUid == widget.uid
+        ? HomePage._lastNavIndex
+        : 0;
+    HomePage._lastNavUid = widget.uid;
+    HomePage._lastNavIndex = _navIndex;
   }
 
   @override

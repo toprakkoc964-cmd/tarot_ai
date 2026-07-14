@@ -42,13 +42,21 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
   String? _interpretationTone;
   List<String> _focusAreas = const [];
   bool _navBusy = false;
+  Future<void>? _guestSessionFuture;
 
   @override
   Widget build(BuildContext context) {
     return OnboardingWelcomePage(onStart: _openCardPick);
   }
 
-  Future<void> _ensureGuestSession() async {
+  Future<void> _ensureGuestSession() {
+    if (FirebaseAuth.instance.currentUser != null) {
+      return Future<void>.value();
+    }
+    return _guestSessionFuture ??= _createGuestSession();
+  }
+
+  Future<void> _createGuestSession() async {
     try {
       await widget.authService.signInAnonymously();
     } catch (error) {
@@ -79,6 +87,9 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
 
   void _openCardPick() {
     if (!_beginNav()) return;
+    // Misafir (anonim) oturumu arka planda erkenden başlat; böylece kullanıcı
+    // reveal adımındaki "devam et"e bastığında hiçbir ağ beklemesi olmaz.
+    unawaited(_ensureGuestSession());
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnboardingCardPickPage(

@@ -201,7 +201,13 @@ class AppInitializationController
       _startTarotImagePreloadInBackground();
       await _runOptionalBootstrapTask(
         'Purchase service',
-        () => getIt<PurchaseService>().initialize(),
+        () async {
+          final purchaseService = getIt<PurchaseService>();
+          await purchaseService.initialize();
+          // StoreKit fiyatlarını arka planda önden yükle; böylece paywall /
+          // kozmik enerji ekranı açıldığında fiyatlar cache'ten anında gelsin.
+          await purchaseService.loadProducts();
+        },
       );
     }());
   }
