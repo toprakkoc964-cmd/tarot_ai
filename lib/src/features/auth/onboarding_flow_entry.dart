@@ -95,7 +95,7 @@ class _OnboardingFlowEntryState extends State<OnboardingFlowEntry> {
     }
     _navBusy = true;
     Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _navBusy = false;
+      _navBusy = false;
     });
     return true;
   }

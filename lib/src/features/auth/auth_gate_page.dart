@@ -36,9 +36,14 @@ class _AuthGatePageState extends State<AuthGatePage> {
   String? _sessionCheckUid;
   Future<bool>? _sessionCheckFuture;
   String? _lastSyncedProfileLanguage;
+  Stream<User?>? _authStream;
+  String? _profileStreamUid;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _profileStream;
+  final GlobalKey _onboardingKey = GlobalKey();
+  final GlobalKey _splashKey = GlobalKey();
 
   Widget _buildLoading() {
-    return const CosmicSplashScreen();
+    return CosmicSplashScreen(key: _splashKey);
   }
 
   Widget _buildAuthEntry() {
@@ -65,6 +70,8 @@ class _AuthGatePageState extends State<AuthGatePage> {
     debugPrint('[auth-gate] retry requested');
     _sessionCheckFuture = null;
     _sessionCheckUid = null;
+    _profileStream = null;
+    _profileStreamUid = null;
     if (mounted) setState(() {});
   }
 
@@ -217,7 +224,7 @@ class _AuthGatePageState extends State<AuthGatePage> {
   }
 
   Stream<User?> _authChangesWithTimeout() {
-    return _authService.authChanges().timeout(
+    return _authStream ??= _authService.authChanges().timeout(
       _authStateTimeout,
       onTimeout: (sink) {
         final cachedUser = FirebaseAuth.instance.currentUser;
@@ -231,7 +238,12 @@ class _AuthGatePageState extends State<AuthGatePage> {
   }
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> _profileSnapshots(String uid) {
-    return UserProfileStore.instance
+    final cached = _profileStream;
+    if (cached != null && _profileStreamUid == uid) {
+      return cached;
+    }
+    _profileStreamUid = uid;
+    return _profileStream = UserProfileStore.instance
         .watch(uid)
         .timeout(
           _profileSnapshotTimeout,
@@ -239,11 +251,12 @@ class _AuthGatePageState extends State<AuthGatePage> {
             debugPrint('[auth-gate] profile snapshot timed out');
             sink.addError(TimeoutException('profile snapshot timed out'));
           },
-        );
+        )
+        .asBroadcastStream();
   }
 
   Widget _buildOnboardingEntry() {
-    return OnboardingFlowEntry(authService: _authService);
+    return OnboardingFlowEntry(key: _onboardingKey, authService: _authService);
   }
 
   @override
