@@ -9,6 +9,8 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.tarotai
     scripts:
+      - name: Disable Flutter Swift Package Manager
+        script: flutter config --no-enable-swift-package-manager
       - name: Flutter pub get
         script: flutter pub get
       - name: CocoaPods install
